@@ -1,0 +1,12 @@
+{
+  "name": "vps-agent-console",
+  "private": true,
+  "packageManager": "pnpm@10.13.1",
+  "scripts": {
+    "dev:web": "pnpm --filter @vps-agent/web dev",
+    "build:web": "pnpm --filter @vps-agent/web build",
+    "lint:web": "pnpm --filter @vps-agent/web lint",
+    "test:web": "pnpm --filter @vps-agent/web test",
+    "check": "pnpm lint:web && pnpm test:web && pnpm build:web"
+  }
+}
