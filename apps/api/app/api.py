@@ -28,6 +28,12 @@ def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def agent_is_online(
+    last_seen_at: datetime | None, current_time: datetime, offline_after: int
+) -> bool:
+    return bool(last_seen_at and last_seen_at >= current_time - timedelta(seconds=offline_after))
+
+
 async def require_admin(
     x_admin_token: str | None = Header(default=None),
     settings: Settings = Depends(get_settings),
@@ -70,7 +76,9 @@ async def create_registration_token(
     "/agents/register", response_model=AgentRegistered, status_code=status.HTTP_201_CREATED
 )
 async def register_agent(
-    payload: AgentRegister, session: AsyncSession = Depends(get_session)
+    payload: AgentRegister,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> AgentRegistered:
     token = await session.scalar(
         select(RegistrationToken)
@@ -83,24 +91,38 @@ async def register_agent(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid or expired registration token"
         )
     existing = await session.scalar(select(Agent).where(Agent.machine_id == payload.machine_id))
-    if existing is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="machine is already registered"
-        )
     credential = generate_token("agt")
-    agent = Agent(
-        credential_hash=hash_token(credential),
-        name=payload.name,
-        hostname=payload.hostname,
-        machine_id=payload.machine_id,
-        os=payload.os,
-        arch=payload.arch,
-        version=payload.version,
-        capabilities=payload.capabilities,
-        last_seen_at=current_time,
-    )
+    if existing is not None:
+        if agent_is_online(
+            existing.last_seen_at, current_time, settings.agent_offline_after_seconds
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="machine is already online; check for a duplicated machine-id",
+            )
+        existing.credential_hash = hash_token(credential)
+        existing.name = payload.name
+        existing.hostname = payload.hostname
+        existing.os = payload.os
+        existing.arch = payload.arch
+        existing.version = payload.version
+        existing.capabilities = payload.capabilities
+        existing.last_seen_at = current_time
+        agent = existing
+    else:
+        agent = Agent(
+            credential_hash=hash_token(credential),
+            name=payload.name,
+            hostname=payload.hostname,
+            machine_id=payload.machine_id,
+            os=payload.os,
+            arch=payload.arch,
+            version=payload.version,
+            capabilities=payload.capabilities,
+            last_seen_at=current_time,
+        )
+        session.add(agent)
     token.used_at = current_time
-    session.add(agent)
     await session.commit()
     await session.refresh(agent)
     return AgentRegistered(agent_id=agent.id, credential=credential)
@@ -182,9 +204,7 @@ async def build_summary(agent: Agent, session: AsyncSession, offline_after: int)
             | ServiceStatus.state.in_(["failed", "unhealthy"]),
         )
     )
-    online = bool(
-        agent.last_seen_at and agent.last_seen_at >= now_utc() - timedelta(seconds=offline_after)
-    )
+    online = agent_is_online(agent.last_seen_at, now_utc(), offline_after)
     metric_view = None
     if metric:
         metric_view = MetricView(
