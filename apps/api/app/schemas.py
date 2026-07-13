@@ -97,6 +97,7 @@ class AgentSummary(BaseModel):
     last_seen_at: datetime | None
     latest_metrics: MetricView | None
     service_counts: dict[str, int]
+    service_kind_counts: dict[str, int]
 
 
 class AgentDetail(AgentSummary):

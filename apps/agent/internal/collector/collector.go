@@ -150,7 +150,8 @@ func dockerServices(ctx context.Context) []client.Service {
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		parts := strings.SplitN(line, "|", 4)
 		if len(parts) == 4 {
-			result = append(result, client.Service{Kind: "docker", Key: parts[0], Name: parts[1], State: parts[2], Detail: parts[3]})
+			healthy := parts[2] == "running"
+			result = append(result, client.Service{Kind: "docker", Key: parts[0], Name: parts[1], State: parts[2], Detail: parts[3], Healthy: &healthy})
 		}
 	}
 	return result
@@ -161,12 +162,33 @@ func systemdServices(ctx context.Context) []client.Service {
 	if err != nil {
 		return nil
 	}
+	return parseSystemdServices(string(out))
+}
+
+func parseSystemdServices(output string) []client.Service {
 	var result []client.Service
-	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	scanner := bufio.NewScanner(strings.NewReader(output))
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
-		if len(fields) >= 4 {
-			result = append(result, client.Service{Kind: "systemd", Key: fields[0], Name: fields[0], State: fields[3], Detail: strings.Join(fields[4:], " ")})
+		if len(fields) >= 5 {
+			activeState := fields[2]
+			subState := fields[3]
+			var healthy *bool
+			if activeState == "active" {
+				value := true
+				healthy = &value
+			} else if activeState == "failed" {
+				value := false
+				healthy = &value
+			}
+			result = append(result, client.Service{
+				Kind:    "systemd",
+				Key:     fields[0],
+				Name:    fields[0],
+				State:   activeState,
+				Detail:  subState + " · " + strings.Join(fields[4:], " "),
+				Healthy: healthy,
+			})
 		}
 	}
 	return result

@@ -164,6 +164,15 @@ async def build_summary(agent: Agent, session: AsyncSession, offline_after: int)
             )
         ).all()
     )
+    kind_counts = dict(
+        (
+            await session.execute(
+                select(ServiceStatus.kind, func.count())
+                .where(ServiceStatus.agent_id == agent.id)
+                .group_by(ServiceStatus.kind)
+            )
+        ).all()
+    )
     online = bool(
         agent.last_seen_at and agent.last_seen_at >= now_utc() - timedelta(seconds=offline_after)
     )
@@ -188,6 +197,7 @@ async def build_summary(agent: Agent, session: AsyncSession, offline_after: int)
         last_seen_at=agent.last_seen_at,
         latest_metrics=metric_view,
         service_counts=counts,
+        service_kind_counts=kind_counts,
     )
 
 

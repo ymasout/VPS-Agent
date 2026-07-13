@@ -9,6 +9,8 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function AgentCard({ agent }: { agent: Agent }) {
   const metrics = agent.latest_metrics;
+  const problems = ["failed", "unhealthy", "exited"].reduce((total, state) => total + (agent.service_counts[state] ?? 0), 0);
+  const docker = agent.service_kind_counts.docker ?? 0;
   return (
     <Link className="agent-card" href={`/servers/${agent.id}`}>
       <div className={`status ${agent.online ? "online" : "offline"}`}><span /> {agent.online ? "online" : "offline"}</div>
@@ -19,13 +21,14 @@ function AgentCard({ agent }: { agent: Agent }) {
         <Metric label="MEM" value={metrics ? `${metrics.memory_percent.toFixed(1)}%` : "—"} />
         <Metric label="RAM" value={metrics ? formatBytes(metrics.memory_used_bytes) : "—"} />
       </div>
-      <div className="card-foot"><span>Agent {agent.version}</span><span>{Object.values(agent.service_counts).reduce((a, b) => a + b, 0)} services</span></div>
+      <div className="card-foot"><span>Agent {agent.version}</span><span className={problems ? "bad" : ""}>{problems ? `${problems} 需关注` : `${docker} containers · 正常`}</span></div>
     </Link>
   );
 }
 
 export default async function Home() {
-  let agents: Agent[] = []; let error = "";
+  let agents: Agent[] = [];
+  let error = "";
   try { agents = await getAgents(); } catch { error = "控制平面暂时不可用，请检查 API 服务。"; }
   const online = agents.filter((agent) => agent.online).length;
   return (
@@ -42,4 +45,3 @@ export default async function Home() {
     </main>
   );
 }
-
