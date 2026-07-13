@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Agent, formatBytes, getAgents } from "@/lib/api";
+import { RegistrationPanel } from "./registration-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,7 @@ export default async function Home() {
         <h1>机器<span>可见</span></h1>
         <p>{agents.length} 台 VPS · {online} 台在线 · organization: local</p>
       </section>
+      <RegistrationPanel />
       {error && <div className="empty error">{error}</div>}
       {!error && agents.length === 0 && <div className="empty"><strong>还没有已注册的 VPS</strong><span>启动带注册令牌的 Agent 后，机器会自动出现在这里。</span></div>}
       <section className="fleet">{agents.map((agent) => <AgentCard key={agent.id} agent={agent} />)}</section>

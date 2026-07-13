@@ -25,3 +25,4 @@ curl https://你的域名/healthz
 
 浏览器访问域名时使用 `CADDY_ADMIN_USER` 和生成哈希前的原始密码登录。
 
+首页“接入新机器”功能由 Web 服务端通过内部网络调用 API。`ADMIN_API_TOKEN` 同时注入 Web 和 API 容器，但不会出现在浏览器 JavaScript 或页面源码中；能够通过 Caddy 登录的用户视为控制平面管理员，可以创建一次性 Agent 注册令牌。

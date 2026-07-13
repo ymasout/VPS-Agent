@@ -103,6 +103,7 @@
 - GitHub Release 工作流已支持自动测试、Linux amd64/arm64 构建、SHA-256 校验和 Release 产物上传。
 - 一键安装器已支持架构识别、校验下载、交互式令牌输入、systemd 托管、身份保留升级和注册后令牌清理。
 - 首个正式版本 `v0.2.2` 已由 GitHub Actions 发布；Release 中的 amd64/arm64 二进制、安装器和 SHA-256 校验均已重新下载验证。
+- Fleet 首页已提供受 Caddy 登录保护的注册令牌按钮，由 Web 服务端安全调用内部 API，支持复制一次性令牌和安装命令。
 
 ### 尚未完成的验收
 

@@ -24,6 +24,10 @@ GitHub Actions 将自动：
 
 每台机器必须使用不同的注册令牌。令牌默认 30 分钟过期，成功注册后立即失效。
 
+推荐登录 `https://ops.ymast.shop/`，在首页“接入新机器”区域填写机器名称并点击“生成令牌”。页面只展示本次生成的令牌和对应安装命令，不会把管理 API 令牌发送到浏览器。
+
+也可以通过管理 API 手动创建：
+
 ```bash
 curl -u 'Caddy用户名:Caddy密码' \
   -H 'Content-Type: application/json' \
