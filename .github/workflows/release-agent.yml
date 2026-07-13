@@ -1,0 +1,70 @@
+name: Release Agent
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/agent/go.mod
+          cache-dependency-path: apps/agent/go.mod
+      - run: go test ./...
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/agent/go.mod
+          cache-dependency-path: apps/agent/go.mod
+      - name: Build Linux binary
+        working-directory: apps/agent
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+          VERSION: ${{ github.ref_name }}
+        run: |
+          mkdir -p ../../dist
+          go build -trimpath -ldflags="-s -w -X main.version=${VERSION#v}" -o "../../dist/vps-agent-linux-${GOARCH}" ./cmd/agent
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vps-agent-linux-${{ matrix.goarch }}
+          path: dist/vps-agent-linux-${{ matrix.goarch }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: vps-agent-linux-*
+          path: dist
+          merge-multiple: true
+      - name: Create checksums
+        run: |
+          cp scripts/install-agent.sh dist/install-agent.sh
+          cd dist
+          sha256sum vps-agent-linux-* install-agent.sh > SHA256SUMS
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/* --verify-tag --generate-notes --title "VPS Agent ${GITHUB_REF_NAME}"

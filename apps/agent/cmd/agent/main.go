@@ -16,11 +16,15 @@ import (
 	"github.com/example/vps-agent-console/apps/agent/internal/config"
 )
 
-const version = "0.2.1"
+var version = "0.2.1-dev"
 
 var capabilities = []string{"host.metrics", "docker.status", "systemd.status", "http.healthcheck"}
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		println("vps-agent " + version)
+		return
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	cfg := config.Load()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

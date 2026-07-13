@@ -17,6 +17,7 @@ docs/        架构与开发约定
 - [系统架构](docs/ARCHITECTURE.md)
 - [项目状态](docs/PROJECT_STATUS.md)
 - [实际开发路线图](docs/ROADMAP.md)
+- [Agent 发布、安装与升级](docs/AGENT_INSTALLATION.md)
 - [开发命令速查](开发命令速查.md)
 
 当前进度：M0 项目骨架已完成，M1 机器可见进行中。原始项目计划书作为产品基线保留，实际进度以项目状态和路线图为准。
