@@ -15,7 +15,9 @@ export function RegistrationPanel() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState("");
 
-  const installCommand = `curl -fsSL --proto '=https' --tlsv1.2 https://github.com/ymasout/VPS-Agent/releases/latest/download/install-agent.sh | bash -s -- --url https://ops.ymast.shop --name ${shellQuote(name.trim() || "my-vps")}`;
+  const controlPlaneURL = typeof window === "undefined" ? "" : window.location.origin;
+  const downloadBaseURL = `${controlPlaneURL}/agent-downloads`;
+  const installCommand = `curl -fsSL --proto '=https' --tlsv1.2 ${downloadBaseURL}/latest/install-agent.sh | bash -s -- --url ${controlPlaneURL} --download-base-url ${downloadBaseURL} --name ${shellQuote(name.trim() || "my-vps")}`;
 
   async function createToken(event: FormEvent) {
     event.preventDefault();

@@ -6,3 +6,4 @@ asyncpg==0.30.0
 redis==6.2.0
 SQLAlchemy==2.0.41
 alembic==1.16.4
+httpx==0.28.1

@@ -1,23 +1,9 @@
 import Link from "next/link";
 import { Service, formatBytes, getAgent } from "@/lib/api";
 import { notFound } from "next/navigation";
+import { isGoodState, isServiceProblem, serviceStatusTone } from "@/lib/service-status";
 
 export const dynamic = "force-dynamic";
-
-const goodStates = new Set(["active", "running", "healthy"]);
-const warningStates = new Set(["activating", "deactivating", "reloading"]);
-const badStates = new Set(["failed", "unhealthy", "exited"]);
-
-function isProblem(service: Service) {
-  return service.healthy === false || badStates.has(service.state);
-}
-
-function statusTone(service: Service) {
-  if (isProblem(service)) return "bad";
-  if (service.healthy === true || goodStates.has(service.state)) return "good";
-  if (warningStates.has(service.state)) return "warn";
-  return "neutral";
-}
 
 function ServiceRows({ services, empty }: { services: Service[]; empty?: string }) {
   return (
@@ -28,7 +14,7 @@ function ServiceRows({ services, empty }: { services: Service[]; empty?: string 
           <em>{service.kind}</em>
           <strong title={service.name}>{service.name}</strong>
           <span title={service.detail ?? undefined}>{service.detail ?? "—"}</span>
-          <b className={statusTone(service)}>{service.state}</b>
+          <b className={serviceStatusTone(service)}>{service.state}</b>
         </div>
       ))}
     </div>
@@ -51,12 +37,12 @@ export default async function ServerPage({ params }: { params: Promise<{ id: str
   try { agent = await getAgent(id); } catch { notFound(); }
 
   const metric = agent.latest_metrics;
-  const problems = agent.services.filter(isProblem);
-  const normal = agent.services.filter((service) => !isProblem(service));
+  const problems = agent.services.filter(isServiceProblem);
+  const normal = agent.services.filter((service) => !isServiceProblem(service));
   const docker = normal.filter((service) => service.kind === "docker");
   const http = normal.filter((service) => service.kind === "http");
-  const systemdActive = normal.filter((service) => service.kind === "systemd" && goodStates.has(service.state));
-  const systemdInactive = normal.filter((service) => service.kind === "systemd" && !goodStates.has(service.state));
+  const systemdActive = normal.filter((service) => service.kind === "systemd" && isGoodState(service.state));
+  const systemdInactive = normal.filter((service) => service.kind === "systemd" && !isGoodState(service.state));
 
   return (
     <main>

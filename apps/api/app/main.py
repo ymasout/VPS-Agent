@@ -10,6 +10,7 @@ from .config import get_settings
 from .database import engine, session_factory
 from .logging import configure_logging
 from .models import Base, RegistrationToken
+from .releases import router as releases_router
 from .security import hash_token
 
 settings = get_settings()
@@ -56,6 +57,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
+app.include_router(releases_router)
 
 
 @app.get("/healthz", tags=["system"])

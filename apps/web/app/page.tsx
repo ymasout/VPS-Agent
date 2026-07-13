@@ -10,7 +10,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function AgentCard({ agent }: { agent: Agent }) {
   const metrics = agent.latest_metrics;
-  const problems = ["failed", "unhealthy", "exited"].reduce((total, state) => total + (agent.service_counts[state] ?? 0), 0);
+  const problems = agent.service_problem_count;
   const docker = agent.service_kind_counts.docker ?? 0;
   return (
     <Link className="agent-card" href={`/servers/${agent.id}`}>

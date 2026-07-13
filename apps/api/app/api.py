@@ -173,6 +173,15 @@ async def build_summary(agent: Agent, session: AsyncSession, offline_after: int)
             )
         ).all()
     )
+    problem_count = await session.scalar(
+        select(func.count())
+        .select_from(ServiceStatus)
+        .where(
+            ServiceStatus.agent_id == agent.id,
+            ServiceStatus.healthy.is_(False)
+            | ServiceStatus.state.in_(["failed", "unhealthy"]),
+        )
+    )
     online = bool(
         agent.last_seen_at and agent.last_seen_at >= now_utc() - timedelta(seconds=offline_after)
     )
@@ -198,6 +207,7 @@ async def build_summary(agent: Agent, session: AsyncSession, offline_after: int)
         latest_metrics=metric_view,
         service_counts=counts,
         service_kind_counts=kind_counts,
+        service_problem_count=int(problem_count or 0),
     )
 
 

@@ -26,6 +26,8 @@ GitHub Actions 将自动：
 
 推荐登录 `https://ops.ymast.shop/`，在首页“接入新机器”区域填写机器名称并点击“生成令牌”。页面只展示本次生成的令牌和对应安装命令，不会把管理 API 令牌发送到浏览器。
 
+首页生成的命令通过控制平面的 `/agent-downloads/` 同域下载中转获取 Release。目标 VPS 不需要直接连接 GitHub，适用于 GitHub Release/CDN 连接不稳定的网络；控制平面只允许转发固定名称的 Agent 公开产物，不接受任意 URL。
+
 也可以通过管理 API 手动创建：
 
 ```bash
@@ -65,6 +67,12 @@ less install-agent.sh
 sudo bash install-agent.sh \
   --url https://ops.ymast.shop \
   --name dmit-vps
+```
+
+如果目标网络无法稳定访问 GitHub，使用首页生成的新命令，其中会包含：
+
+```text
+--download-base-url https://ops.ymast.shop/agent-downloads
 ```
 
 可选参数：

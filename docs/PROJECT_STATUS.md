@@ -104,6 +104,8 @@
 - 一键安装器已支持架构识别、校验下载、交互式令牌输入、systemd 托管、身份保留升级和注册后令牌清理。
 - 首个正式版本 `v0.2.2` 已由 GitHub Actions 发布；Release 中的 amd64/arm64 二进制、安装器和 SHA-256 校验均已重新下载验证。
 - Fleet 首页已提供受 Caddy 登录保护的注册令牌按钮，由 Web 服务端安全调用内部 API，支持复制一次性令牌和安装命令。
+- 控制平面已增加固定白名单的 Agent Release 同域下载中转，首页安装命令不再要求目标 VPS 直连 GitHub CDN。
+- 服务异常判断已按 Docker/systemd/HTTP 类型区分，兼容旧格式 systemd `exited` 状态，避免详情页错误混入“需关注”。
 
 ### 尚未完成的验收
 

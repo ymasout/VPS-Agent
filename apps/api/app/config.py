@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     admin_api_token: str = "change-me-in-production"
     dev_agent_registration_token: str | None = None
     agent_offline_after_seconds: int = 90
+    agent_release_repository: str = "ymasout/VPS-Agent"
     skip_database_init: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

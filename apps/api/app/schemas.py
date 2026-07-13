@@ -98,6 +98,7 @@ class AgentSummary(BaseModel):
     latest_metrics: MetricView | None
     service_counts: dict[str, int]
     service_kind_counts: dict[str, int]
+    service_problem_count: int
 
 
 class AgentDetail(AgentSummary):

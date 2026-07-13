@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 REPOSITORY="${VPS_AGENT_REPOSITORY:-ymasout/VPS-Agent}"
 VERSION="latest"
+DOWNLOAD_BASE_URL="${VPS_AGENT_DOWNLOAD_BASE_URL:-}"
 CONTROL_PLANE_URL=""
 AGENT_NAME=""
 REGISTRATION_TOKEN="${AGENT_REGISTRATION_TOKEN:-}"
@@ -23,6 +24,7 @@ Options:
   --healthcheck URLS    Comma-separated HTTP healthcheck URLs
   --interval DURATION   Report interval (default: 30s)
   --version VERSION     Release version such as 0.2.2 (default: latest)
+  --download-base-url URL  Optional control-plane download mirror
   -h, --help            Show this help
 
 Existing installations keep their identity and do not need another token.
@@ -42,6 +44,7 @@ while [[ $# -gt 0 ]]; do
     --healthcheck) HEALTHCHECK_URLS="${2:-}"; shift 2 ;;
     --interval) REPORT_INTERVAL="${2:-}"; shift 2 ;;
     --version) VERSION="${2:-}"; shift 2 ;;
+    --download-base-url) DOWNLOAD_BASE_URL="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) fail "unknown option: $1" ;;
   esac
@@ -89,7 +92,15 @@ if [[ ! -f "${IDENTITY_FILE}" ]]; then
   [[ "${REGISTRATION_TOKEN}" == reg_* ]] || fail "registration token must start with reg_"
 fi
 
-if [[ "${VERSION}" == "latest" ]]; then
+if [[ -n "${DOWNLOAD_BASE_URL}" ]]; then
+  [[ "${DOWNLOAD_BASE_URL}" =~ ^https:// ]] || fail "--download-base-url must use HTTPS"
+  if [[ "${VERSION}" == "latest" ]]; then
+    BASE_URL="${DOWNLOAD_BASE_URL%/}/latest"
+  else
+    VERSION="${VERSION#v}"
+    BASE_URL="${DOWNLOAD_BASE_URL%/}/v${VERSION}"
+  fi
+elif [[ "${VERSION}" == "latest" ]]; then
   BASE_URL="https://github.com/${REPOSITORY}/releases/latest/download"
 else
   VERSION="${VERSION#v}"
