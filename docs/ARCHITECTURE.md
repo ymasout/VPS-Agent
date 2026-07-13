@@ -36,13 +36,13 @@ compose.yaml        本地完整开发环境
 
 - 系统可信核心，负责 Agent 身份、资源拓扑、数据持久化和 API。
 - 后续负责监控规则、告警、任务编排、审批、审计和 GitHub 集成。
-- 当前 M0 只提供健康检查和未经正式认证的开发心跳接口。
+- 当前已提供一次性注册、Agent Bearer 认证、资源/服务报告和 Fleet 查询接口。
 
 ### Go Agent
 
 - 作为 Linux VPS 上的轻量守护进程运行，主动连接控制平面。
-- M1 负责注册、心跳、基础资源和 Docker/systemd 状态采集。
-- 当前 M0 只发送开发心跳，不执行命令。
+- 当前负责注册、心跳、基础资源和 Docker/systemd/HTTP 状态采集。
+- M1 只采集和上报事实，不执行远程命令。
 - 后续只执行控制平面签名且命中 Runbook 白名单的任务。
 
 ### PostgreSQL
@@ -60,13 +60,14 @@ compose.yaml        本地完整开发环境
 
 ```mermaid
 flowchart LR
-  A["Linux VPS / Go Agent"] -->|"出站 HTTP(S)，M1 演进为认证连接"| B["FastAPI 控制平面"]
+  A["Linux VPS / Go Agent"] -->|"出站 HTTPS + Bearer 凭证"| B["FastAPI 控制平面"]
   B --> C["PostgreSQL"]
   B --> D["Redis"]
-  E["Next.js Web"] -->|"HTTP API"| B
+  E["Next.js Web"] -->|"内部 HTTP API"| B
+  F["浏览器"] -->|"HTTPS + Basic Auth"| E
 ```
 
-M1 当前已实现注册与认证数据流：Agent 使用一次性令牌注册，将独立凭证保存在本地身份文件，随后提交资源快照和服务状态；Web 只从控制平面读取真实 VPS 数据。Compose 开发环境已完成单 Agent 端到端验证。
+M1 已完成注册与认证数据流：Agent 使用一次性令牌注册，将独立凭证保存在本地身份文件，随后提交资源快照和服务状态；Web 只从控制平面读取真实 VPS 数据。除 Compose 开发验证外，3 台外部真实 VPS 已持续接入，控制平面宿主机也作为第 4 条机器记录接受自监控。
 
 Agent 交付采用 GitHub Release：标签触发测试和 Linux amd64/arm64 静态构建，Release 同时发布 SHA-256 校验和与安装器。目标 VPS 在本机验证产物后由 systemd 托管 Agent；一次性注册令牌仅用于首次绑定，成功后从环境文件清除，升级继续使用 `/var/lib/vps-agent/identity.json` 中的独立身份。
 
@@ -77,6 +78,14 @@ Release 安装器在首次安装时生成独立的 Agent machine-id，保存在 
 首页注册入口采用服务端代理：浏览器通过 Caddy Basic Auth 登录后向 Web 的同源 POST 接口提交机器名称，Web 服务端再使用仅存在于容器环境中的 `ADMIN_API_TOKEN` 调用内部 API。管理令牌不进入客户端，返回的一次性 `reg_...` 令牌只在本次页面状态中展示。
 
 为兼容 GitHub CDN 不稳定的目标网络，控制平面提供 `/agent-downloads/{release}/{asset}` 同域中转。release 仅允许 `latest` 或语义化版本标签，asset 采用固定白名单，因此不能被用作通用开放代理或任意 URL 请求入口。
+
+### 生产部署拓扑
+
+- Caddy 是唯一公网入口，终止 HTTPS，并分别路由 Web、控制 API、Agent API 和 Release 中转。
+- Next.js、FastAPI、PostgreSQL、Redis 和 Caddy 由生产 Docker Compose 托管。
+- 外部 VPS 上的 Agent 由各自主机的 systemd 托管，只需访问控制平面的 443 端口。
+- 控制平面宿主机可以运行同一 Agent 进行自监控，但该 Agent 与控制面容器生命周期分离；控制面整体故障时，自监控上报也会中断，这是当前单实例部署的已知盲区。
+- 当前发布基线为 Agent `v0.2.4`，支持 Linux `amd64` 和 `arm64`。
 
 ## 5. M1 协议方向
 

@@ -1,6 +1,6 @@
 # AI VPS 运维控制台
 
-面向独立开发者和小团队的自托管运维控制台。本仓库是 M0 项目骨架：Next.js Web/PWA、FastAPI 控制平面、Go VPS Agent，以及 PostgreSQL、Redis 和 Docker Compose 开发环境。
+面向独立开发者和小团队的自托管运维控制台。项目采用 Next.js Web/PWA、FastAPI 控制平面、Go VPS Agent，以及 PostgreSQL、Redis 和 Docker Compose；M0 项目骨架和 M1 机器可见均已完成。
 
 ## 目录
 
@@ -20,7 +20,7 @@ docs/        架构与开发约定
 - [Agent 发布、安装与升级](docs/AGENT_INSTALLATION.md)
 - [开发命令速查](开发命令速查.md)
 
-当前进度：M0 项目骨架已完成，M1 机器可见进行中。原始项目计划书作为产品基线保留，实际进度以项目状态和路线图为准。
+当前进度：M0 项目骨架和 M1 机器可见已完成，M2 异常可通知待开始。原始项目计划书作为产品基线保留，实际进度以项目状态和路线图为准。
 
 ## 快速开始
 
@@ -37,4 +37,4 @@ docs/        架构与开发约定
 - Agent：在 `apps/agent` 运行 `go run ./cmd/agent`
 - 全部测试：`make test`；完整检查：`make check`
 
-M0 仅提供连通性、健康检查、结构化日志和 Agent 心跳契约，不包含生产认证、任务签名或受控操作执行。
+M1 已提供 Agent 安全注册、认证上报、基础资源和 Docker/systemd/HTTP 状态采集，以及真实 Fleet/详情页面。当前仍不提供任务签名、远程 Shell 或受控操作执行。

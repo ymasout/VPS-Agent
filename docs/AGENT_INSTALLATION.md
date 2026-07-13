@@ -1,14 +1,14 @@
 # Agent 发布、安装与升级
 
-VPS Agent 通过 GitHub Release 发布 Linux 静态二进制，当前支持 `amd64` 和 `arm64`。每个 Release 同时包含安装脚本和 `SHA256SUMS`，安装器会在替换程序前自动校验二进制。
+VPS Agent 通过 GitHub Release 发布 Linux 静态二进制，当前稳定版本为 `v0.2.4`，支持 `amd64` 和 `arm64`。每个 Release 同时包含安装脚本和 `SHA256SUMS`，安装器会在替换程序前自动校验二进制。
 
 ## 1. 发布新版本
 
 Agent 版本由 Git 标签决定。发布前先保证 `main` 的检查全部通过，然后创建并推送标签：
 
 ```bash
-git tag -a v0.2.2 -m "VPS Agent v0.2.2"
-git push origin v0.2.2
+git tag -a v0.2.5 -m "VPS Agent v0.2.5"
+git push origin v0.2.5
 ```
 
 GitHub Actions 将自动：
@@ -39,6 +39,13 @@ curl -u 'Caddy用户名:Caddy密码' \
 ```
 
 只复制响应中的 `reg_...`。不要把 Caddy 密码、管理 API 令牌或注册令牌发到聊天、提交到 Git，或者写入公开脚本。
+
+在浏览器和远程终端之间操作时，使用以下顺序，避免把令牌与安装命令拼成带换行的 Shell 参数：
+
+1. 先点击“复制安装命令”，在目标 VPS 粘贴并执行。
+2. 等终端出现 `Registration token:`。
+3. 再回到网页点击“复制令牌”。
+4. 回到终端直接粘贴并回车，不添加引号，不从旧的剪贴板历史选择令牌。
 
 ## 3. 首次安装
 
@@ -79,7 +86,7 @@ sudo bash install-agent.sh \
 
 - `--healthcheck https://example.com/healthz`：一个或多个逗号分隔的 HTTP 检查地址。
 - `--interval 30s`：上报间隔。
-- `--version 0.2.2`：安装指定版本；默认安装最新 Release。
+- `--version 0.2.4`：安装指定版本；默认安装最新 Release。
 
 安装器会创建：
 
@@ -114,12 +121,58 @@ sudo bash install-agent.sh --url https://ops.ymast.shop
 指定版本回滚：
 
 ```bash
-sudo bash install-agent.sh --url https://ops.ymast.shop --version 0.2.2
+sudo bash install-agent.sh --url https://ops.ymast.shop --version 0.2.4
 ```
+
+升级已有机器时必须保留以下文件：
+
+- `/var/lib/vps-agent/identity.json`
+- `/var/lib/vps-agent/machine-id`
+
+不要为正常升级生成新的注册令牌，也不要删除身份文件。否则可能创建重复机器，或者触发在线机器的重新绑定保护。
+
+### 控制平面宿主机升级
+
+控制平面宿主机已经注册为 `control-plane`。先确认身份文件存在；若检查失败，应停止并排查，不要继续安装：
+
+```bash
+test -s /var/lib/vps-agent/identity.json \
+  && echo "identity exists，可以升级" \
+  || { echo "identity missing，请停止"; exit 1; }
+```
+
+建议先备份 Agent 配置和身份，再使用控制平面同域中转升级到 `v0.2.4`：
+
+```bash
+backup_suffix="$(date +%Y%m%d-%H%M%S)"
+cp -a /etc/vps-agent "/etc/vps-agent.backup-${backup_suffix}"
+cp -a /var/lib/vps-agent "/var/lib/vps-agent.backup-${backup_suffix}"
+
+curl -fsSL --proto '=https' --tlsv1.2 \
+  https://ops.ymast.shop/agent-downloads/v0.2.4/install-agent.sh \
+  | bash -s -- \
+      --url https://ops.ymast.shop \
+      --download-base-url https://ops.ymast.shop/agent-downloads \
+      --version 0.2.4
+```
+
+安装器会读取已有 `AGENT_NAME` 和身份，不会要求注册令牌。完成后验证：
+
+```bash
+/usr/local/bin/vps-agent --version
+systemctl status vps-agent --no-pager
+journalctl -u vps-agent -n 30 --no-pager
+```
+
+预期版本为 `vps-agent 0.2.4`，日志出现 `report accepted`，Fleet 中原有 `control-plane` 记录恢复在线且不会新增重复记录。
+
+### 身份文件丢失
+
+若已注册机器的 `identity.json` 丢失，不要删除 `machine-id`。应先停止 Agent，等待控制台将该机器判断为离线，再生成新的短期令牌进行重新绑定。只有从未成功注册的新机器，才可以在排除克隆冲突时重新生成 Agent machine-id。
 
 ## 6. M1 实机验收
 
-三台 VPS 均应满足：
+至少三台 VPS 均应满足：
 
 - Agent 使用不同的一次性令牌注册，Fleet 中不存在重复机器。
 - 连续上报 CPU、内存、磁盘、Docker/systemd 和配置的 HTTP 检查。
@@ -127,4 +180,4 @@ sudo bash install-agent.sh --url https://ops.ymast.shop --version 0.2.2
 - 停止 Agent 超过离线阈值后显示离线，重新启动后恢复在线。
 - systemd 能区分 `active`、`inactive` 和 `failed`，正常待命服务不计入异常。
 
-全部通过并同步 `PROJECT_STATUS.md` 与 `ROADMAP.md` 后，M1 才标记为完成。
+2026-07-14 已完成 3 台外部 VPS 的实机验收；连同控制平面宿主机，Fleet 共 4 条真实机器记录。4 台 Agent 均已升级到 `v0.2.4` 并保持在线，M1 已完成。
