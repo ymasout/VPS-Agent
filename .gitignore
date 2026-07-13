@@ -1,4 +1,6 @@
 .env
+.env.production
+**/.env.production
 .next/
 node_modules/
 .pnpm-store/
@@ -11,4 +13,3 @@ coverage/
 dist/
 bin/
 .DS_Store
-

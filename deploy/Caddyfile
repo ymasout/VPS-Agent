@@ -1,0 +1,27 @@
+{$CONTROL_PLANE_DOMAIN} {
+	encode zstd gzip
+
+	# Agent 只通过自身的一次性注册令牌或 Bearer 凭证认证。
+	@agent_api path /api/v1/agents/register /api/v1/agents/report /healthz
+	handle @agent_api {
+		reverse_proxy api:8000
+	}
+
+	# 管理 API 和 API 文档需要额外的控制台登录保护。
+	@control_api path /api/* /docs* /openapi.json
+	handle @control_api {
+		basic_auth {
+			{$CADDY_ADMIN_USER} {$CADDY_ADMIN_PASSWORD_HASH}
+		}
+		reverse_proxy api:8000
+	}
+
+	# Web 控制台需要登录；页面在服务端通过内部网络读取 API。
+	handle {
+		basic_auth {
+			{$CADDY_ADMIN_USER} {$CADDY_ADMIN_PASSWORD_HASH}
+		}
+		reverse_proxy web:3000
+	}
+}
+
