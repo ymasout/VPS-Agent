@@ -34,6 +34,9 @@ func main() {
 		logger.Error("host discovery failed", "error", err)
 		os.Exit(1)
 	}
+	if cfg.MachineID != "" {
+		host.MachineID = cfg.MachineID
+	}
 	api := client.New(cfg.ControlPlaneURL)
 	identity, err := loadIdentity(cfg.CredentialFile)
 	if errors.Is(err, os.ErrNotExist) {

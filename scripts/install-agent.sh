@@ -64,6 +64,7 @@ esac
 
 ENV_FILE="${CONFIG_DIR}/agent.env"
 IDENTITY_FILE="${DATA_DIR}/identity.json"
+MACHINE_ID_FILE="${DATA_DIR}/machine-id"
 
 existing_value() {
   local key="$1"
@@ -120,6 +121,15 @@ curl --fail --location --proto '=https' --tlsv1.2 --silent --show-error "${BASE_
 
 install -d -m 0755 "${INSTALL_DIR}" "${CONFIG_DIR}"
 install -d -m 0700 "${DATA_DIR}"
+if [[ ! -f "${MACHINE_ID_FILE}" ]]; then
+  if [[ -f "${IDENTITY_FILE}" && -r /etc/machine-id ]]; then
+    tr -d '\n' </etc/machine-id >"${MACHINE_ID_FILE}"
+  else
+    [[ -r /proc/sys/kernel/random/uuid ]] || fail "kernel UUID generator is unavailable"
+    tr -d '\n' </proc/sys/kernel/random/uuid >"${MACHINE_ID_FILE}"
+  fi
+  chmod 0600 "${MACHINE_ID_FILE}"
+fi
 systemctl stop vps-agent.service 2>/dev/null || true
 install -m 0755 "${TMP_DIR}/${BINARY}" "${INSTALL_DIR}/vps-agent"
 
@@ -128,6 +138,9 @@ umask 077
   printf 'CONTROL_PLANE_URL=%s\n' "${CONTROL_PLANE_URL}"
   printf 'AGENT_NAME=%s\n' "${AGENT_NAME}"
   printf 'AGENT_CREDENTIAL_FILE=%s\n' "${IDENTITY_FILE}"
+  if [[ -f "${MACHINE_ID_FILE}" ]]; then
+    printf 'AGENT_MACHINE_ID=%s\n' "$(cat "${MACHINE_ID_FILE}")"
+  fi
   printf 'AGENT_REPORT_INTERVAL=%s\n' "${REPORT_INTERVAL}"
   printf 'AGENT_HEALTHCHECK_URLS=%s\n' "${HEALTHCHECK_URLS}"
   if [[ ! -f "${IDENTITY_FILE}" ]]; then

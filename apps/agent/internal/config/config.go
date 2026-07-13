@@ -9,6 +9,7 @@ import (
 type Config struct {
 	ControlPlaneURL   string
 	AgentName         string
+	MachineID         string
 	RegistrationToken string
 	CredentialFile    string
 	ReportInterval    time.Duration
@@ -20,6 +21,7 @@ func Load() Config {
 	return Config{
 		ControlPlaneURL:   valueOrDefault("CONTROL_PLANE_URL", "http://localhost:8000"),
 		AgentName:         valueOrDefault("AGENT_NAME", "VPS Agent"),
+		MachineID:         os.Getenv("AGENT_MACHINE_ID"),
 		RegistrationToken: os.Getenv("AGENT_REGISTRATION_TOKEN"),
 		CredentialFile:    valueOrDefault("AGENT_CREDENTIAL_FILE", "/var/lib/vps-agent/identity.json"),
 		ReportInterval:    interval,

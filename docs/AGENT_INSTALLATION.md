@@ -86,9 +86,12 @@ sudo bash install-agent.sh \
 - `/usr/local/bin/vps-agent`
 - `/etc/vps-agent/agent.env`
 - `/var/lib/vps-agent/identity.json`
+- `/var/lib/vps-agent/machine-id`
 - `/etc/systemd/system/vps-agent.service`
 
 注册成功后，一次性令牌会从配置文件删除，后续重启和升级使用已保存的独立 Agent 身份。
+
+`machine-id` 由安装器为每次全新安装随机生成，仅用于控制平面识别 Agent。不要复制到其他 VPS；安装器不会修改操作系统的 `/etc/machine-id`。
 
 ## 4. 验证
 
