@@ -3,6 +3,7 @@ import { Agent, formatBytes, getAgents } from "@/lib/api";
 import { RegistrationPanel } from "./registration-panel";
 
 export const dynamic = "force-dynamic";
+const consoleVersion = "0.2.4";
 
 function Metric({ label, value }: { label: string; value: string }) {
   return <div className="metric"><span>{label}</span><strong>{value}</strong></div>;
@@ -43,7 +44,7 @@ export default async function Home() {
       {error && <div className="empty error">{error}</div>}
       {!error && agents.length === 0 && <div className="empty"><strong>还没有已注册的 VPS</strong><span>启动带注册令牌的 Agent 后，机器会自动出现在这里。</span></div>}
       <section className="fleet">{agents.map((agent) => <AgentCard key={agent.id} agent={agent} />)}</section>
-      <footer><span>control plane</span> trusted <i /> <span>mode</span> self-hosted</footer>
+      <footer><span>control plane</span> trusted <i /> <span>mode</span> self-hosted <i /> <span>console</span> {consoleVersion}</footer>
     </main>
   );
 }
