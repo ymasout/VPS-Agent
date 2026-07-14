@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -123,3 +124,27 @@ class AgentSummary(BaseModel):
 class AgentDetail(AgentSummary):
     capabilities: list[str]
     services: list[ServiceView]
+
+
+class AlertEventView(BaseModel):
+    id: str
+    agent_id: str
+    source: str
+    service_kind: str | None
+    service_key: str | None
+    title: str
+    severity: str
+    status: str
+    observation_count: int
+    detail: str | None
+    first_observed_at: datetime
+    last_observed_at: datetime
+    firing_at: datetime | None
+    acknowledged_at: datetime | None
+    silenced_until: datetime | None
+    resolved_at: datetime | None
+
+
+class AlertEventAction(BaseModel):
+    action: Literal["acknowledge", "silence"]
+    silence_minutes: int = Field(default=60, ge=1, le=10080)

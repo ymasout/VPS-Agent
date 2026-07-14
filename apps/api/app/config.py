@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     dev_agent_registration_token: str | None = None
     agent_offline_after_seconds: int = 90
     agent_release_repository: str = "ymasout/VPS-Agent"
+    alert_pending_observations: int = 2
+    dingtalk_webhook_url: str | None = None
+    dingtalk_secret: str | None = None
+    console_public_url: str = "http://localhost:3000"
+    notification_timeout_seconds: float = 5.0
+    notification_sending_stale_seconds: int = 120
     skip_database_init: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

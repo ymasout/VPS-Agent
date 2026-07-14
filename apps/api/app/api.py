@@ -1,18 +1,22 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .alerts import evaluate_service_alerts
 from .config import Settings, get_settings
 from .database import get_session
-from .models import Agent, MetricSnapshot, RegistrationToken, ServiceStatus
+from .models import Agent, AlertEvent, MetricSnapshot, RegistrationToken, ServiceStatus
+from .notifications import deliver_pending_notifications
 from .schemas import (
     AgentDetail,
     AgentRegister,
     AgentRegistered,
     AgentReport,
     AgentSummary,
+    AlertEventAction,
+    AlertEventView,
     MetricView,
     RegistrationTokenCreate,
     RegistrationTokenCreated,
@@ -131,14 +135,23 @@ async def register_agent(
 @router.post("/agents/report", response_model=ReportReceipt)
 async def report_agent(
     payload: AgentReport,
+    background_tasks: BackgroundTasks,
     agent: Agent = Depends(current_agent),
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> ReportReceipt:
     received_at = now_utc()
     agent.hostname = payload.hostname
     agent.version = payload.version
     agent.capabilities = payload.capabilities
     agent.last_seen_at = received_at
+    await evaluate_service_alerts(
+        session,
+        agent,
+        payload,
+        received_at,
+        settings.alert_pending_observations,
+    )
     session.add(
         MetricSnapshot(
             agent_id=agent.id,
@@ -167,6 +180,8 @@ async def report_agent(
         ]
     )
     await session.commit()
+    if settings.dingtalk_webhook_url:
+        background_tasks.add_task(deliver_pending_notifications, settings)
     return ReportReceipt(received_at=received_at)
 
 
@@ -274,4 +289,87 @@ async def get_agent(
             )
             for item in services
         ],
+    )
+
+
+@router.get("/events", response_model=list[AlertEventView])
+async def list_events(
+    event_status: str | None = Query(
+        default=None,
+        alias="status",
+        pattern="^(pending|firing|acknowledged|silenced|resolved)$",
+    ),
+    session: AsyncSession = Depends(get_session),
+) -> list[AlertEventView]:
+    query = select(AlertEvent).order_by(AlertEvent.last_observed_at.desc()).limit(200)
+    if event_status:
+        query = query.where(AlertEvent.status == event_status)
+    events = (await session.scalars(query)).all()
+    return [
+        AlertEventView(
+            id=event.id,
+            agent_id=event.agent_id,
+            source=event.source,
+            service_kind=event.service_kind,
+            service_key=event.service_key,
+            title=event.title,
+            severity=event.severity,
+            status=event.status,
+            observation_count=event.observation_count,
+            detail=event.detail,
+            first_observed_at=event.first_observed_at,
+            last_observed_at=event.last_observed_at,
+            firing_at=event.firing_at,
+            acknowledged_at=event.acknowledged_at,
+            silenced_until=event.silenced_until,
+            resolved_at=event.resolved_at,
+        )
+        for event in events
+    ]
+
+
+@router.post(
+    "/events/{event_id}/actions",
+    response_model=AlertEventView,
+    dependencies=[Depends(require_admin)],
+)
+async def act_on_event(
+    event_id: str,
+    payload: AlertEventAction,
+    session: AsyncSession = Depends(get_session),
+) -> AlertEventView:
+    event = await session.get(AlertEvent, event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="event not found")
+    if event.status == "resolved":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="resolved event cannot be acknowledged or silenced",
+        )
+    current_time = now_utc()
+    if payload.action == "acknowledge":
+        event.status = "acknowledged"
+        event.acknowledged_at = current_time
+        event.silenced_until = None
+    else:
+        event.status = "silenced"
+        event.silenced_until = current_time + timedelta(minutes=payload.silence_minutes)
+    await session.commit()
+    return AlertEventView(
+        id=event.id,
+        agent_id=event.agent_id,
+        source=event.source,
+        service_kind=event.service_kind,
+        service_key=event.service_key,
+        title=event.title,
+        severity=event.severity,
+        status=event.status,
+        observation_count=event.observation_count,
+        detail=event.detail,
+        first_observed_at=event.first_observed_at,
+        last_observed_at=event.last_observed_at,
+        firing_at=event.firing_at,
+        acknowledged_at=event.acknowledged_at,
+        silenced_until=event.silenced_until,
+        resolved_at=event.resolved_at,
     )
