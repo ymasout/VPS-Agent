@@ -146,8 +146,12 @@ func dockerServices(ctx context.Context) []client.Service {
 	if err != nil {
 		return nil
 	}
+	return parseDockerServices(string(out))
+}
+
+func parseDockerServices(output string) []client.Service {
 	var result []client.Service
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
 		parts := strings.SplitN(line, "|", 4)
 		if len(parts) == 4 {
 			healthy := parts[2] == "running"

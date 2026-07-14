@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSameOrigin, validAgentName } from "./registration";
+import { buildInstallCommand, isSameOrigin, shellQuote, validAgentName } from "./registration";
 
 describe("registration token request protection", () => {
   it("accepts only the expected origin", () => {
@@ -12,5 +12,14 @@ describe("registration token request protection", () => {
     expect(validAgentName("dmit-vps")).toBe(true);
     expect(validAgentName(" ")).toBe(false);
     expect(validAgentName("bad\nname")).toBe(false);
+  });
+
+  it("builds a shell-safe install command without embedding the registration token", () => {
+    expect(shellQuote("owner's vps")).toBe(`'owner'"'"'s vps'`);
+    const command = buildInstallCommand("https://ops.example.com/", "owner's vps");
+
+    expect(command).toContain("https://ops.example.com/agent-downloads/latest/install-agent.sh");
+    expect(command).toContain(`--name 'owner'"'"'s vps'`);
+    expect(command).not.toContain("reg_");
   });
 });

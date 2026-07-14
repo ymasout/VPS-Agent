@@ -2,6 +2,8 @@
 
 本文档记录 AI VPS 运维控制台当前有效的架构基线。产品愿景以根目录项目计划书为准，实际进度见 [PROJECT_STATUS.md](./PROJECT_STATUS.md)，里程碑范围见 [ROADMAP.md](./ROADMAP.md)。
 
+Web 控制台的信息架构、运维总览和 Agent 上下文对话方向见 [WEB_UI_PLAN.md](./WEB_UI_PLAN.md)。
+
 ## 1. 产品与部署边界
 
 - 产品形态：自托管、单实例、面向个人和小团队的 Web/PWA 运维控制台。
@@ -28,7 +30,10 @@ compose.yaml        本地完整开发环境
 
 ### Web 控制台
 
-- 展示 Fleet 总览、VPS 详情、服务状态、事件和后续审批界面。
+- 登录后的首页逐步演进为运维总览，集中展示 Fleet 健康、重点异常、资源风险、最近活动和 Agent 建议；机器列表同时保留独立入口。
+- 展示 VPS 详情、服务状态、事件、仓库、操作和后续审批界面。
+- Agent 同时提供跨 Fleet 的全局对话和机器、服务、事件、仓库页面中的上下文对话抽屉。
+- SSH/终端属于具体机器的后期人工兜底能力，不作为默认顶级导航。
 - 只调用控制平面 API，不直接连接 Agent 或 VPS。
 - 当前使用 Next.js App Router 和 TypeScript。
 

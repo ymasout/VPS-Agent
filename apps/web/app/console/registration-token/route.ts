@@ -25,12 +25,17 @@ export async function POST(request: NextRequest) {
   }
 
   const apiURL = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
-  const response = await fetch(`${apiURL}/api/v1/registration-tokens`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-admin-token": adminToken },
-    body: JSON.stringify({ name: name.trim(), expires_in_minutes: 30 }),
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${apiURL}/api/v1/registration-tokens`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-admin-token": adminToken },
+      body: JSON.stringify({ name: name.trim(), expires_in_minutes: 30 }),
+      cache: "no-store",
+    });
+  } catch {
+    return NextResponse.json({ detail: "control plane is unavailable" }, { status: 502 });
+  }
   if (!response.ok) {
     return NextResponse.json({ detail: "control plane rejected the request" }, { status: response.status });
   }

@@ -90,9 +90,15 @@ func loadIdentity(path string) (client.Identity, error) {
 	if err = json.Unmarshal(data, &identity); err != nil {
 		return identity, err
 	}
+	if identity.AgentID == "" || identity.Credential == "" {
+		return client.Identity{}, errors.New("agent identity is incomplete")
+	}
 	return identity, nil
 }
 func saveIdentity(path string, identity client.Identity) error {
+	if identity.AgentID == "" || identity.Credential == "" {
+		return errors.New("agent identity is incomplete")
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}

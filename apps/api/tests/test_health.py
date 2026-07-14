@@ -1,7 +1,3 @@
-import os
-
-os.environ["SKIP_DATABASE_INIT"] = "true"
-
 from fastapi.testclient import TestClient
 
 from app.main import app

@@ -85,3 +85,26 @@ def test_online_machine_cannot_be_rebound() -> None:
     assert error.value.status_code == 409
     assert "already online" in error.value.detail
     assert token.used_at is None
+
+
+@pytest.mark.parametrize("token_state", ["missing", "used", "expired"])
+def test_invalid_registration_token_is_rejected_without_commit(token_state: str) -> None:
+    token = valid_token()
+    if token_state == "missing":
+        first_result = None
+    else:
+        if token_state == "used":
+            token.used_at = datetime.now(timezone.utc)
+        if token_state == "expired":
+            token.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        first_result = token
+    session = AsyncMock()
+    session.scalar.return_value = first_result
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            register_agent(registration_payload(), session, Settings(skip_database_init=True))
+        )
+
+    assert error.value.status_code == 401
+    session.commit.assert_not_awaited()

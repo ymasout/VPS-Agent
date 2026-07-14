@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Agent, formatBytes, getAgents } from "@/lib/api";
+import { summarizeFleet } from "@/lib/fleet";
 import { RegistrationPanel } from "./registration-panel";
 
 export const dynamic = "force-dynamic";
@@ -32,13 +33,13 @@ export default async function Home() {
   let agents: Agent[] = [];
   let error = "";
   try { agents = await getAgents(); } catch { error = "控制平面暂时不可用，请检查 API 服务。"; }
-  const online = agents.filter((agent) => agent.online).length;
+  const fleet = summarizeFleet(agents);
   return (
     <main>
       <section className="hero compact">
         <div className="eyebrow"><span /> M1 · FLEET</div>
         <h1>机器<span>可见</span></h1>
-        <p>{agents.length} 台 VPS · {online} 台在线 · organization: local</p>
+        <p>{fleet.total} 台 VPS · {fleet.online} 台在线 · organization: local</p>
       </section>
       <RegistrationPanel />
       {error && <div className="empty error">{error}</div>}

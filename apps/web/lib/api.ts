@@ -14,4 +14,10 @@ async function request<T>(path: string): Promise<T> {
 
 export const getAgents = () => request<Agent[]>("/api/v1/agents");
 export const getAgent = (id: string) => request<AgentDetail>(`/api/v1/agents/${id}`);
-export const formatBytes = (value: number) => value < 1 ? "0 B" : `${(value / 1024 ** 3).toFixed(1)} GB`;
+export function formatBytes(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const unit = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+  const amount = value / 1024 ** unit;
+  return `${unit === 0 ? amount.toFixed(0) : amount.toFixed(1)} ${units[unit]}`;
+}

@@ -14,6 +14,8 @@ install:
 	python -m pip install -r apps/api/requirements-dev.txt
 check: web-test api-test agent-test
 	pnpm lint:web
+	python -m ruff check apps/api
+	cd apps/agent && go vet ./...
 	pnpm build:web
 test: web-test api-test agent-test
 web-test:
@@ -22,4 +24,3 @@ api-test:
 	python -m pytest apps/api/tests
 agent-test:
 	cd apps/agent && go test ./...
-

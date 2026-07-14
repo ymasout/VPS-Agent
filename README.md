@@ -17,6 +17,7 @@ docs/        架构与开发约定
 - [系统架构](docs/ARCHITECTURE.md)
 - [项目状态](docs/PROJECT_STATUS.md)
 - [实际开发路线图](docs/ROADMAP.md)
+- [Web UI 初步规划](docs/WEB_UI_PLAN.md)
 - [Agent 发布、安装与升级](docs/AGENT_INSTALLATION.md)
 - [开发命令速查](开发命令速查.md)
 

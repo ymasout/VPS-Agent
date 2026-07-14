@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class RegistrationTokenCreate(BaseModel):
@@ -35,6 +35,12 @@ class DiskMetric(BaseModel):
     total_bytes: float = Field(ge=0)
     used_percent: float = Field(ge=0, le=100)
 
+    @model_validator(mode="after")
+    def validate_usage(self) -> "DiskMetric":
+        if self.used_bytes > self.total_bytes:
+            raise ValueError("disk used bytes cannot exceed total bytes")
+        return self
+
 
 class Metrics(BaseModel):
     cpu_percent: float = Field(ge=0, le=100)
@@ -42,6 +48,12 @@ class Metrics(BaseModel):
     memory_used_bytes: float = Field(ge=0)
     memory_total_bytes: float = Field(ge=0)
     disks: list[DiskMetric] = Field(default_factory=list, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_usage(self) -> "Metrics":
+        if self.memory_used_bytes > self.memory_total_bytes:
+            raise ValueError("memory used bytes cannot exceed total bytes")
+        return self
 
 
 class ServiceReport(BaseModel):
@@ -60,6 +72,13 @@ class AgentReport(BaseModel):
     collected_at: datetime
     metrics: Metrics
     services: list[ServiceReport] = Field(default_factory=list, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_unique_services(self) -> "AgentReport":
+        identities = [(service.kind, service.key) for service in self.services]
+        if len(identities) != len(set(identities)):
+            raise ValueError("service kind and key must be unique within a report")
+        return self
 
 
 class ReportReceipt(BaseModel):

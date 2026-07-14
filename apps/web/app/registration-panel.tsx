@@ -1,12 +1,9 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { buildInstallCommand } from "../lib/registration";
 
-type CreatedToken = { token: string; expires_at: string };
-
-function shellQuote(value: string) {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
-}
+type CreatedToken = { token: string; expires_at: string; name: string };
 
 export function RegistrationPanel() {
   const [name, setName] = useState("");
@@ -16,8 +13,7 @@ export function RegistrationPanel() {
   const [copied, setCopied] = useState("");
 
   const controlPlaneURL = typeof window === "undefined" ? "" : window.location.origin;
-  const downloadBaseURL = `${controlPlaneURL}/agent-downloads`;
-  const installCommand = `curl -fsSL --proto '=https' --tlsv1.2 ${downloadBaseURL}/latest/install-agent.sh | bash -s -- --url ${controlPlaneURL} --download-base-url ${downloadBaseURL} --name ${shellQuote(name.trim() || "my-vps")}`;
+  const installCommand = buildInstallCommand(controlPlaneURL, created?.name ?? (name.trim() || "my-vps"));
 
   async function createToken(event: FormEvent) {
     event.preventDefault();
@@ -33,7 +29,7 @@ export function RegistrationPanel() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail ?? "生成失败");
-      setCreated(payload as CreatedToken);
+      setCreated({ ...(payload as Omit<CreatedToken, "name">), name: name.trim() });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "生成失败");
     } finally {
@@ -60,13 +56,13 @@ export function RegistrationPanel() {
           <button type="submit" disabled={loading || !name.trim()}>{loading ? "生成中…" : "生成令牌"}</button>
         </div>
       </form>
-      {error && <div className="registration-error">{error}</div>}
+      {error && <div className="registration-error" role="alert">{error}</div>}
       {created && (
-        <div className="token-result">
+        <div className="token-result" aria-live="polite">
           <div><span>一次性注册令牌</span><small>有效期至 {new Date(created.expires_at).toLocaleString("zh-CN")}</small></div>
           <code>{created.token}</code>
           <button type="button" onClick={() => copy(created.token, "token")}>{copied === "token" ? "已复制" : "复制令牌"}</button>
-          <p>在目标 VPS 执行下面的命令，出现 Registration token 提示后粘贴令牌：</p>
+          <p>先在目标 VPS 执行安装命令；终端出现 Registration token 提示后，再复制并粘贴上方令牌。令牌不会写入命令或 Shell 历史。</p>
           <pre>{installCommand}</pre>
           <button type="button" onClick={() => copy(installCommand, "command")}>{copied === "command" ? "已复制" : "复制安装命令"}</button>
         </div>

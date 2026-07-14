@@ -42,4 +42,36 @@ describe("registration token route", () => {
     expect((await POST(request)).status).toBe(403);
     expect(internalFetch).not.toHaveBeenCalled();
   });
+
+  it("rejects invalid JSON and missing configuration", async () => {
+    const invalidRequest = new NextRequest("https://ops.example.com/console/registration-token", {
+      method: "POST",
+      headers: { "content-type": "application/json", host: "ops.example.com", origin: "https://ops.example.com" },
+      body: "not-json",
+    });
+    expect((await POST(invalidRequest)).status).toBe(503);
+
+    process.env.ADMIN_API_TOKEN = "server-secret";
+    const configuredRequest = new NextRequest("https://ops.example.com/console/registration-token", {
+      method: "POST",
+      headers: { "content-type": "application/json", host: "ops.example.com", origin: "https://ops.example.com" },
+      body: "not-json",
+    });
+    expect((await POST(configuredRequest)).status).toBe(400);
+  });
+
+  it("returns a controlled error when the API is unavailable", async () => {
+    process.env.ADMIN_API_TOKEN = "server-secret";
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("connection refused")));
+    const request = new NextRequest("https://ops.example.com/console/registration-token", {
+      method: "POST",
+      headers: { "content-type": "application/json", host: "ops.example.com", origin: "https://ops.example.com" },
+      body: JSON.stringify({ name: "dmit-vps" }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ detail: "control plane is unavailable" });
+  });
 });
