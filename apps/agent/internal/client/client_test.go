@@ -97,3 +97,36 @@ func TestRequestHonorsContextCancellation(t *testing.T) {
 		t.Fatalf("expected cancelled request error, got %v", err)
 	}
 }
+
+func TestEvidencePollingAndCompletionUseOutboundAuthenticatedRequests(t *testing.T) {
+	var completed EvidenceResult
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer agt_secret" {
+			t.Fatalf("missing agent credential: %q", r.Header.Get("Authorization"))
+		}
+		switch r.URL.Path {
+		case "/api/v1/agents/evidence-requests/next":
+			_, _ = w.Write([]byte(`{"request":{"id":"request-1","source_key":"api-logs","since_at":"2026-07-17T00:00:00Z","until_at":"2026-07-17T00:05:00Z","max_lines":100,"max_bytes":4096,"timeout_seconds":5}}`))
+		case "/api/v1/agents/evidence-requests/request-1/complete":
+			if err := json.NewDecoder(r.Body).Decode(&completed); err != nil {
+				t.Fatal(err)
+			}
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	api := New(server.URL)
+	claim, err := api.ClaimEvidence(context.Background(), "agt_secret")
+	if err != nil || claim.Request == nil || claim.Request.SourceKey != "api-logs" {
+		t.Fatalf("unexpected claim: %#v err=%v", claim, err)
+	}
+	want := EvidenceResult{Status: "completed", Content: "bounded", CollectedAt: time.Now().UTC(), Redacted: true}
+	if err = api.CompleteEvidence(context.Background(), "agt_secret", claim.Request.ID, want); err != nil {
+		t.Fatal(err)
+	}
+	if completed.Content != "bounded" || !completed.Redacted {
+		t.Fatalf("unexpected completion: %#v", completed)
+	}
+}

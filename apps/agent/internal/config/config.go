@@ -1,7 +1,9 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -14,7 +16,17 @@ type Config struct {
 	CredentialFile    string
 	ReportInterval    time.Duration
 	HealthcheckURLs   []string
+	EvidenceSources   []EvidenceSource
 }
+
+type EvidenceSource struct {
+	Key         string `json:"key"`
+	Kind        string `json:"kind"`
+	Target      string `json:"target"`
+	DisplayName string `json:"display_name"`
+}
+
+var sourceKeyPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
 func Load() Config {
 	interval := durationOrDefault("AGENT_REPORT_INTERVAL", 30*time.Second)
@@ -26,7 +38,32 @@ func Load() Config {
 		CredentialFile:    valueOrDefault("AGENT_CREDENTIAL_FILE", "/var/lib/vps-agent/identity.json"),
 		ReportInterval:    interval,
 		HealthcheckURLs:   splitList(os.Getenv("AGENT_HEALTHCHECK_URLS")),
+		EvidenceSources:   parseEvidenceSources(os.Getenv("AGENT_EVIDENCE_SOURCES_JSON")),
 	}
+}
+
+func parseEvidenceSources(value string) []EvidenceSource {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	var sources []EvidenceSource
+	if err := json.Unmarshal([]byte(value), &sources); err != nil {
+		return nil
+	}
+	result := make([]EvidenceSource, 0, len(sources))
+	seen := map[string]bool{}
+	for _, source := range sources {
+		if !sourceKeyPattern.MatchString(source.Key) || source.Kind != "docker_logs" ||
+			strings.TrimSpace(source.Target) == "" || seen[source.Key] {
+			continue
+		}
+		if source.DisplayName == "" {
+			source.DisplayName = source.Key
+		}
+		seen[source.Key] = true
+		result = append(result, source)
+	}
+	return result
 }
 
 func splitList(value string) []string {

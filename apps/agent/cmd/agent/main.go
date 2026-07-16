@@ -16,9 +16,9 @@ import (
 	"github.com/example/vps-agent-console/apps/agent/internal/config"
 )
 
-var version = "0.2.4-dev"
+var version = "0.3.0-dev"
 
-var capabilities = []string{"host.metrics", "docker.status", "systemd.status", "http.healthcheck"}
+var capabilities = []string{"host.metrics", "docker.status", "systemd.status", "http.healthcheck", "evidence.docker_logs.v1"}
 
 func main() {
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
@@ -60,12 +60,40 @@ func main() {
 			return
 		}
 		services = append(services, collector.HTTPHealthchecks(ctx, cfg.HealthcheckURLs)...)
-		report := client.Report{Hostname: host.Hostname, Version: version, Capabilities: capabilities, CollectedAt: time.Now().UTC(), Metrics: metrics, Services: services}
+		sources := make([]client.EvidenceSource, 0, len(cfg.EvidenceSources))
+		for _, source := range cfg.EvidenceSources {
+			sources = append(sources, client.EvidenceSource{Key: source.Key, Kind: source.Kind, DisplayName: source.DisplayName})
+		}
+		report := client.Report{Hostname: host.Hostname, Version: version, Capabilities: capabilities, CollectedAt: time.Now().UTC(), Metrics: metrics, Services: services, EvidenceSources: sources}
 		if err = api.SendReport(ctx, identity.Credential, report); err != nil {
 			logger.Error("report failed", "error", err)
 			return
 		}
 		logger.Info("report accepted", "agent_id", identity.AgentID, "services", len(services))
+		claim, claimErr := api.ClaimEvidence(ctx, identity.Credential)
+		if claimErr != nil {
+			logger.Error("evidence request poll failed", "error", claimErr)
+			return
+		}
+		if claim.Request == nil {
+			return
+		}
+		var selected *config.EvidenceSource
+		for index := range cfg.EvidenceSources {
+			if cfg.EvidenceSources[index].Key == claim.Request.SourceKey {
+				selected = &cfg.EvidenceSources[index]
+				break
+			}
+		}
+		result := client.EvidenceResult{Status: "failed", CollectedAt: time.Now().UTC(), Redacted: true, Error: "source is not in local allowlist"}
+		if selected != nil {
+			result = collector.CollectEvidence(ctx, *selected, *claim.Request)
+		}
+		if completeErr := api.CompleteEvidence(ctx, identity.Credential, claim.Request.ID, result); completeErr != nil {
+			logger.Error("evidence result upload failed", "request_id", claim.Request.ID, "error", completeErr)
+			return
+		}
+		logger.Info("evidence request completed", "request_id", claim.Request.ID, "status", result.Status, "truncated", result.Truncated)
 	}
 	send()
 	ticker := time.NewTicker(cfg.ReportInterval)

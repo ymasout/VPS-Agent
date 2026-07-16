@@ -22,6 +22,10 @@ services:
     environment:
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-local-admin-change-me}
       DEV_AGENT_REGISTRATION_TOKEN: ${DEV_AGENT_REGISTRATION_TOKEN:-reg_local_docker_compose_development_only}
+      DIAGNOSTIC_PROVIDER: ${DIAGNOSTIC_PROVIDER:-deterministic}
+      DIAGNOSTIC_API_URL: ${DIAGNOSTIC_API_URL:-}
+      DIAGNOSTIC_API_KEY: ${DIAGNOSTIC_API_KEY:-}
+      DIAGNOSTIC_MODEL: ${DIAGNOSTIC_MODEL:-ops-diagnostic}
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
@@ -45,6 +49,7 @@ services:
       AGENT_REGISTRATION_TOKEN: ${AGENT_REGISTRATION_TOKEN:-reg_local_docker_compose_development_only}
       AGENT_REPORT_INTERVAL: ${AGENT_REPORT_INTERVAL:-30s}
       AGENT_HEALTHCHECK_URLS: http://api:8000/healthz
+      AGENT_EVIDENCE_SOURCES_JSON: ${AGENT_EVIDENCE_SOURCES_JSON:-[]}
       AGENT_CREDENTIAL_FILE: /var/lib/vps-agent/identity.json
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:

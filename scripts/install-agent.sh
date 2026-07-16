@@ -76,10 +76,11 @@ CONTROL_PLANE_URL="${CONTROL_PLANE_URL:-$(existing_value CONTROL_PLANE_URL)}"
 AGENT_NAME="${AGENT_NAME:-$(existing_value AGENT_NAME)}"
 HEALTHCHECK_URLS="${HEALTHCHECK_URLS:-$(existing_value AGENT_HEALTHCHECK_URLS)}"
 REPORT_INTERVAL="${REPORT_INTERVAL:-$(existing_value AGENT_REPORT_INTERVAL)}"
+EVIDENCE_SOURCES_JSON="${AGENT_EVIDENCE_SOURCES_JSON:-$(existing_value AGENT_EVIDENCE_SOURCES_JSON)}"
 AGENT_NAME="${AGENT_NAME:-$(hostname 2>/dev/null || printf 'VPS Agent')}"
 REPORT_INTERVAL="${REPORT_INTERVAL:-30s}"
 
-for value in "${CONTROL_PLANE_URL}" "${AGENT_NAME}" "${HEALTHCHECK_URLS}" "${REPORT_INTERVAL}"; do
+for value in "${CONTROL_PLANE_URL}" "${AGENT_NAME}" "${HEALTHCHECK_URLS}" "${REPORT_INTERVAL}" "${EVIDENCE_SOURCES_JSON}"; do
   [[ "${value}" != *$'\n'* && "${value}" != *$'\r'* ]] || fail "configuration values cannot contain newlines"
 done
 [[ "${CONTROL_PLANE_URL}" =~ ^https:// ]] || fail "--url must use HTTPS"
@@ -143,6 +144,7 @@ umask 077
   fi
   printf 'AGENT_REPORT_INTERVAL=%s\n' "${REPORT_INTERVAL}"
   printf 'AGENT_HEALTHCHECK_URLS=%s\n' "${HEALTHCHECK_URLS}"
+  printf 'AGENT_EVIDENCE_SOURCES_JSON=%s\n' "${EVIDENCE_SOURCES_JSON:-[]}"
   if [[ ! -f "${IDENTITY_FILE}" ]]; then
     printf 'AGENT_REGISTRATION_TOKEN=%s\n' "${REGISTRATION_TOKEN}"
   fi

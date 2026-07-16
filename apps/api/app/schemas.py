@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class RegistrationTokenCreate(BaseModel):
@@ -66,6 +66,12 @@ class ServiceReport(BaseModel):
     healthy: bool | None = None
 
 
+class EvidenceSourceReport(BaseModel):
+    key: str = Field(min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9._-]+$")
+    kind: Literal["docker_logs"]
+    display_name: str = Field(min_length=1, max_length=255)
+
+
 class AgentReport(BaseModel):
     hostname: str = Field(min_length=1, max_length=255)
     version: str = Field(min_length=1, max_length=64)
@@ -73,12 +79,16 @@ class AgentReport(BaseModel):
     collected_at: datetime
     metrics: Metrics
     services: list[ServiceReport] = Field(default_factory=list, max_length=2000)
+    evidence_sources: list[EvidenceSourceReport] = Field(default_factory=list, max_length=128)
 
     @model_validator(mode="after")
     def validate_unique_services(self) -> "AgentReport":
         identities = [(service.kind, service.key) for service in self.services]
         if len(identities) != len(set(identities)):
             raise ValueError("service kind and key must be unique within a report")
+        source_keys = [source.key for source in self.evidence_sources]
+        if len(source_keys) != len(set(source_keys)):
+            raise ValueError("evidence source keys must be unique within a report")
         return self
 
 
@@ -148,3 +158,127 @@ class AlertEventView(BaseModel):
 class AlertEventAction(BaseModel):
     action: Literal["acknowledge", "silence"]
     silence_minutes: int = Field(default=60, ge=1, le=10080)
+
+
+class ServiceMappingCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    environment: str = Field(default="production", min_length=1, max_length=64)
+    description: str | None = Field(default=None, max_length=512)
+    agent_id: str = Field(min_length=1, max_length=36)
+    service_kind: Literal["docker", "systemd", "http"]
+    service_key: str = Field(min_length=1, max_length=255)
+    deployment_directory: str | None = Field(default=None, max_length=512)
+    log_source_key: str = Field(min_length=1, max_length=128)
+    repository_full_name: str | None = Field(
+        default=None, max_length=255, pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    )
+    default_branch: str = Field(default="main", min_length=1, max_length=255)
+    commit_sha: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{7,64}$")
+    image_digest: str | None = Field(default=None, max_length=255)
+
+    @field_validator("deployment_directory")
+    @classmethod
+    def validate_deployment_directory(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parts = value.split("/")
+        if not value.startswith("/") or any(part in {".", ".."} for part in parts):
+            raise ValueError("deployment directory must be an absolute normalized Linux path")
+        return value
+
+
+class ServiceMappingView(BaseModel):
+    service_id: str
+    instance_id: str
+    name: str
+    environment: str
+    agent_id: str
+    service_kind: str
+    service_key: str
+    deployment_directory: str | None
+    log_source_key: str
+    repository_full_name: str | None
+    commit_sha: str | None
+    image_digest: str | None
+
+
+class EvidenceRequestWork(BaseModel):
+    id: str
+    source_key: str
+    since_at: datetime
+    until_at: datetime
+    max_lines: int
+    max_bytes: int
+    timeout_seconds: int
+
+
+class EvidenceRequestClaim(BaseModel):
+    request: EvidenceRequestWork | None = None
+
+
+class EvidenceRequestComplete(BaseModel):
+    status: Literal["completed", "failed"]
+    content: str = Field(default="", max_length=131072)
+    collected_at: datetime
+    redacted: bool = True
+    truncated: bool = False
+    error: str | None = Field(default=None, max_length=512)
+
+
+class EvidenceRequestReceipt(BaseModel):
+    status: str = "accepted"
+    diagnostic_id: str
+    diagnostic_status: str
+
+
+class DiagnosticFact(BaseModel):
+    statement: str = Field(min_length=1, max_length=1000)
+    evidence_ids: list[str] = Field(min_length=1, max_length=16)
+
+
+class DiagnosticInference(BaseModel):
+    statement: str = Field(min_length=1, max_length=1000)
+    confidence: Literal["low", "medium", "high"]
+    evidence_ids: list[str] = Field(min_length=1, max_length=16)
+
+
+class DiagnosticRecommendation(BaseModel):
+    action: str = Field(min_length=1, max_length=1000)
+    risk: Literal["low", "medium", "high"]
+    requires_confirmation: bool = True
+    prerequisites: list[str] = Field(default_factory=list, max_length=16)
+
+
+class DiagnosticResult(BaseModel):
+    summary: str = Field(min_length=1, max_length=2000)
+    facts: list[DiagnosticFact] = Field(default_factory=list, max_length=64)
+    inferences: list[DiagnosticInference] = Field(default_factory=list, max_length=64)
+    recommendations: list[DiagnosticRecommendation] = Field(default_factory=list, max_length=64)
+    missing_evidence: list[str] = Field(default_factory=list, max_length=64)
+
+
+class EvidenceView(BaseModel):
+    id: str
+    evidence_type: str
+    source_label: str
+    content: str
+    redacted: bool
+    truncated: bool
+    collected_at: datetime
+    source_metadata: dict
+
+
+class DiagnosticView(BaseModel):
+    id: str
+    event_id: str
+    instance_id: str | None
+    status: str
+    trigger: str
+    provider: str
+    result: DiagnosticResult | None
+    error_code: str | None
+    error_detail: str | None
+    evidence: list[EvidenceView] = Field(default_factory=list)
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None

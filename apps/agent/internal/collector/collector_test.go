@@ -4,7 +4,12 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/example/vps-agent-console/apps/agent/internal/client"
+	"github.com/example/vps-agent-console/apps/agent/internal/config"
 )
 
 func TestParseSystemdServicesUsesActiveState(t *testing.T) {
@@ -98,4 +103,47 @@ func TestHTTPHealthchecksHonorsCancelledContext(t *testing.T) {
 	if len(services) != 1 || services[0].Healthy == nil || *services[0].Healthy {
 		t.Fatalf("cancelled request should be unhealthy: %#v", services)
 	}
+}
+
+func TestEvidenceRedactionMasksSecretsBeforeUpload(t *testing.T) {
+	value := "Authorization: Bearer live-token password=secret-value"
+	redacted := redactEvidence(value)
+
+	if redacted == value || containsAny(redacted, "live-token", "secret-value") || !strings.Contains(redacted, "[REDACTED]") {
+		t.Fatalf("secret was not redacted: %q", redacted)
+	}
+}
+
+func TestDockerLogArgsSeparateTargetFromOptions(t *testing.T) {
+	request := client.EvidenceRequest{
+		SinceAt: time.Date(2026, 7, 17, 0, 0, 0, 0, time.UTC),
+		UntilAt: time.Date(2026, 7, 17, 0, 5, 0, 0, time.UTC),
+	}
+	args := dockerLogArgs(
+		config.EvidenceSource{Kind: "docker_logs", Target: "--malicious-looking-target"},
+		request,
+		200,
+	)
+
+	if len(args) < 2 || args[len(args)-2] != "--" || args[len(args)-1] != "--malicious-looking-target" {
+		t.Fatalf("target is not separated from options: %#v", args)
+	}
+}
+
+func TestBoundedEvidenceBufferDiscardsExcessBytes(t *testing.T) {
+	buffer := &boundedBuffer{limit: 5}
+	written, err := buffer.Write([]byte("123456789"))
+
+	if err != nil || written != 9 || buffer.String() != "12345" || !buffer.truncated {
+		t.Fatalf("unexpected bounded buffer: written=%d value=%q truncated=%v err=%v", written, buffer.String(), buffer.truncated, err)
+	}
+}
+
+func containsAny(value string, needles ...string) bool {
+	for _, needle := range needles {
+		if strings.Contains(value, needle) {
+			return true
+		}
+	}
+	return false
 }

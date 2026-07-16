@@ -64,3 +64,25 @@ func TestLoadRejectsInvalidAndNonPositiveIntervals(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadParsesOnlyValidEvidenceAllowlistEntries(t *testing.T) {
+	t.Setenv("AGENT_EVIDENCE_SOURCES_JSON", `[
+		{"key":"api-logs","kind":"docker_logs","target":"api","display_name":"API logs"},
+		{"key":"api-logs","kind":"docker_logs","target":"duplicate"},
+		{"key":"bad key","kind":"docker_logs","target":"bad"},
+		{"key":"shell","kind":"shell","target":"whoami"}
+	]`)
+
+	sources := Load().EvidenceSources
+
+	if len(sources) != 1 || sources[0].Key != "api-logs" || sources[0].Target != "api" {
+		t.Fatalf("unexpected evidence sources: %#v", sources)
+	}
+}
+
+func TestLoadRejectsMalformedEvidenceAllowlist(t *testing.T) {
+	t.Setenv("AGENT_EVIDENCE_SOURCES_JSON", `not-json`)
+	if sources := Load().EvidenceSources; len(sources) != 0 {
+		t.Fatalf("malformed allowlist should be empty: %#v", sources)
+	}
+}

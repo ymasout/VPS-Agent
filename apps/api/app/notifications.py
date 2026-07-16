@@ -56,7 +56,7 @@ def dingtalk_payload(
     detail = escape_markdown((event.detail or "无额外详情")[:300])
     title = escape_markdown(event.title)
     service = escape_markdown(f"{event.service_kind or 'service'} / {event.service_key or '-'}")
-    event_url = f"{console_public_url.rstrip('/')}/servers/{event.agent_id}"
+    event_url = f"{console_public_url.rstrip('/')}/events/{event.id}"
     text = "\n\n".join(
         [
             f"### {heading}",
@@ -64,7 +64,7 @@ def dingtalk_payload(
             f"- **状态**：{status}",
             f"- **服务**：{service}",
             f"- **详情**：{detail}",
-            f"- [查看机器详情]({event_url})",
+            f"- [查看事件与诊断]({event_url})",
         ]
     )
     return {

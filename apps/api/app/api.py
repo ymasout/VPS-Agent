@@ -7,7 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .alerts import evaluate_service_alerts
 from .config import Settings, get_settings
 from .database import get_session
-from .models import Agent, AlertEvent, MetricSnapshot, RegistrationToken, ServiceStatus
+from .models import (
+    Agent,
+    AgentEvidenceSource,
+    AlertEvent,
+    MetricSnapshot,
+    RegistrationToken,
+    ServiceStatus,
+)
 from .notifications import deliver_pending_notifications
 from .schemas import (
     AgentDetail,
@@ -164,6 +171,9 @@ async def report_agent(
         )
     )
     await session.execute(delete(ServiceStatus).where(ServiceStatus.agent_id == agent.id))
+    await session.execute(
+        delete(AgentEvidenceSource).where(AgentEvidenceSource.agent_id == agent.id)
+    )
     session.add_all(
         [
             ServiceStatus(
@@ -177,6 +187,18 @@ async def report_agent(
                 observed_at=payload.collected_at,
             )
             for item in payload.services
+        ]
+    )
+    session.add_all(
+        [
+            AgentEvidenceSource(
+                agent_id=agent.id,
+                source_key=item.key,
+                kind=item.kind,
+                display_name=item.display_name,
+                observed_at=payload.collected_at,
+            )
+            for item in payload.evidence_sources
         ]
     )
     await session.commit()

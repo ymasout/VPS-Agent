@@ -9,6 +9,7 @@ from .api import router
 from .config import get_settings
 from .database import engine, session_factory
 from .logging import configure_logging
+from .m3 import router as m3_router
 from .models import Base, RegistrationToken
 from .releases import router as releases_router
 from .security import hash_token
@@ -48,7 +49,7 @@ async def lifespan(_: FastAPI):
     await logger.ainfo("api.stopped")
 
 
-app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.3.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -57,6 +58,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
+app.include_router(m3_router)
 app.include_router(releases_router)
 
 

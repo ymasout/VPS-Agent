@@ -2,8 +2,11 @@
 	encode zstd gzip
 
 	# Agent 只通过自身的一次性注册令牌或 Bearer 凭证认证。
-	@agent_api path /api/v1/agents/register /api/v1/agents/report /agent-downloads/* /healthz
+	@agent_api path /api/v1/agents/register /api/v1/agents/report /api/v1/agents/evidence-requests/* /agent-downloads/* /healthz
 	handle @agent_api {
+		request_body {
+			max_size 1MB
+		}
 		reverse_proxy api:8000
 	}
 

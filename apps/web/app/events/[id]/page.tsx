@@ -1,0 +1,45 @@
+import Link from "next/link";
+import { getEvent, getEventDiagnostics } from "@/lib/api";
+import { notFound } from "next/navigation";
+import { DiagnosticTrigger } from "./diagnostic-trigger";
+
+export const dynamic = "force-dynamic";
+
+export default async function EventPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  let event;
+  let diagnostics;
+  try {
+    [event, diagnostics] = await Promise.all([getEvent(id), getEventDiagnostics(id)]);
+  } catch {
+    notFound();
+  }
+  const active = diagnostics.some((item) => item.status === "pending" || item.status === "running");
+
+  return <main>
+    <Link className="back" href="/">← 总览</Link>
+    <section className="hero compact detail-head event-head">
+      <div className={`status ${event.status === "resolved" ? "" : "offline"}`}><span /> {event.status}</div>
+      <h1>{event.title}</h1>
+      <p>{event.service_kind ?? event.source} · {event.service_key ?? event.agent_id} · 观测 {event.observation_count} 次</p>
+      <DiagnosticTrigger eventId={event.id} disabled={active} />
+    </section>
+
+    {diagnostics.length === 0 && <div className="empty"><strong>尚无诊断</strong><span>发起后，Agent 只会读取本地白名单中的有限日志窗口。</span></div>}
+    {diagnostics.map((diagnostic) => <section className="diagnostic" key={diagnostic.id}>
+      <div className="diagnostic-meta"><span>{diagnostic.status}</span><span>{diagnostic.provider}</span><time>{new Date(diagnostic.created_at).toLocaleString("zh-CN")}</time></div>
+      {diagnostic.error_detail && <div className="empty error">{diagnostic.error_code} · {diagnostic.error_detail}</div>}
+      {!diagnostic.result && <div className="empty"><strong>证据采集中</strong><span>等待 Agent 领取只读请求并回传有界结果。</span></div>}
+      {diagnostic.result && <>
+        <h2>{diagnostic.result.summary}</h2>
+        <div className="diagnostic-grid">
+          <article><h3>事实</h3>{diagnostic.result.facts.map((item, index) => <div key={index}><p>{item.statement}</p><small>{item.evidence_ids.join(" · ")}</small></div>)}</article>
+          <article><h3>推断</h3>{diagnostic.result.inferences.length === 0 ? <p className="muted">当前没有足够证据形成推断。</p> : diagnostic.result.inferences.map((item, index) => <div key={index}><p>{item.statement}</p><small>{item.confidence} · {item.evidence_ids.join(" · ")}</small></div>)}</article>
+          <article><h3>建议</h3>{diagnostic.result.recommendations.map((item, index) => <div key={index}><p>{item.action}</p><small>{item.risk} risk · {item.requires_confirmation ? "需要确认" : "只读"}</small></div>)}</article>
+          <article><h3>缺失证据</h3>{diagnostic.result.missing_evidence.map((item, index) => <p key={index}>{item}</p>)}</article>
+        </div>
+      </>}
+      <details className="evidence-panel"><summary>证据（{diagnostic.evidence.length}）</summary>{diagnostic.evidence.map((item) => <article id={item.id} key={item.id}><header><strong>{item.source_label}</strong><span>{item.redacted ? "已脱敏" : "未脱敏"}{item.truncated ? " · 已截断" : ""}</span></header><pre>{item.content}</pre></article>)}</details>
+    </section>)}
+  </main>;
+}

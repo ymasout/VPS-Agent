@@ -96,6 +96,14 @@ sudo bash install-agent.sh \
 - `/var/lib/vps-agent/machine-id`
 - `/etc/systemd/system/vps-agent.service`
 
+M3 Docker 日志取证默认关闭。需要时在 `/etc/vps-agent/agent.env` 中显式配置本地白名单，然后重启 Agent：
+
+```dotenv
+AGENT_EVIDENCE_SOURCES_JSON='[{"key":"payment-api-logs","kind":"docker_logs","target":"payment-api","display_name":"payment-api-logs"}]'
+```
+
+容器目标只保存在 VPS 本地；控制平面只能引用 `key` 并下发有限时间、行数、字节数和超时。完整协议见 [M3_DIAGNOSTICS.md](./M3_DIAGNOSTICS.md)。
+
 注册成功后，一次性令牌会从配置文件删除，后续重启和升级使用已保存的独立 Agent 身份。
 
 `machine-id` 由安装器为每次全新安装随机生成，仅用于控制平面识别 Agent。不要复制到其他 VPS；安装器不会修改操作系统的 `/etc/machine-id`。

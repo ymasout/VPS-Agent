@@ -78,7 +78,7 @@ def test_dingtalk_markdown_escapes_untrusted_service_text() -> None:
 
     assert "\\[prod\\]" in text
     assert "\\*without\\*" in text
-    assert "https://ops.example.com/servers/agent-01" in text
+    assert "https://ops.example.com/events/event-01" in text
 
 
 def test_dingtalk_sender_accepts_success_and_rejects_api_error() -> None:

@@ -53,12 +53,42 @@ type Service struct {
 	Healthy *bool  `json:"healthy,omitempty"`
 }
 type Report struct {
-	Hostname     string    `json:"hostname"`
-	Version      string    `json:"version"`
-	Capabilities []string  `json:"capabilities"`
-	CollectedAt  time.Time `json:"collected_at"`
-	Metrics      Metrics   `json:"metrics"`
-	Services     []Service `json:"services"`
+	Hostname        string           `json:"hostname"`
+	Version         string           `json:"version"`
+	Capabilities    []string         `json:"capabilities"`
+	CollectedAt     time.Time        `json:"collected_at"`
+	Metrics         Metrics          `json:"metrics"`
+	Services        []Service        `json:"services"`
+	EvidenceSources []EvidenceSource `json:"evidence_sources"`
+}
+
+type EvidenceSource struct {
+	Key         string `json:"key"`
+	Kind        string `json:"kind"`
+	DisplayName string `json:"display_name"`
+}
+
+type EvidenceRequest struct {
+	ID             string    `json:"id"`
+	SourceKey      string    `json:"source_key"`
+	SinceAt        time.Time `json:"since_at"`
+	UntilAt        time.Time `json:"until_at"`
+	MaxLines       int       `json:"max_lines"`
+	MaxBytes       int       `json:"max_bytes"`
+	TimeoutSeconds int       `json:"timeout_seconds"`
+}
+
+type EvidenceClaim struct {
+	Request *EvidenceRequest `json:"request"`
+}
+
+type EvidenceResult struct {
+	Status      string    `json:"status"`
+	Content     string    `json:"content"`
+	CollectedAt time.Time `json:"collected_at"`
+	Redacted    bool      `json:"redacted"`
+	Truncated   bool      `json:"truncated"`
+	Error       string    `json:"error,omitempty"`
 }
 
 func New(baseURL string) *Client {
@@ -77,12 +107,26 @@ func (c *Client) SendReport(ctx context.Context, credential string, payload Repo
 	return c.request(ctx, http.MethodPost, "/api/v1/agents/report", credential, payload, nil)
 }
 
+func (c *Client) ClaimEvidence(ctx context.Context, credential string) (EvidenceClaim, error) {
+	var claim EvidenceClaim
+	err := c.request(ctx, http.MethodGet, "/api/v1/agents/evidence-requests/next", credential, nil, &claim)
+	return claim, err
+}
+
+func (c *Client) CompleteEvidence(ctx context.Context, credential, requestID string, payload EvidenceResult) error {
+	return c.request(ctx, http.MethodPost, "/api/v1/agents/evidence-requests/"+requestID+"/complete", credential, payload, nil)
+}
+
 func (c *Client) request(ctx context.Context, method, path, credential string, input, output any) error {
-	body, err := json.Marshal(input)
-	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+	var body io.Reader
+	if input != nil {
+		encoded, err := json.Marshal(input)
+		if err != nil {
+			return fmt.Errorf("marshal request: %w", err)
+		}
+		body = bytes.NewReader(encoded)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
