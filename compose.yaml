@@ -49,6 +49,7 @@ services:
       AGENT_REGISTRATION_TOKEN: ${AGENT_REGISTRATION_TOKEN:-reg_local_docker_compose_development_only}
       AGENT_REPORT_INTERVAL: ${AGENT_REPORT_INTERVAL:-30s}
       AGENT_HEALTHCHECK_URLS: http://api:8000/healthz
+      AGENT_EVIDENCE_POLICY: ${AGENT_EVIDENCE_POLICY:-disabled}
       AGENT_EVIDENCE_SOURCES_JSON: ${AGENT_EVIDENCE_SOURCES_JSON:-[]}
       AGENT_CREDENTIAL_FILE: /var/lib/vps-agent/identity.json
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

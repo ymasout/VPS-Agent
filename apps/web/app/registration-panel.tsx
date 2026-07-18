@@ -11,9 +11,14 @@ export function RegistrationPanel() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState("");
+  const [evidencePolicy, setEvidencePolicy] = useState<"disabled" | "docker-logs">("docker-logs");
 
   const controlPlaneURL = typeof window === "undefined" ? "" : window.location.origin;
-  const installCommand = buildInstallCommand(controlPlaneURL, created?.name ?? (name.trim() || "my-vps"));
+  const installCommand = buildInstallCommand(
+    controlPlaneURL,
+    created?.name ?? (name.trim() || "my-vps"),
+    evidencePolicy,
+  );
 
   async function createToken(event: FormEvent) {
     event.preventDefault();
@@ -55,6 +60,16 @@ export function RegistrationPanel() {
           <input id="agent-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={255} required placeholder="例如：dmit-vps" />
           <button type="submit" disabled={loading || !name.trim()}>{loading ? "生成中…" : "生成令牌"}</button>
         </div>
+        <label htmlFor="evidence-policy">本地能力</label>
+        <select
+          id="evidence-policy"
+          value={evidencePolicy}
+          onChange={(event) => setEvidencePolicy(event.target.value as "disabled" | "docker-logs")}
+        >
+          <option value="docker-logs">监控与 Docker 只读诊断（推荐）</option>
+          <option value="disabled">仅监控</option>
+        </select>
+        <small className="field-help">诊断模式只允许读取自动发现容器的有限日志，不开放 Shell 或任意路径。</small>
       </form>
       {error && <div className="registration-error" role="alert">{error}</div>}
       {created && (

@@ -6,6 +6,7 @@ import pytest
 from fastapi import BackgroundTasks
 from pydantic import ValidationError
 
+from app.api import reconcile_service_instance_keys
 from app.config import Settings
 from app.diagnostics import (
     DeterministicDiagnosticProvider,
@@ -14,9 +15,15 @@ from app.diagnostics import (
     reclaim_stale_diagnostics,
     validate_result_references,
 )
-from app.m3 import create_service_mapping, trigger_diagnostic
+from app.m3 import (
+    create_service_mapping,
+    list_service_mapping_candidates,
+    trigger_diagnostic,
+)
 from app.models import (
     Agent,
+    AgentEvidenceSource,
+    AgentEvidenceSourceBinding,
     AlertEvent,
     DiagnosticRun,
     EvidenceItem,
@@ -182,6 +189,107 @@ def test_service_mapping_rejects_source_not_advertised_by_agent() -> None:
     session.commit.assert_not_awaited()
 
 
+def test_service_mapping_rejects_source_bound_to_another_service() -> None:
+    session = AsyncMock()
+    session.get.return_value = Agent(id="agent-1")
+    source = AgentEvidenceSource(id="source-1", agent_id="agent-1", kind="docker_logs")
+    session.scalar.side_effect = [
+        None,
+        ServiceStatus(id="status-1"),
+        source,
+        AgentEvidenceSourceBinding(
+            evidence_source_id="source-1",
+            service_kind="docker",
+            service_key="docker:other",
+        ),
+    ]
+    payload = ServiceMappingCreate(
+        name="api",
+        agent_id="agent-1",
+        service_kind="docker",
+        service_key="docker:api",
+        log_source_key="api-logs",
+    )
+
+    with pytest.raises(__import__("fastapi").HTTPException, match="another service"):
+        asyncio.run(create_service_mapping(payload, session))
+
+    session.add.assert_not_called()
+
+
+def test_existing_mapping_moves_from_container_id_to_stable_key() -> None:
+    previous = ServiceStatus(
+        agent_id="agent-1",
+        kind="docker",
+        service_key="a1b2c3d4e5f6",
+        name="api",
+        state="running",
+    )
+    instance = ServiceInstance(
+        id="instance-1",
+        agent_id="agent-1",
+        service_kind="docker",
+        service_key=previous.service_key,
+    )
+    payload = __import__("app.schemas", fromlist=["AgentReport"]).AgentReport.model_validate(
+        {
+            "hostname": "vm-1",
+            "version": "0.3.1",
+            "collected_at": datetime.now(timezone.utc),
+            "metrics": {
+                "cpu_percent": 1,
+                "memory_percent": 1,
+                "memory_used_bytes": 1,
+                "memory_total_bytes": 2,
+                "disks": [],
+            },
+            "services": [
+                {
+                    "kind": "docker",
+                    "key": "compose:payments:api:1",
+                    "name": "api",
+                    "state": "running",
+                }
+            ],
+        }
+    )
+    session = AsyncMock()
+    session.scalars.return_value = scalar_rows([instance])
+
+    asyncio.run(reconcile_service_instance_keys(session, "agent-1", payload, [previous]))
+
+    assert instance.service_key == "compose:payments:api:1"
+
+
+def test_mapping_candidates_only_expose_agent_declared_association() -> None:
+    service = ServiceStatus(
+        agent_id="agent-1",
+        kind="docker",
+        service_key="docker:api",
+        name="api",
+        state="running",
+        healthy=True,
+    )
+    source = AgentEvidenceSource(
+        agent_id="agent-1",
+        source_key="docker-logs-1234",
+        kind="docker_logs",
+        display_name="Docker logs · api",
+    )
+    session = AsyncMock()
+    session.get.return_value = Agent(id="agent-1")
+    rows = MagicMock()
+    rows.all.return_value = [(service, source, None)]
+    session.execute.return_value = rows
+
+    result = asyncio.run(list_service_mapping_candidates("agent-1", session))
+
+    assert len(result) == 1
+    assert result[0].service_key == "docker:api"
+    assert result[0].log_source_key == "docker-logs-1234"
+    assert result[0].mapped is False
+
+
 def test_duplicate_active_diagnostic_is_returned_without_new_request() -> None:
     now = datetime.now(timezone.utc)
     event = AlertEvent(
@@ -215,9 +323,7 @@ def test_duplicate_active_diagnostic_is_returned_without_new_request() -> None:
     scalar_result.all.return_value = []
     session.scalars.return_value = scalar_result
 
-    result = asyncio.run(
-        trigger_diagnostic("event-1", BackgroundTasks(), session, Settings())
-    )
+    result = asyncio.run(trigger_diagnostic("event-1", BackgroundTasks(), session, Settings()))
 
     assert result.id == "diagnostic-1"
     session.add.assert_not_called()
@@ -244,9 +350,7 @@ def test_stale_running_diagnostic_is_reclaimed_for_rerun() -> None:
     session = AsyncMock()
     session.scalars.side_effect = [scalar_rows([diagnostic]), scalar_rows([])]
 
-    reclaimed = asyncio.run(
-        reclaim_stale_diagnostics(session, Settings(), current_time=now)
-    )
+    reclaimed = asyncio.run(reclaim_stale_diagnostics(session, Settings(), current_time=now))
 
     assert reclaimed == ["diagnostic-1"]
     assert diagnostic.status == "running"
@@ -291,9 +395,7 @@ def test_retrigger_schedules_reclaimed_running_diagnostic() -> None:
     ]
     background_tasks = BackgroundTasks()
 
-    result = asyncio.run(
-        trigger_diagnostic("event-1", background_tasks, session, Settings())
-    )
+    result = asyncio.run(trigger_diagnostic("event-1", background_tasks, session, Settings()))
 
     assert result.id == "diagnostic-1"
     assert len(background_tasks.tasks) == 1
@@ -335,9 +437,7 @@ def test_stale_pending_evidence_fails_then_diagnostic_finalizes() -> None:
     ]
     session.scalar.return_value = 0
 
-    reclaimed = asyncio.run(
-        reclaim_stale_diagnostics(session, Settings(), current_time=now)
-    )
+    reclaimed = asyncio.run(reclaim_stale_diagnostics(session, Settings(), current_time=now))
     asyncio.run(finalize_diagnostic(session, diagnostic, Settings()))
 
     assert reclaimed == ["diagnostic-1"]
@@ -363,9 +463,7 @@ def test_recent_diagnostic_is_not_reclaimed() -> None:
     session = AsyncMock()
     session.scalars.return_value = scalar_rows([diagnostic])
 
-    reclaimed = asyncio.run(
-        reclaim_stale_diagnostics(session, Settings(), current_time=now)
-    )
+    reclaimed = asyncio.run(reclaim_stale_diagnostics(session, Settings(), current_time=now))
 
     assert reclaimed == []
     assert diagnostic.started_at == now - timedelta(seconds=20)

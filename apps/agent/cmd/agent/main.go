@@ -16,7 +16,7 @@ import (
 	"github.com/example/vps-agent-console/apps/agent/internal/config"
 )
 
-var version = "0.3.0-dev"
+var version = "0.3.1-dev"
 
 var capabilities = []string{"host.metrics", "docker.status", "systemd.status", "http.healthcheck", "evidence.docker_logs.v1"}
 
@@ -60,9 +60,17 @@ func main() {
 			return
 		}
 		services = append(services, collector.HTTPHealthchecks(ctx, cfg.HealthcheckURLs)...)
-		sources := make([]client.EvidenceSource, 0, len(cfg.EvidenceSources))
-		for _, source := range cfg.EvidenceSources {
-			sources = append(sources, client.EvidenceSource{Key: source.Key, Kind: source.Kind, DisplayName: source.DisplayName})
+		localSources := collector.EvidenceSourcesForServices(
+			services,
+			cfg.EvidenceSources,
+			cfg.EvidencePolicy == config.EvidencePolicyDockerLogs,
+		)
+		sources := make([]client.EvidenceSource, 0, len(localSources))
+		for _, source := range localSources {
+			sources = append(sources, client.EvidenceSource{
+				Key: source.Key, Kind: source.Kind, DisplayName: source.DisplayName,
+				ServiceKind: source.ServiceKind, ServiceKey: source.ServiceKey,
+			})
 		}
 		report := client.Report{Hostname: host.Hostname, Version: version, Capabilities: capabilities, CollectedAt: time.Now().UTC(), Metrics: metrics, Services: services, EvidenceSources: sources}
 		if err = api.SendReport(ctx, identity.Credential, report); err != nil {
@@ -79,9 +87,9 @@ func main() {
 			return
 		}
 		var selected *config.EvidenceSource
-		for index := range cfg.EvidenceSources {
-			if cfg.EvidenceSources[index].Key == claim.Request.SourceKey {
-				selected = &cfg.EvidenceSources[index]
+		for index := range localSources {
+			if localSources[index].Key == claim.Request.SourceKey {
+				selected = &localSources[index]
 				break
 			}
 		}

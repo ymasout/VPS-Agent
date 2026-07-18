@@ -18,6 +18,7 @@ from .diagnostics import (
 from .models import (
     Agent,
     AgentEvidenceSource,
+    AgentEvidenceSourceBinding,
     AlertEvent,
     DeploymentVersion,
     DiagnosticRun,
@@ -38,6 +39,7 @@ from .schemas import (
     EvidenceRequestReceipt,
     EvidenceRequestWork,
     EvidenceView,
+    ServiceMappingCandidate,
     ServiceMappingCreate,
     ServiceMappingView,
 )
@@ -146,6 +148,16 @@ async def create_service_mapping(
     )
     if advertised_source is None or advertised_source.kind != "docker_logs":
         raise HTTPException(status_code=409, detail="log source is not in the agent allowlist")
+    source_binding = await session.scalar(
+        select(AgentEvidenceSourceBinding).where(
+            AgentEvidenceSourceBinding.evidence_source_id == advertised_source.id
+        )
+    )
+    if source_binding is not None and (
+        source_binding.service_kind != payload.service_kind
+        or source_binding.service_key != payload.service_key
+    ):
+        raise HTTPException(status_code=409, detail="log source belongs to another service")
 
     managed = ManagedService(
         name=payload.name,
@@ -209,10 +221,65 @@ async def create_service_mapping(
     )
 
 
+@router.get(
+    "/agents/{agent_id}/service-mapping-candidates",
+    response_model=list[ServiceMappingCandidate],
+)
+async def list_service_mapping_candidates(
+    agent_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> list[ServiceMappingCandidate]:
+    if await session.get(Agent, agent_id) is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    rows = (
+        await session.execute(
+            select(
+                ServiceStatus,
+                AgentEvidenceSource,
+                ServiceInstance.id,
+            )
+            .join(
+                AgentEvidenceSourceBinding,
+                (AgentEvidenceSourceBinding.service_kind == ServiceStatus.kind)
+                & (AgentEvidenceSourceBinding.service_key == ServiceStatus.service_key),
+            )
+            .join(
+                AgentEvidenceSource,
+                AgentEvidenceSource.id == AgentEvidenceSourceBinding.evidence_source_id,
+            )
+            .outerjoin(
+                ServiceInstance,
+                (ServiceInstance.agent_id == ServiceStatus.agent_id)
+                & (ServiceInstance.service_kind == ServiceStatus.kind)
+                & (ServiceInstance.service_key == ServiceStatus.service_key),
+            )
+            .where(
+                ServiceStatus.agent_id == agent_id,
+                AgentEvidenceSource.agent_id == agent_id,
+                ServiceStatus.kind == "docker",
+            )
+            .order_by(ServiceStatus.name, AgentEvidenceSource.source_key)
+        )
+    ).all()
+    return [
+        ServiceMappingCandidate(
+            agent_id=agent_id,
+            service_kind=service.kind,
+            service_key=service.service_key,
+            service_name=service.name,
+            state=service.state,
+            healthy=service.healthy,
+            log_source_key=source.source_key,
+            log_source_name=source.display_name,
+            mapped=instance_id is not None,
+            instance_id=instance_id,
+        )
+        for service, source, instance_id in rows
+    ]
+
+
 @router.get("/events/{event_id}", response_model=AlertEventView)
-async def get_event(
-    event_id: str, session: AsyncSession = Depends(get_session)
-) -> AlertEventView:
+async def get_event(event_id: str, session: AsyncSession = Depends(get_session)) -> AlertEventView:
     event = await session.get(AlertEvent, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="event not found")
@@ -452,6 +519,4 @@ async def complete_evidence_request(
         scheduled.add(diagnostic.id)
     for diagnostic_id in scheduled:
         background_tasks.add_task(run_diagnostic, diagnostic_id, settings)
-    return EvidenceRequestReceipt(
-        diagnostic_id=diagnostic.id, diagnostic_status=diagnostic.status
-    )
+    return EvidenceRequestReceipt(diagnostic_id=diagnostic.id, diagnostic_status=diagnostic.status)

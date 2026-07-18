@@ -47,7 +47,7 @@ compose.yaml        本地完整开发环境
 
 - 作为 Linux VPS 上的轻量守护进程运行，主动连接控制平面。
 - 当前负责注册、心跳、基础资源和 Docker/systemd/HTTP 状态采集。
-- M3 首条闭环使用本地显式白名单验证 Docker 有限日志取证；目标形态由 Agent 根据已发现服务生成稳定能力目录，控制平面仍只能引用 Agent 已声明的能力，不能自行构造容器目标、路径或命令。
+- M3 首条闭环先使用本地显式白名单验证 Docker 有限日志取证；当前 Agent 已能在本地策略明确启用后，根据已发现 Docker 服务生成稳定能力目录，控制平面仍只能引用 Agent 已声明的能力，不能自行构造容器目标、路径或命令。
 - 后续只执行控制平面签名且命中已授权能力策略或 Runbook 的任务。
 
 ### PostgreSQL
@@ -90,7 +90,7 @@ Release 安装器在首次安装时生成独立的 Agent machine-id，保存在 
 - Next.js、FastAPI、PostgreSQL、Redis 和 Caddy 由生产 Docker Compose 托管。
 - 外部 VPS 上的 Agent 由各自主机的 systemd 托管，只需访问控制平面的 443 端口。
 - 控制平面宿主机可以运行同一 Agent 进行自监控，但该 Agent 与控制面容器生命周期分离；控制面整体故障时，自监控上报也会中断，这是当前单实例部署的已知盲区。
-- 当前发布基线为 Agent `v0.2.4`，支持 Linux `amd64` 和 `arm64`。
+- M1 全量发布基线为 Agent `v0.2.4`；M3 生产金丝雀已验证 `v0.3.0`。两者均支持 Linux `amd64` 和 `arm64`，后续全量升级需经过产品化金丝雀。
 
 ## 5. M1 协议方向
 
@@ -130,8 +130,10 @@ flowchart LR
 ```
 
 - 业务服务与运行实例使用独立模型；`ServiceStatus` 只作为最新观测。
-- 第一版由控制平面配置业务映射，由 Agent 本地配置采集目标，双方通过稳定的证据源键交集授权。
-- 上述手工配置是首条闭环的过渡实现。产品化后由 Agent 从 Compose 标签、容器元数据和 systemd Unit 自动生成稳定证据源，用户在 Web 中确认业务映射和权限档位，不需要编辑 Agent 环境变量。
+- Agent 只有在本地 `AGENT_EVIDENCE_POLICY=docker_logs` 时才为已发现 Docker 容器生成日志能力；升级时缺省为 `disabled`，不会静默扩大读取面。
+- Docker Compose 实例使用 project/service/副本号形成稳定键，普通容器使用容器名；Agent 同时生成来源键和稳定服务关联，但真实容器目标不上传。
+- 控制平面保存来源与稳定服务键的关联，机器详情页只展示 Agent 已声明的候选服务，并通过服务端管理令牌代理确认业务映射。手工 JSON 继续作为兼容入口。
+- Agent 首次从容器 ID 切换到稳定键时，控制平面根据前后同名观测迁移活动 M2 事件和既有 M3 服务映射，避免重复告警、丢失恢复通知或诊断断链。
 - 诊断状态为 Pending、Running、Completed 或 Failed；同一事件同时只保留一个活动诊断键。
 - 证据、诊断结果和引用关系分表保存。详细协议与配置见 [M3_DIAGNOSTICS.md](./M3_DIAGNOSTICS.md)。
 
@@ -190,7 +192,7 @@ flowchart LR
 
 ## 10. 明确延后能力
 
-- M3 后续：systemd/file 日志、GitHub App、Agent 失联/恢复和真实模型生产验收。
+- M3 后续：systemd/file 日志、GitHub App、Agent 失联/恢复和真实模型生产验收；Docker 自动发现与 Web 单服务确认已进入当前实现。
 - M4：安全重启、部署、回滚和完整审计。
 - M5：全局/上下文对话、仓库知识和诊断历史增强。
 - M6：Web SSH、PWA/移动审批、团队协作和自托管产品化。

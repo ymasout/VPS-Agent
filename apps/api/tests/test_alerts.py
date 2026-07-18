@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 from app.alerts import evaluate_service_alerts, service_is_problem
-from app.models import Agent, AlertEvent
+from app.models import Agent, AlertEvent, ServiceStatus
 from app.schemas import AgentReport, Metrics, ServiceReport
 
 
@@ -63,9 +63,7 @@ def test_service_problem_classification_matches_m1_status_semantics() -> None:
     assert service_is_problem(service("failed", None))
     assert service_is_problem(service("active", False))
     assert not service_is_problem(service("inactive", None))
-    assert service_is_problem(
-        ServiceReport(kind="docker", key="web", name="web", state="exited")
-    )
+    assert service_is_problem(ServiceReport(kind="docker", key="web", name="web", state="exited"))
 
 
 def test_first_problem_observation_creates_pending_event_without_notification() -> None:
@@ -288,3 +286,56 @@ def test_unexpired_silence_stays_silent_when_problem_continues() -> None:
     assert current.status == "silenced"
     assert current.silenced_until == observed_at + timedelta(minutes=30)
     assert deliveries == []
+
+
+def test_docker_identity_upgrade_migrates_and_resolves_existing_event() -> None:
+    observed_at = datetime.now(timezone.utc)
+    previous = ServiceStatus(
+        agent_id="agent-01",
+        kind="docker",
+        service_key="a1b2c3d4e5f6",
+        name="api",
+        state="exited",
+        observed_at=observed_at - timedelta(minutes=1),
+    )
+    old_item = ServiceReport(kind="docker", key=previous.service_key, name="api", state="exited")
+    from app.alerts import service_fingerprint
+
+    old_fingerprint = service_fingerprint("agent-01", old_item)
+    current = AlertEvent(
+        id="event-01",
+        agent_id="agent-01",
+        fingerprint=old_fingerprint,
+        active_key=old_fingerprint,
+        source="service",
+        service_kind="docker",
+        service_key=previous.service_key,
+        title="API failed",
+        severity="critical",
+        status="firing",
+        observation_count=2,
+        first_observed_at=observed_at - timedelta(minutes=2),
+        last_observed_at=observed_at - timedelta(minutes=1),
+        firing_at=observed_at - timedelta(minutes=1),
+    )
+    stable_item = ServiceReport(
+        kind="docker", key="compose:payments:api:1", name="api", state="running", healthy=True
+    )
+    session = session_with([current])
+
+    deliveries = asyncio.run(
+        evaluate_service_alerts(
+            session,
+            agent(),
+            report(stable_item),
+            observed_at,
+            2,
+            [previous],
+        )
+    )
+
+    assert current.service_key == stable_item.key
+    assert current.fingerprint == service_fingerprint("agent-01", stable_item)
+    assert current.status == "resolved"
+    assert len(deliveries) == 1
+    assert deliveries[0].notification_type == "resolved"

@@ -10,9 +10,11 @@ from .database import get_session
 from .models import (
     Agent,
     AgentEvidenceSource,
+    AgentEvidenceSourceBinding,
     AlertEvent,
     MetricSnapshot,
     RegistrationToken,
+    ServiceInstance,
     ServiceStatus,
 )
 from .notifications import deliver_pending_notifications
@@ -152,13 +154,20 @@ async def report_agent(
     agent.version = payload.version
     agent.capabilities = payload.capabilities
     agent.last_seen_at = received_at
+    previous_services = list(
+        (
+            await session.scalars(select(ServiceStatus).where(ServiceStatus.agent_id == agent.id))
+        ).all()
+    )
     await evaluate_service_alerts(
         session,
         agent,
         payload,
         received_at,
         settings.alert_pending_observations,
+        previous_services,
     )
+    await reconcile_service_instance_keys(session, agent.id, payload, previous_services)
     session.add(
         MetricSnapshot(
             agent_id=agent.id,
@@ -189,22 +198,62 @@ async def report_agent(
             for item in payload.services
         ]
     )
+    evidence_sources = [
+        AgentEvidenceSource(
+            agent_id=agent.id,
+            source_key=item.key,
+            kind=item.kind,
+            display_name=item.display_name,
+            observed_at=payload.collected_at,
+        )
+        for item in payload.evidence_sources
+    ]
+    session.add_all(evidence_sources)
+    await session.flush()
     session.add_all(
         [
-            AgentEvidenceSource(
-                agent_id=agent.id,
-                source_key=item.key,
-                kind=item.kind,
-                display_name=item.display_name,
+            AgentEvidenceSourceBinding(
+                evidence_source_id=source.id,
+                service_kind=item.service_kind,
+                service_key=item.service_key,
                 observed_at=payload.collected_at,
             )
-            for item in payload.evidence_sources
+            for source, item in zip(evidence_sources, payload.evidence_sources, strict=True)
+            if item.service_kind is not None and item.service_key is not None
         ]
     )
     await session.commit()
     if settings.dingtalk_webhook_url:
         background_tasks.add_task(deliver_pending_notifications, settings)
     return ReportReceipt(received_at=received_at)
+
+
+async def reconcile_service_instance_keys(
+    session: AsyncSession,
+    agent_id: str,
+    report: AgentReport,
+    previous_services: list[ServiceStatus],
+) -> None:
+    """将既有 M3 映射从 Docker 容器 ID 平滑迁移到稳定服务键。"""
+
+    previous_by_key = {
+        (service.kind, service.service_key): service for service in previous_services
+    }
+    current_by_name = {(service.kind, service.name): service for service in report.services}
+    instances = list(
+        (
+            await session.scalars(
+                select(ServiceInstance).where(ServiceInstance.agent_id == agent_id)
+            )
+        ).all()
+    )
+    for instance in instances:
+        previous = previous_by_key.get((instance.service_kind, instance.service_key))
+        if previous is None:
+            continue
+        current = current_by_name.get((previous.kind, previous.name))
+        if current is not None and current.key != instance.service_key:
+            instance.service_key = current.key
 
 
 async def build_summary(agent: Agent, session: AsyncSession, offline_after: int) -> AgentSummary:
@@ -237,8 +286,7 @@ async def build_summary(agent: Agent, session: AsyncSession, offline_after: int)
         .select_from(ServiceStatus)
         .where(
             ServiceStatus.agent_id == agent.id,
-            ServiceStatus.healthy.is_(False)
-            | ServiceStatus.state.in_(["failed", "unhealthy"]),
+            ServiceStatus.healthy.is_(False) | ServiceStatus.state.in_(["failed", "unhealthy"]),
         )
     )
     online = agent_is_online(agent.last_seen_at, now_utc(), offline_after)

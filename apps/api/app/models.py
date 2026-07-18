@@ -101,6 +101,21 @@ class AgentEvidenceSource(Base):
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class AgentEvidenceSourceBinding(Base):
+    """自动发现来源与稳定服务身份的关联，不包含本地采集目标。"""
+
+    __tablename__ = "agent_evidence_source_bindings"
+    __table_args__ = (UniqueConstraint("evidence_source_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    evidence_source_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_evidence_sources.id", ondelete="CASCADE"), index=True
+    )
+    service_kind: Mapped[str] = mapped_column(String(32))
+    service_key: Mapped[str] = mapped_column(String(255))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class ManagedService(Base):
     __tablename__ = "managed_services"
 

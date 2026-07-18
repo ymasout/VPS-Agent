@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -43,7 +44,7 @@ func TestParseSystemdServicesSkipsIncompleteLines(t *testing.T) {
 }
 
 func TestParseDockerServicesPreservesStatusDetail(t *testing.T) {
-	services := parseDockerServices("abc|web|running|Up 2 hours (healthy)\ndef|worker|exited|Exited (1) 3 minutes ago\nmalformed")
+	services := parseDockerServices("abc|web|running|Up 2 hours (healthy)|payments|api|1\ndef|worker|exited|Exited (1) 3 minutes ago||||\nmalformed")
 
 	if len(services) != 2 {
 		t.Fatalf("expected 2 services, got %d", len(services))
@@ -51,8 +52,62 @@ func TestParseDockerServicesPreservesStatusDetail(t *testing.T) {
 	if services[0].Healthy == nil || !*services[0].Healthy || services[0].Detail != "Up 2 hours (healthy)" {
 		t.Fatalf("unexpected running service: %#v", services[0])
 	}
+	if services[0].Key != "compose:payments:api:1" || services[1].Key != "docker:worker" {
+		t.Fatalf("unexpected stable Docker identities: %#v", services)
+	}
 	if services[1].Healthy == nil || *services[1].Healthy || services[1].State != "exited" {
 		t.Fatalf("unexpected exited service: %#v", services[1])
+	}
+}
+
+func TestAutomaticDockerEvidenceSourcesUseStableServiceAssociation(t *testing.T) {
+	healthy := true
+	services := []client.Service{
+		{Kind: "docker", Key: "compose:payments:api:1", Name: "payments-api-1", Healthy: &healthy},
+		{Kind: "systemd", Key: "ssh.service", Name: "ssh.service", Healthy: &healthy},
+	}
+
+	sources := EvidenceSourcesForServices(services, nil, true)
+
+	if len(sources) != 1 || sources[0].Target != "payments-api-1" {
+		t.Fatalf("unexpected sources: %#v", sources)
+	}
+	if sources[0].ServiceKind != "docker" || sources[0].ServiceKey != services[0].Key {
+		t.Fatalf("source is not associated with stable service: %#v", sources[0])
+	}
+	if !strings.HasPrefix(sources[0].Key, "docker-logs-") {
+		t.Fatalf("unexpected source key: %q", sources[0].Key)
+	}
+}
+
+func TestManualEvidenceSourceOverridesAutomaticSourceWithSameKey(t *testing.T) {
+	service := client.Service{Kind: "docker", Key: "docker:api", Name: "api"}
+	automaticKey := dockerLogSourceKey(service.Key)
+	configured := []config.EvidenceSource{{
+		Key: automaticKey, Kind: "docker_logs", Target: "api", DisplayName: "custom",
+	}}
+
+	sources := EvidenceSourcesForServices([]client.Service{service}, configured, true)
+
+	if len(sources) != 1 || sources[0].DisplayName != "custom" {
+		t.Fatalf("manual source should win: %#v", sources)
+	}
+	if sources[0].ServiceKind != "docker" || sources[0].ServiceKey != service.Key {
+		t.Fatalf("manual source should inherit the discovered service binding: %#v", sources[0])
+	}
+}
+
+func TestAutomaticEvidenceSourcesAreBounded(t *testing.T) {
+	services := make([]client.Service, 0, 140)
+	for index := 0; index < 140; index++ {
+		name := fmt.Sprintf("service-%d", index)
+		services = append(services, client.Service{Kind: "docker", Key: "docker:" + name, Name: name})
+	}
+
+	sources := EvidenceSourcesForServices(services, nil, true)
+
+	if len(sources) != 128 {
+		t.Fatalf("expected 128 bounded sources, got %d", len(sources))
 	}
 }
 

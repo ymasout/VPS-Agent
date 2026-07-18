@@ -3,6 +3,7 @@ package collector
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/example/vps-agent-console/apps/agent/internal/client"
+	"github.com/example/vps-agent-console/apps/agent/internal/config"
 )
 
 type Host struct{ Hostname, MachineID, OS, Arch string }
@@ -142,7 +144,14 @@ func memory() (float64, float64, float64, error) {
 }
 
 func dockerServices(ctx context.Context) []client.Service {
-	out, err := exec.CommandContext(ctx, "docker", "ps", "-a", "--format", "{{.ID}}|{{.Names}}|{{.State}}|{{.Status}}").Output()
+	out, err := exec.CommandContext(
+		ctx,
+		"docker",
+		"ps",
+		"-a",
+		"--format",
+		`{{.ID}}|{{.Names}}|{{.State}}|{{.Status}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}|{{.Label "com.docker.compose.container-number"}}`,
+	).Output()
 	if err != nil {
 		return nil
 	}
@@ -152,10 +161,84 @@ func dockerServices(ctx context.Context) []client.Service {
 func parseDockerServices(output string) []client.Service {
 	var result []client.Service
 	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
-		parts := strings.SplitN(line, "|", 4)
-		if len(parts) == 4 {
+		parts := strings.SplitN(line, "|", 7)
+		if len(parts) >= 4 {
+			project, composeService, replica := "", "", ""
+			if len(parts) == 7 {
+				project, composeService, replica = parts[4], parts[5], parts[6]
+			}
 			healthy := parts[2] == "running"
-			result = append(result, client.Service{Kind: "docker", Key: parts[0], Name: parts[1], State: parts[2], Detail: parts[3], Healthy: &healthy})
+			result = append(result, client.Service{
+				Kind: "docker", Key: stableDockerServiceKey(parts[1], project, composeService, replica),
+				Name: parts[1], State: parts[2], Detail: parts[3], Healthy: &healthy,
+			})
+		}
+	}
+	return result
+}
+
+func stableDockerServiceKey(name, project, service, replica string) string {
+	key := "docker:" + name
+	if project != "" && service != "" {
+		if replica == "" {
+			replica = name
+		}
+		key = "compose:" + project + ":" + service + ":" + replica
+	}
+	if len(key) <= 255 {
+		return key
+	}
+	digest := sha256.Sum256([]byte(key))
+	return key[:230] + ":" + fmt.Sprintf("%x", digest[:12])
+}
+
+func dockerLogSourceKey(serviceKey string) string {
+	digest := sha256.Sum256([]byte(serviceKey))
+	return "docker-logs-" + fmt.Sprintf("%x", digest[:12])
+}
+
+// EvidenceSourcesForServices 把本地配置和自动发现结果合并为有限能力目录。
+// Docker 目标仅保留在 Agent 内存中，控制平面只看到稳定服务键和来源键。
+func EvidenceSourcesForServices(
+	services []client.Service, configured []config.EvidenceSource, automatic bool,
+) []config.EvidenceSource {
+	const maxSources = 128
+	servicesByName := map[string]client.Service{}
+	for _, service := range services {
+		if service.Kind == "docker" {
+			servicesByName[service.Name] = service
+		}
+	}
+	capacity := len(configured) + len(services)
+	if capacity > maxSources {
+		capacity = maxSources
+	}
+	result := make([]config.EvidenceSource, 0, capacity)
+	seen := map[string]bool{}
+	add := func(source config.EvidenceSource) {
+		if len(result) >= maxSources || seen[source.Key] {
+			return
+		}
+		if service, ok := servicesByName[source.Target]; ok {
+			source.ServiceKind = service.Kind
+			source.ServiceKey = service.Key
+		}
+		seen[source.Key] = true
+		result = append(result, source)
+	}
+	for _, source := range configured {
+		add(source)
+	}
+	if automatic {
+		for _, service := range services {
+			if service.Kind != "docker" {
+				continue
+			}
+			add(config.EvidenceSource{
+				Key: dockerLogSourceKey(service.Key), Kind: "docker_logs", Target: service.Name,
+				DisplayName: "Docker logs · " + service.Name,
+				ServiceKind: service.Kind, ServiceKey: service.Key,
+			})
 		}
 	}
 	return result

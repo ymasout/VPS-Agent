@@ -17,8 +17,12 @@ export function shellQuote(value: string) {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-export function buildInstallCommand(controlPlaneURL: string, agentName: string) {
+export function buildInstallCommand(
+  controlPlaneURL: string,
+  agentName: string,
+  evidencePolicy: "disabled" | "docker-logs" = "disabled",
+) {
   const baseURL = controlPlaneURL.replace(/\/$/, "");
   const downloadBaseURL = `${baseURL}/agent-downloads`;
-  return `curl -fsSL --proto '=https' --tlsv1.2 ${downloadBaseURL}/latest/install-agent.sh | bash -s -- --url ${baseURL} --download-base-url ${downloadBaseURL} --name ${shellQuote(agentName)}`;
+  return `curl -fsSL --proto '=https' --tlsv1.2 ${downloadBaseURL}/latest/install-agent.sh | bash -s -- --url ${baseURL} --download-base-url ${downloadBaseURL} --name ${shellQuote(agentName)} --evidence-policy ${evidencePolicy}`;
 }

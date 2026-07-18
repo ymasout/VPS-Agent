@@ -17,6 +17,7 @@ type Config struct {
 	ReportInterval    time.Duration
 	HealthcheckURLs   []string
 	EvidenceSources   []EvidenceSource
+	EvidencePolicy    string
 }
 
 type EvidenceSource struct {
@@ -24,7 +25,11 @@ type EvidenceSource struct {
 	Kind        string `json:"kind"`
 	Target      string `json:"target"`
 	DisplayName string `json:"display_name"`
+	ServiceKind string `json:"-"`
+	ServiceKey  string `json:"-"`
 }
+
+const EvidencePolicyDockerLogs = "docker_logs"
 
 var sourceKeyPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
@@ -39,7 +44,15 @@ func Load() Config {
 		ReportInterval:    interval,
 		HealthcheckURLs:   splitList(os.Getenv("AGENT_HEALTHCHECK_URLS")),
 		EvidenceSources:   parseEvidenceSources(os.Getenv("AGENT_EVIDENCE_SOURCES_JSON")),
+		EvidencePolicy:    evidencePolicy(os.Getenv("AGENT_EVIDENCE_POLICY")),
 	}
+}
+
+func evidencePolicy(value string) string {
+	if strings.TrimSpace(value) == EvidencePolicyDockerLogs {
+		return EvidencePolicyDockerLogs
+	}
+	return "disabled"
 }
 
 func parseEvidenceSources(value string) []EvidenceSource {

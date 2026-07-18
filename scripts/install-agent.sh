@@ -9,6 +9,7 @@ AGENT_NAME=""
 REGISTRATION_TOKEN="${AGENT_REGISTRATION_TOKEN:-}"
 HEALTHCHECK_URLS=""
 REPORT_INTERVAL=""
+EVIDENCE_POLICY=""
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/vps-agent"
 DATA_DIR="/var/lib/vps-agent"
@@ -23,6 +24,7 @@ Options:
   --token TOKEN         One-time registration token (interactive prompt recommended)
   --healthcheck URLS    Comma-separated HTTP healthcheck URLs
   --interval DURATION   Report interval (default: 30s)
+  --evidence-policy POLICY  Evidence policy: disabled or docker-logs
   --version VERSION     Release version such as 0.2.2 (default: latest)
   --download-base-url URL  Optional control-plane download mirror
   -h, --help            Show this help
@@ -43,6 +45,7 @@ while [[ $# -gt 0 ]]; do
     --token) REGISTRATION_TOKEN="${2:-}"; shift 2 ;;
     --healthcheck) HEALTHCHECK_URLS="${2:-}"; shift 2 ;;
     --interval) REPORT_INTERVAL="${2:-}"; shift 2 ;;
+    --evidence-policy) EVIDENCE_POLICY="${2:-}"; shift 2 ;;
     --version) VERSION="${2:-}"; shift 2 ;;
     --download-base-url) DOWNLOAD_BASE_URL="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -76,14 +79,21 @@ CONTROL_PLANE_URL="${CONTROL_PLANE_URL:-$(existing_value CONTROL_PLANE_URL)}"
 AGENT_NAME="${AGENT_NAME:-$(existing_value AGENT_NAME)}"
 HEALTHCHECK_URLS="${HEALTHCHECK_URLS:-$(existing_value AGENT_HEALTHCHECK_URLS)}"
 REPORT_INTERVAL="${REPORT_INTERVAL:-$(existing_value AGENT_REPORT_INTERVAL)}"
+EVIDENCE_POLICY="${EVIDENCE_POLICY:-$(existing_value AGENT_EVIDENCE_POLICY)}"
 EVIDENCE_SOURCES_JSON="${AGENT_EVIDENCE_SOURCES_JSON:-$(existing_value AGENT_EVIDENCE_SOURCES_JSON)}"
 AGENT_NAME="${AGENT_NAME:-$(hostname 2>/dev/null || printf 'VPS Agent')}"
 REPORT_INTERVAL="${REPORT_INTERVAL:-30s}"
+EVIDENCE_POLICY="${EVIDENCE_POLICY:-disabled}"
 
-for value in "${CONTROL_PLANE_URL}" "${AGENT_NAME}" "${HEALTHCHECK_URLS}" "${REPORT_INTERVAL}" "${EVIDENCE_SOURCES_JSON}"; do
+for value in "${CONTROL_PLANE_URL}" "${AGENT_NAME}" "${HEALTHCHECK_URLS}" "${REPORT_INTERVAL}" "${EVIDENCE_POLICY}" "${EVIDENCE_SOURCES_JSON}"; do
   [[ "${value}" != *$'\n'* && "${value}" != *$'\r'* ]] || fail "configuration values cannot contain newlines"
 done
 [[ "${CONTROL_PLANE_URL}" =~ ^https:// ]] || fail "--url must use HTTPS"
+case "${EVIDENCE_POLICY}" in
+  disabled) AGENT_EVIDENCE_POLICY="disabled" ;;
+  docker-logs|docker_logs) AGENT_EVIDENCE_POLICY="docker_logs" ;;
+  *) fail "--evidence-policy must be disabled or docker-logs" ;;
+esac
 
 if [[ ! -f "${IDENTITY_FILE}" && -z "${REGISTRATION_TOKEN}" ]]; then
   [[ -r /dev/tty ]] || fail "a registration token is required for first installation"
@@ -144,6 +154,7 @@ umask 077
   fi
   printf 'AGENT_REPORT_INTERVAL=%s\n' "${REPORT_INTERVAL}"
   printf 'AGENT_HEALTHCHECK_URLS=%s\n' "${HEALTHCHECK_URLS}"
+  printf 'AGENT_EVIDENCE_POLICY=%s\n' "${AGENT_EVIDENCE_POLICY}"
   printf 'AGENT_EVIDENCE_SOURCES_JSON=%s\n' "${EVIDENCE_SOURCES_JSON:-[]}"
   if [[ ! -f "${IDENTITY_FILE}" ]]; then
     printf 'AGENT_REGISTRATION_TOKEN=%s\n' "${REGISTRATION_TOKEN}"

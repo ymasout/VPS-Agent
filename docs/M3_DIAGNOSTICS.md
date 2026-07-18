@@ -7,12 +7,21 @@
 - `ServiceStatus` 仍是 Agent 最近一次上报的瞬时观测，不承担业务服务身份。
 - `ManagedService` 表示业务服务，`ServiceInstance` 使用 `(agent_id, service_kind, service_key)` 绑定一个实际运行实例。
 - `InstanceLogSource` 只保存稳定的 `source_key`、类型和展示名；Docker 容器目标只存在于 Agent 本地配置。
+- `AgentEvidenceSourceBinding` 保存 Agent 主动声明的来源与稳定服务键关联，不保存容器名、路径或命令。
 - `Repository` 与 `DeploymentVersion` 保存仓库名、Commit SHA 或镜像摘要。GitHub 凭据不下发给 Agent。
 - `DiagnosticRun`、`EvidenceRequest`、`EvidenceItem` 与 `DiagnosticCitation` 分别保存诊断状态、出站请求、脱敏后的原始观察证据和结论引用关系。AI 结论不写回证据内容。
 
-## 2. Agent 本地白名单（首条闭环兼容方式）
+## 2. Agent 自动能力目录与手工兼容方式
 
-第一版只接受 `docker_logs`，并通过 `/etc/vps-agent/agent.env` 显式配置。该方式用于验证“控制平面不能任意指定容器或路径”的安全边界，不是多台 VPS 的最终部署流程。例如：
+安装时明确选择 Docker 诊断策略后，Agent 会为本机已发现容器自动生成有限日志能力：
+
+```dotenv
+AGENT_EVIDENCE_POLICY=docker_logs
+```
+
+未配置或配置为 `disabled` 时不会自动开放日志能力，已有 Agent 升级不会静默扩大权限。安装器使用 `--evidence-policy docker-logs` 或 `--evidence-policy disabled` 写入该设置。
+
+手工白名单继续作为兼容和特殊服务入口：
 
 ```dotenv
 AGENT_EVIDENCE_SOURCES_JSON='[{"key":"payment-api-logs","kind":"docker_logs","target":"payment-api","display_name":"payment-api-logs"}]'
@@ -20,18 +29,19 @@ AGENT_EVIDENCE_SOURCES_JSON='[{"key":"payment-api-logs","kind":"docker_logs","ta
 
 `key` 是控制平面可引用的稳定标识；`target` 是本机 Docker 容器名或 ID，不会随报告上传。非法 JSON、重复键、未知类型、空目标或不符合 `[a-zA-Z0-9._-]+` 的键会被忽略。升级安装器会保留这项配置。
 
-不要把这套手工配置推广为日常运维要求。产品化替代方案属于 M3 当前后续范围：
+自动能力目录的当前规则：
 
-- Agent 根据已发现的 Docker Compose project/service 标签、普通容器和 systemd Unit 生成本地能力目录及稳定来源键。
-- Docker 服务长期身份优先使用 Compose project/service 等稳定元数据，不依赖容器重建后会变化的容器 ID。
-- 控制台展示候选服务和证据能力，用户通过 Web 批量确认或使用安装前选择的策略自动接受，不需要登录 VPS 编辑 JSON。
+- Docker Compose 实例使用 `compose:<project>:<service>:<container-number>`；普通容器使用 `docker:<container-name>`。超长键使用确定性摘要收敛。
+- 日志 `source_key` 根据稳定服务键生成，真实容器目标只保存在 Agent 当前进程内，不随报告上传。
+- Agent 最多声明 128 个来源；手工来源优先于同键自动来源，并在目标匹配已发现容器时补充稳定服务关联。
+- 控制台机器详情页展示 Agent 已授权的候选服务，用户确认业务名称、环境及可选目录/仓库即可建立映射，不需要填写容器 ID、`source_key` 或 JSON。
 - 控制平面仍只能请求 Agent 已声明的来源键，并继续下发和校验时间、行数、字节数和超时上限；自动发现不等于允许任意日志、路径或命令。
 - 现有环境变量在迁移期保留，用于兼容已部署 Agent、特殊服务和故障排查。
 
 ## 3. 只读出站协议
 
-1. Agent 在常规报告中只声明证据源的 `key`、`kind` 和展示名。
-2. 当前管理员通过 `POST /api/v1/service-mappings` 把已观测服务、Agent 已声明的日志源和可选仓库版本绑定为服务实例；产品化后由 Web 发现/确认流程调用同类控制面能力，不要求用户手写请求。
+1. Agent 在常规报告中声明证据源的 `key`、`kind`、展示名和可选稳定服务关联，不声明真实容器目标。
+2. `GET /api/v1/agents/{agent_id}/service-mapping-candidates` 只返回已观测且被 Agent 本地能力目录关联的 Docker 服务；机器详情页通过服务端代理调用 `POST /api/v1/service-mappings`，管理令牌不进入浏览器。
 3. `POST /api/v1/events/{event_id}/diagnostics` 手动触发诊断。同一事件同时只允许一个 Pending/Running 诊断。
 4. 控制平面先保存告警、最新服务状态、最新资源快照和部署版本证据，再创建只包含 `source_key`、时间窗口、行数、字节数和超时的请求。
 5. Agent 通过 `GET /api/v1/agents/evidence-requests/next` 主动领取请求，在本地用 `source_key` 查找目标；未命中本地白名单时直接失败，不接受控制平面提供容器名或命令。
@@ -46,7 +56,7 @@ AGENT_EVIDENCE_SOURCES_JSON='[{"key":"payment-api-logs","kind":"docker_logs","ta
   "environment": "production",
   "agent_id": "已注册 Agent ID",
   "service_kind": "docker",
-  "service_key": "Agent 上报的容器 ID",
+  "service_key": "compose:payments:payment-api:1",
   "deployment_directory": "/opt/apps/payment-api",
   "log_source_key": "payment-api-logs",
   "repository_full_name": "example/payment-api",
@@ -112,9 +122,13 @@ Agent 和控制平面均遮蔽 Authorization、Bearer Token、密码、Cookie、
 
 测试使用独立项目名、临时测试凭据和独立数据卷；结束后清理，不涉及生产环境。
 
+2026-07-19 在生产金丝雀完成同一闭环实证：停止 canary 后依次形成 Firing 和钉钉异常卡；手动触发诊断后，Agent 经 Caddy 成功 Claim/Complete，没有 401；Agent 与控制平面双重脱敏后，持久化证据中 `fake-secret` 计数为 0，`[REDACTED]` 计数为 100；诊断进入 Completed，并输出 4 条带证据引用的事实；重启 canary 后事件进入 Resolved，钉钉收到恢复卡。控制平面不能指定容器目标、固定 Docker 参数与 `--` 分隔、证据限制、只读诊断和结构化引用均得到生产实证。
+
+同日使用隔离的真实 PostgreSQL、API、Agent 和 Docker Compose 栈验证产品化首批：Agent 自动声明 8 个 Docker 稳定身份和对应日志能力；候选 API 成功创建服务映射，请求与数据库均未包含本地容器目标；重启已映射 API 容器后稳定键和映射保持不变。另用旧容器 ID 构造真实 Firing 和既有映射，再上报稳定键与来源关联，事件正确迁移并进入 Resolved，原映射继续标记为已关联。测试使用临时凭据、独立项目和数据卷，完成后全部清理。
+
 ## 8. 当前未包含与已知限制
 
-- 自动生成稳定证据源目录和 Web 服务发现/确认流程；因此当前手工白名单只能用于少量金丝雀验证，不适合逐台推广。
+- 自动发现当前只为 Docker 生成日志能力；systemd 仍只有状态发现，没有 journal 取证来源。
 - systemd journal 和文件日志。
 - GitHub App 安装、Webhook 和仓库文件同步。
 - 自动诊断调度、Agent 失联/恢复事件和独立任务队列。

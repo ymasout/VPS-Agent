@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { Service, formatBytes, getAgent } from "@/lib/api";
+import { Service, formatBytes, getAgent, getServiceMappingCandidates } from "@/lib/api";
 import { notFound } from "next/navigation";
 import { isGoodState, isServiceProblem, serviceStatusTone } from "@/lib/service-status";
+import { ServiceMappingPanel } from "../../service-mapping-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,7 @@ export default async function ServerPage({ params }: { params: Promise<{ id: str
   const { id } = await params;
   let agent;
   try { agent = await getAgent(id); } catch { notFound(); }
+  const candidates = await getServiceMappingCandidates(id).catch(() => []);
 
   const metric = agent.latest_metrics;
   const problems = agent.services.filter(isServiceProblem);
@@ -82,6 +84,8 @@ export default async function ServerPage({ params }: { params: Promise<{ id: str
         <ServiceSection title="运行中的 systemd 服务" services={systemdActive} />
         <ServiceSection title="未运行的 systemd 服务（正常待命或已停止）" services={systemdInactive} defaultOpen={false} />
       </section>
+
+      <ServiceMappingPanel candidates={candidates} />
     </main>
   );
 }

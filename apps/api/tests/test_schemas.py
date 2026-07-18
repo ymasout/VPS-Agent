@@ -3,7 +3,13 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from app.schemas import AgentReport, DiskMetric, Metrics, RegistrationTokenCreate
+from app.schemas import (
+    AgentReport,
+    DiskMetric,
+    EvidenceSourceReport,
+    Metrics,
+    RegistrationTokenCreate,
+)
 
 
 def test_registration_expiration_is_bounded() -> None:
@@ -57,3 +63,13 @@ def test_report_rejects_duplicate_service_identity() -> None:
 
     with pytest.raises(ValidationError, match="must be unique"):
         AgentReport.model_validate(payload)
+
+
+def test_evidence_source_requires_complete_service_association() -> None:
+    with pytest.raises(ValidationError, match="must be provided together"):
+        EvidenceSourceReport(
+            key="docker-logs-api",
+            kind="docker_logs",
+            display_name="API logs",
+            service_kind="docker",
+        )

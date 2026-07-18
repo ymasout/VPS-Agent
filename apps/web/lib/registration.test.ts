@@ -16,10 +16,11 @@ describe("registration token request protection", () => {
 
   it("builds a shell-safe install command without embedding the registration token", () => {
     expect(shellQuote("owner's vps")).toBe(`'owner'"'"'s vps'`);
-    const command = buildInstallCommand("https://ops.example.com/", "owner's vps");
+    const command = buildInstallCommand("https://ops.example.com/", "owner's vps", "docker-logs");
 
     expect(command).toContain("https://ops.example.com/agent-downloads/latest/install-agent.sh");
     expect(command).toContain(`--name 'owner'"'"'s vps'`);
+    expect(command).toContain("--evidence-policy docker-logs");
     expect(command).not.toContain("reg_");
   });
 });

@@ -66,6 +66,8 @@ type EvidenceSource struct {
 	Key         string `json:"key"`
 	Kind        string `json:"kind"`
 	DisplayName string `json:"display_name"`
+	ServiceKind string `json:"service_kind,omitempty"`
+	ServiceKey  string `json:"service_key,omitempty"`
 }
 
 type EvidenceRequest struct {

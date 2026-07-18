@@ -70,6 +70,14 @@ class EvidenceSourceReport(BaseModel):
     key: str = Field(min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9._-]+$")
     kind: Literal["docker_logs"]
     display_name: str = Field(min_length=1, max_length=255)
+    service_kind: Literal["docker"] | None = None
+    service_key: str | None = Field(default=None, min_length=1, max_length=255)
+
+    @model_validator(mode="after")
+    def validate_service_association(self) -> "EvidenceSourceReport":
+        if (self.service_kind is None) != (self.service_key is None):
+            raise ValueError("service kind and key must be provided together")
+        return self
 
 
 class AgentReport(BaseModel):
@@ -200,6 +208,19 @@ class ServiceMappingView(BaseModel):
     repository_full_name: str | None
     commit_sha: str | None
     image_digest: str | None
+
+
+class ServiceMappingCandidate(BaseModel):
+    agent_id: str
+    service_kind: str
+    service_key: str
+    service_name: str
+    state: str
+    healthy: bool | None
+    log_source_key: str
+    log_source_name: str
+    mapped: bool
+    instance_id: str | None
 
 
 class EvidenceRequestWork(BaseModel):

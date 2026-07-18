@@ -86,3 +86,14 @@ func TestLoadRejectsMalformedEvidenceAllowlist(t *testing.T) {
 		t.Fatalf("malformed allowlist should be empty: %#v", sources)
 	}
 }
+
+func TestEvidencePolicyRequiresExplicitDockerLogsOptIn(t *testing.T) {
+	t.Setenv("AGENT_EVIDENCE_POLICY", "docker_logs")
+	if policy := Load().EvidencePolicy; policy != EvidencePolicyDockerLogs {
+		t.Fatalf("unexpected policy: %q", policy)
+	}
+	t.Setenv("AGENT_EVIDENCE_POLICY", "anything-else")
+	if policy := Load().EvidencePolicy; policy != "disabled" {
+		t.Fatalf("unknown policy must be disabled: %q", policy)
+	}
+}

@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Agent, AlertEvent, NotificationDelivery
+from .models import Agent, AlertEvent, NotificationDelivery, ServiceStatus
 from .schemas import AgentReport, ServiceReport
 
 ACTIVE_STATUSES = ("pending", "firing", "acknowledged", "silenced")
@@ -39,6 +39,7 @@ async def evaluate_service_alerts(
     report: AgentReport,
     observed_at: datetime,
     pending_observations: int,
+    previous_services: list[ServiceStatus] | None = None,
 ) -> list[NotificationDelivery]:
     active_events = (
         await session.scalars(
@@ -50,11 +51,32 @@ async def evaluate_service_alerts(
         )
     ).all()
     by_fingerprint = {event.fingerprint: event for event in active_events}
+    previous_by_name = {
+        (service.kind, service.name): service for service in (previous_services or [])
+    }
     deliveries: list[NotificationDelivery] = []
 
     for service in report.services:
         fingerprint = service_fingerprint(agent.id, service)
         event = by_fingerprint.get(fingerprint)
+        previous = previous_by_name.get((service.kind, service.name))
+        if event is None and previous is not None and previous.service_key != service.key:
+            legacy = ServiceReport(
+                kind=service.kind,
+                key=previous.service_key,
+                name=service.name,
+                state=service.state,
+            )
+            legacy_fingerprint = service_fingerprint(agent.id, legacy)
+            event = by_fingerprint.get(legacy_fingerprint)
+            if event is not None:
+                # Agent 从容器 ID 切换为稳定键时，原活动事件就地迁移，
+                # 避免产生第二个 Firing 或让恢复通知永久丢失。
+                event.fingerprint = fingerprint
+                event.active_key = fingerprint
+                event.service_key = service.key
+                by_fingerprint.pop(legacy_fingerprint, None)
+                by_fingerprint[fingerprint] = event
         if service_is_problem(service):
             if event is None:
                 status = "firing" if pending_observations <= 1 else "pending"
@@ -92,10 +114,7 @@ async def evaluate_service_alerts(
                     event.status = "firing"
                     event.silenced_until = None
                     deliveries.append(notification_delivery(event, "firing"))
-                elif (
-                    event.status == "pending"
-                    and event.observation_count >= pending_observations
-                ):
+                elif event.status == "pending" and event.observation_count >= pending_observations:
                     event.status = "firing"
                     event.firing_at = observed_at
                     deliveries.append(notification_delivery(event, "firing"))
