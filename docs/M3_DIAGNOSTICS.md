@@ -10,9 +10,9 @@
 - `Repository` 与 `DeploymentVersion` 保存仓库名、Commit SHA 或镜像摘要。GitHub 凭据不下发给 Agent。
 - `DiagnosticRun`、`EvidenceRequest`、`EvidenceItem` 与 `DiagnosticCitation` 分别保存诊断状态、出站请求、脱敏后的原始观察证据和结论引用关系。AI 结论不写回证据内容。
 
-## 2. Agent 本地白名单
+## 2. Agent 本地白名单（首条闭环兼容方式）
 
-第一版只接受 `docker_logs`。在 `/etc/vps-agent/agent.env` 中显式配置，例如：
+第一版只接受 `docker_logs`，并通过 `/etc/vps-agent/agent.env` 显式配置。该方式用于验证“控制平面不能任意指定容器或路径”的安全边界，不是多台 VPS 的最终部署流程。例如：
 
 ```dotenv
 AGENT_EVIDENCE_SOURCES_JSON='[{"key":"payment-api-logs","kind":"docker_logs","target":"payment-api","display_name":"payment-api-logs"}]'
@@ -20,10 +20,18 @@ AGENT_EVIDENCE_SOURCES_JSON='[{"key":"payment-api-logs","kind":"docker_logs","ta
 
 `key` 是控制平面可引用的稳定标识；`target` 是本机 Docker 容器名或 ID，不会随报告上传。非法 JSON、重复键、未知类型、空目标或不符合 `[a-zA-Z0-9._-]+` 的键会被忽略。升级安装器会保留这项配置。
 
+不要把这套手工配置推广为日常运维要求。产品化替代方案属于 M3 当前后续范围：
+
+- Agent 根据已发现的 Docker Compose project/service 标签、普通容器和 systemd Unit 生成本地能力目录及稳定来源键。
+- Docker 服务长期身份优先使用 Compose project/service 等稳定元数据，不依赖容器重建后会变化的容器 ID。
+- 控制台展示候选服务和证据能力，用户通过 Web 批量确认或使用安装前选择的策略自动接受，不需要登录 VPS 编辑 JSON。
+- 控制平面仍只能请求 Agent 已声明的来源键，并继续下发和校验时间、行数、字节数和超时上限；自动发现不等于允许任意日志、路径或命令。
+- 现有环境变量在迁移期保留，用于兼容已部署 Agent、特殊服务和故障排查。
+
 ## 3. 只读出站协议
 
 1. Agent 在常规报告中只声明证据源的 `key`、`kind` 和展示名。
-2. 管理员通过 `POST /api/v1/service-mappings` 把已观测服务、Agent 已声明的日志源和可选仓库版本绑定为服务实例。
+2. 当前管理员通过 `POST /api/v1/service-mappings` 把已观测服务、Agent 已声明的日志源和可选仓库版本绑定为服务实例；产品化后由 Web 发现/确认流程调用同类控制面能力，不要求用户手写请求。
 3. `POST /api/v1/events/{event_id}/diagnostics` 手动触发诊断。同一事件同时只允许一个 Pending/Running 诊断。
 4. 控制平面先保存告警、最新服务状态、最新资源快照和部署版本证据，再创建只包含 `source_key`、时间窗口、行数、字节数和超时的请求。
 5. Agent 通过 `GET /api/v1/agents/evidence-requests/next` 主动领取请求，在本地用 `source_key` 查找目标；未命中本地白名单时直接失败，不接受控制平面提供容器名或命令。
@@ -106,6 +114,7 @@ Agent 和控制平面均遮蔽 Authorization、Bearer Token、密码、Cookie、
 
 ## 8. 当前未包含与已知限制
 
+- 自动生成稳定证据源目录和 Web 服务发现/确认流程；因此当前手工白名单只能用于少量金丝雀验证，不适合逐台推广。
 - systemd journal 和文件日志。
 - GitHub App 安装、Webhook 和仓库文件同步。
 - 自动诊断调度、Agent 失联/恢复事件和独立任务队列。
