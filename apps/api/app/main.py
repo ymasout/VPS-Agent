@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 import structlog
 from fastapi import FastAPI
@@ -10,6 +11,7 @@ from .config import get_settings
 from .database import engine, session_factory
 from .logging import configure_logging
 from .m3 import router as m3_router
+from .maintenance import control_plane_maintenance_loop
 from .models import Base, RegistrationToken
 from .releases import router as releases_router
 from .security import hash_token
@@ -21,6 +23,7 @@ logger = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    maintenance_task: asyncio.Task[None] | None = None
     if not settings.skip_database_init:
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
@@ -43,13 +46,22 @@ async def lifespan(_: FastAPI):
                     )
                 )
                 await session.commit()
+    if not settings.skip_database_init:
+        maintenance_task = asyncio.create_task(
+            control_plane_maintenance_loop(settings),
+            name="control-plane-maintenance",
+        )
     await logger.ainfo("api.started", environment=settings.app_env)
     yield
+    if maintenance_task is not None:
+        maintenance_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await maintenance_task
     await engine.dispose()
     await logger.ainfo("api.stopped")
 
 
-app = FastAPI(title=settings.app_name, version="0.3.1", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.3.2-dev", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],

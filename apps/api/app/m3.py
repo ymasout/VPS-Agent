@@ -301,17 +301,21 @@ async def trigger_diagnostic(
     event = await session.get(AlertEvent, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="event not found")
-    if event.source != "service" or not event.service_kind or not event.service_key:
-        raise HTTPException(status_code=409, detail="event does not map to a service instance")
-    instance = await session.scalar(
-        select(ServiceInstance).where(
-            ServiceInstance.agent_id == event.agent_id,
-            ServiceInstance.service_kind == event.service_kind,
-            ServiceInstance.service_key == event.service_key,
+    instance: ServiceInstance | None = None
+    if event.source == "service":
+        if not event.service_kind or not event.service_key:
+            raise HTTPException(status_code=409, detail="event does not map to a service instance")
+        instance = await session.scalar(
+            select(ServiceInstance).where(
+                ServiceInstance.agent_id == event.agent_id,
+                ServiceInstance.service_kind == event.service_kind,
+                ServiceInstance.service_key == event.service_key,
+            )
         )
-    )
-    if instance is None:
-        raise HTTPException(status_code=409, detail="service instance mapping is required")
+        if instance is None:
+            raise HTTPException(status_code=409, detail="service instance mapping is required")
+    elif event.source != "agent":
+        raise HTTPException(status_code=409, detail="event source is not diagnosable")
     active_key = f"event:{event.id}"
     existing = await session.scalar(
         select(DiagnosticRun).where(DiagnosticRun.active_key == active_key)
@@ -325,7 +329,7 @@ async def trigger_diagnostic(
 
     diagnostic = DiagnosticRun(
         event_id=event.id,
-        instance_id=instance.id,
+        instance_id=instance.id if instance else None,
         active_key=active_key,
         status="pending",
         trigger="manual",
@@ -342,16 +346,20 @@ async def trigger_diagnostic(
         if existing is None:
             raise
         return await diagnostic_view(session, existing)
-    await collect_control_plane_evidence(session, diagnostic, event, instance)
-    sources = list(
-        (
-            await session.scalars(
-                select(InstanceLogSource).where(
-                    InstanceLogSource.instance_id == instance.id,
-                    InstanceLogSource.enabled.is_(True),
+    await collect_control_plane_evidence(session, diagnostic, event, instance, settings)
+    sources = (
+        list(
+            (
+                await session.scalars(
+                    select(InstanceLogSource).where(
+                        InstanceLogSource.instance_id == instance.id,
+                        InstanceLogSource.enabled.is_(True),
+                    )
                 )
-            )
-        ).all()
+            ).all()
+        )
+        if instance
+        else []
     )
     for source in sources:
         session.add(

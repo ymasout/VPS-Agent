@@ -23,6 +23,11 @@ def service_fingerprint(agent_id: str, service: ServiceReport) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def agent_availability_fingerprint(agent_id: str) -> str:
+    value = f"{agent_id}|agent|availability"
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
 def notification_delivery(event: AlertEvent, notification_type: str) -> NotificationDelivery:
     event.notification_sequence = (event.notification_sequence or 0) + 1
     return NotificationDelivery(
@@ -129,6 +134,81 @@ async def evaluate_service_alerts(
             event.resolved_at = observed_at
             if previous_status in {"firing", "acknowledged", "silenced"}:
                 deliveries.append(notification_delivery(event, "resolved"))
+
+    session.add_all(deliveries)
+    return deliveries
+
+
+async def evaluate_agent_availability(
+    session: AsyncSession,
+    agent: Agent,
+    observed_at: datetime,
+    *,
+    online: bool,
+    offline_after_seconds: int,
+) -> list[NotificationDelivery]:
+    """复用 M2 事件状态机记录 Agent 失联与恢复，不引入第二套通知语义。"""
+
+    fingerprint = agent_availability_fingerprint(agent.id)
+    event = await session.scalar(
+        select(AlertEvent)
+        .where(AlertEvent.active_key == fingerprint)
+        .with_for_update()
+    )
+    deliveries: list[NotificationDelivery] = []
+
+    if online:
+        if event is None:
+            return deliveries
+        previous_status = event.status
+        event.status = "resolved"
+        event.active_key = None
+        event.last_observed_at = observed_at
+        event.silenced_until = None
+        event.resolved_at = observed_at
+        event.detail = f"Agent 已恢复上报；恢复时间：{observed_at.isoformat()}"
+        if previous_status in {"firing", "acknowledged", "silenced"}:
+            deliveries.append(notification_delivery(event, "resolved"))
+        session.add_all(deliveries)
+        return deliveries
+
+    last_seen = agent.last_seen_at.isoformat() if agent.last_seen_at else "从未上报"
+    detail = (
+        f"控制平面超过 {offline_after_seconds} 秒未收到 Agent 上报；"
+        f"最后心跳：{last_seen}"
+    )
+    if event is None:
+        event = AlertEvent(
+            organization_id=agent.organization_id,
+            agent_id=agent.id,
+            fingerprint=fingerprint,
+            active_key=fingerprint,
+            source="agent",
+            title=f"{agent.name}: Agent 失联",
+            severity="critical",
+            status="firing",
+            observation_count=1,
+            detail=detail,
+            first_observed_at=observed_at,
+            last_observed_at=observed_at,
+            firing_at=observed_at,
+        )
+        session.add(event)
+        await session.flush()
+        deliveries.append(notification_delivery(event, "firing"))
+    else:
+        event.observation_count += 1
+        event.last_observed_at = observed_at
+        event.detail = detail
+        silence_expired = (
+            event.status == "silenced"
+            and event.silenced_until is not None
+            and event.silenced_until <= observed_at
+        )
+        if silence_expired:
+            event.status = "firing"
+            event.silenced_until = None
+            deliveries.append(notification_delivery(event, "firing"))
 
     session.add_all(deliveries)
     return deliveries

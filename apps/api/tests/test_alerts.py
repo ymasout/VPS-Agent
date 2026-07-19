@@ -2,7 +2,12 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-from app.alerts import evaluate_service_alerts, service_is_problem
+from app.alerts import (
+    agent_availability_fingerprint,
+    evaluate_agent_availability,
+    evaluate_service_alerts,
+    service_is_problem,
+)
 from app.models import Agent, AlertEvent, ServiceStatus
 from app.schemas import AgentReport, Metrics, ServiceReport
 
@@ -64,6 +69,115 @@ def test_service_problem_classification_matches_m1_status_semantics() -> None:
     assert service_is_problem(service("active", False))
     assert not service_is_problem(service("inactive", None))
     assert service_is_problem(ServiceReport(kind="docker", key="web", name="web", state="exited"))
+
+
+def test_offline_agent_fires_once_and_uses_machine_scope() -> None:
+    observed_at = datetime.now(timezone.utc)
+    current_agent = agent()
+    current_agent.last_seen_at = observed_at - timedelta(minutes=2)
+    session = AsyncMock()
+    session.scalar.return_value = None
+    session.add = MagicMock()
+    session.add_all = MagicMock()
+
+    deliveries = asyncio.run(
+        evaluate_agent_availability(
+            session,
+            current_agent,
+            observed_at,
+            online=False,
+            offline_after_seconds=90,
+        )
+    )
+
+    event = session.add.call_args.args[0]
+    assert event.source == "agent"
+    assert event.service_kind is None
+    assert event.service_key is None
+    assert event.status == "firing"
+    assert event.active_key == agent_availability_fingerprint(current_agent.id)
+    assert len(deliveries) == 1
+    assert deliveries[0].notification_type == "firing"
+    assert deliveries[0].sequence == 1
+
+
+def test_repeated_offline_scan_does_not_repeat_notification() -> None:
+    observed_at = datetime.now(timezone.utc)
+    current_agent = agent()
+    fingerprint = agent_availability_fingerprint(current_agent.id)
+    event = AlertEvent(
+        id="event-01",
+        agent_id=current_agent.id,
+        fingerprint=fingerprint,
+        active_key=fingerprint,
+        source="agent",
+        title="test-vps: Agent 失联",
+        severity="critical",
+        status="firing",
+        observation_count=1,
+        notification_sequence=1,
+        first_observed_at=observed_at - timedelta(minutes=1),
+        last_observed_at=observed_at - timedelta(minutes=1),
+        firing_at=observed_at - timedelta(minutes=1),
+    )
+    session = AsyncMock()
+    session.scalar.return_value = event
+    session.add_all = MagicMock()
+
+    deliveries = asyncio.run(
+        evaluate_agent_availability(
+            session,
+            current_agent,
+            observed_at,
+            online=False,
+            offline_after_seconds=90,
+        )
+    )
+
+    assert event.observation_count == 2
+    assert event.status == "firing"
+    assert deliveries == []
+
+
+def test_agent_report_resolves_offline_event_with_sequence_two() -> None:
+    observed_at = datetime.now(timezone.utc)
+    current_agent = agent()
+    fingerprint = agent_availability_fingerprint(current_agent.id)
+    event = AlertEvent(
+        id="event-01",
+        agent_id=current_agent.id,
+        fingerprint=fingerprint,
+        active_key=fingerprint,
+        source="agent",
+        title="test-vps: Agent 失联",
+        severity="critical",
+        status="firing",
+        observation_count=3,
+        notification_sequence=1,
+        first_observed_at=observed_at - timedelta(minutes=3),
+        last_observed_at=observed_at - timedelta(minutes=1),
+        firing_at=observed_at - timedelta(minutes=3),
+    )
+    session = AsyncMock()
+    session.scalar.return_value = event
+    session.add_all = MagicMock()
+
+    deliveries = asyncio.run(
+        evaluate_agent_availability(
+            session,
+            current_agent,
+            observed_at,
+            online=True,
+            offline_after_seconds=90,
+        )
+    )
+
+    assert event.status == "resolved"
+    assert event.active_key is None
+    assert event.resolved_at == observed_at
+    assert len(deliveries) == 1
+    assert deliveries[0].notification_type == "resolved"
+    assert deliveries[0].sequence == 2
 
 
 def test_first_problem_observation_creates_pending_event_without_notification() -> None:

@@ -15,6 +15,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
     notFound();
   }
   const active = diagnostics.some((item) => item.status === "pending" || item.status === "running");
+  const machineEvent = event.source === "agent";
 
   return <main>
     <Link className="back" href="/">← 总览</Link>
@@ -25,11 +26,11 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
       <DiagnosticTrigger eventId={event.id} disabled={active} />
     </section>
 
-    {diagnostics.length === 0 && <div className="empty"><strong>尚无诊断</strong><span>发起后，Agent 只会读取本地白名单中的有限日志窗口。</span></div>}
+    {diagnostics.length === 0 && <div className="empty"><strong>尚无诊断</strong><span>{machineEvent ? "发起后只分析控制平面保存的最后心跳、资源与服务快照，不会等待离线 Agent。" : "发起后，Agent 只会读取本地白名单中的有限日志窗口。"}</span></div>}
     {diagnostics.map((diagnostic) => <section className="diagnostic" key={diagnostic.id}>
       <div className="diagnostic-meta"><span>{diagnostic.status}</span><span>{diagnostic.provider}</span><time>{new Date(diagnostic.created_at).toLocaleString("zh-CN")}</time></div>
       {diagnostic.error_detail && <div className="empty error">{diagnostic.error_code} · {diagnostic.error_detail}</div>}
-      {!diagnostic.result && <div className="empty"><strong>证据采集中</strong><span>等待 Agent 领取只读请求并回传有界结果。</span></div>}
+      {!diagnostic.result && <div className="empty"><strong>证据采集中</strong><span>{machineEvent ? "正在整理控制平面已有的机器级证据。" : "等待 Agent 领取只读请求并回传有界结果。"}</span></div>}
       {diagnostic.result && <>
         <h2>{diagnostic.result.summary}</h2>
         <div className="diagnostic-grid">

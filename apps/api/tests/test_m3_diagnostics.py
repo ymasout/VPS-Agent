@@ -6,11 +6,13 @@ import pytest
 from fastapi import BackgroundTasks
 from pydantic import ValidationError
 
+import app.m3 as m3_module
 from app.api import reconcile_service_instance_keys
 from app.config import Settings
 from app.diagnostics import (
     DeterministicDiagnosticProvider,
     HTTPDiagnosticProvider,
+    collect_control_plane_evidence,
     finalize_diagnostic,
     reclaim_stale_diagnostics,
     validate_result_references,
@@ -329,6 +331,50 @@ def test_duplicate_active_diagnostic_is_returned_without_new_request() -> None:
     session.add.assert_not_called()
 
 
+def test_agent_event_can_trigger_diagnostic_without_service_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(timezone.utc)
+    event = AlertEvent(
+        id="event-1",
+        agent_id="agent-1",
+        source="agent",
+        title="DMIT-VPS: Agent 失联",
+        severity="critical",
+        status="firing",
+        observation_count=1,
+        first_observed_at=now,
+        last_observed_at=now,
+        firing_at=now,
+    )
+    session = AsyncMock()
+    session.get.return_value = event
+    session.scalar.return_value = None
+    session.add = MagicMock()
+    nested = AsyncMock()
+    session.begin_nested = MagicMock(return_value=nested)
+    reclaim = AsyncMock(return_value=[])
+    collect = AsyncMock()
+    finalize = AsyncMock()
+    view = AsyncMock(return_value="diagnostic-view")
+    monkeypatch.setattr(m3_module, "reclaim_stale_diagnostics", reclaim)
+    monkeypatch.setattr(m3_module, "collect_control_plane_evidence", collect)
+    monkeypatch.setattr(m3_module, "finalize_diagnostic", finalize)
+    monkeypatch.setattr(m3_module, "diagnostic_view", view)
+    settings = Settings()
+
+    result = asyncio.run(
+        trigger_diagnostic("event-1", BackgroundTasks(), session, settings)
+    )
+
+    diagnostic = session.add.call_args.args[0]
+    assert result == "diagnostic-view"
+    assert diagnostic.instance_id is None
+    collect.assert_awaited_once_with(session, diagnostic, event, None, settings)
+    finalize.assert_awaited_once_with(session, diagnostic, settings)
+    session.commit.assert_awaited_once()
+
+
 def scalar_rows(items: list) -> MagicMock:
     result = MagicMock()
     result.all.return_value = items
@@ -469,6 +515,85 @@ def test_recent_diagnostic_is_not_reclaimed() -> None:
     assert diagnostic.started_at == now - timedelta(seconds=20)
 
 
+def test_agent_event_collects_control_plane_evidence_without_remote_request() -> None:
+    now = datetime.now(timezone.utc)
+    event = AlertEvent(
+        id="event-1",
+        agent_id="agent-1",
+        source="agent",
+        title="DMIT-VPS: Agent 失联",
+        severity="critical",
+        status="firing",
+        observation_count=1,
+        detail="最后心跳超时",
+        first_observed_at=now,
+        last_observed_at=now,
+        firing_at=now,
+    )
+    diagnostic = DiagnosticRun(
+        id="diagnostic-1",
+        event_id=event.id,
+        status="pending",
+        trigger="manual",
+        provider="deterministic",
+        created_at=now,
+    )
+    current_agent = Agent(
+        id="agent-1",
+        credential_hash="hash",
+        name="DMIT-VPS",
+        hostname="dmit-vps",
+        machine_id="machine-1",
+        os="Ubuntu",
+        arch="amd64",
+        version="0.3.1",
+        capabilities=[],
+        last_seen_at=now - timedelta(minutes=2),
+    )
+    service = ServiceStatus(
+        agent_id="agent-1",
+        kind="docker",
+        service_key="docker:canary",
+        name="canary",
+        state="running",
+        healthy=True,
+        observed_at=now - timedelta(minutes=2),
+    )
+    session = AsyncMock()
+    session.get.return_value = current_agent
+    session.scalar.return_value = None
+    session.scalars.return_value = scalar_rows([service])
+    session.add = MagicMock()
+
+    asyncio.run(
+        collect_control_plane_evidence(
+            session,
+            diagnostic,
+            event,
+            None,
+            Settings(agent_offline_after_seconds=90),
+        )
+    )
+
+    evidence = [call.args[0] for call in session.add.call_args_list]
+    assert [item.evidence_type for item in evidence] == [
+        "alert_event",
+        "agent_availability",
+        "service_snapshot",
+    ]
+    assert '"online": false' in evidence[1].content
+    assert "credential" not in evidence[1].content
+    assert evidence[2].source_label == "失联前最后服务快照"
+
+
 def test_stale_threshold_must_exceed_provider_timeout() -> None:
     with pytest.raises(ValidationError, match="must exceed provider timeout"):
         Settings(diagnostic_timeout_seconds=60, diagnostic_run_stale_seconds=60)
+
+
+def test_availability_scan_interval_must_not_exceed_offline_threshold() -> None:
+    with pytest.raises(ValidationError, match="must not exceed offline threshold"):
+        Settings(
+            agent_offline_after_seconds=60,
+            agent_availability_scan_interval_seconds=61,
+        )

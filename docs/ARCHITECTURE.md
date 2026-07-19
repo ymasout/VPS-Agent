@@ -122,6 +122,8 @@ Release 安装器在首次安装时生成独立的 Agent machine-id，保存在 
 flowchart LR
   W["Web 事件页"] -->|"管理端手动触发"| C["FastAPI 控制平面"]
   C -->|"保存状态/指标/版本证据"| P["PostgreSQL"]
+  T["控制平面定时巡检"] -->|"last_seen_at 超时"| C
+  C -->|"机器 Firing/Resolved + 通知"| P
   A["Go Agent"] -->|"出站轮询 source_key + 硬上限"| C
   A -->|"本地白名单 Docker logs + 上传前脱敏"| C
   C -->|"二次限制和脱敏"| P
@@ -134,6 +136,9 @@ flowchart LR
 - Docker Compose 实例使用 project/service/副本号形成稳定键，普通容器使用容器名；Agent 同时生成来源键和稳定服务关联，但真实容器目标不上传。
 - 控制平面保存来源与稳定服务键的关联，机器详情页只展示 Agent 已声明的候选服务，并通过服务端管理令牌代理确认业务映射。手工 JSON 继续作为兼容入口。
 - Agent 首次从容器 ID 切换到稳定键时，控制平面根据前后同名观测迁移活动 M2 事件和既有 M3 服务映射，避免重复告警、丢失恢复通知或诊断断链。
+- 控制平面独立维护循环根据 `last_seen_at` 创建 Agent 失联事件，并在下一次合法报告刷新心跳前解析恢复；巡检和报告锁定同一 Agent 行，多 API 实例使用 `SKIP LOCKED` 分配巡检对象。API 启动时给予一个完整失联阈值的重连宽限期，避免控制平面自身停机造成 Fleet 级误报。
+- 机器事件复用 M2 状态机与钉钉投递，并可在现有事件页发起只使用控制平面最后快照的只读诊断；离线时不向 Agent 发取证请求。
+- 同一维护循环负责待发送通知与陈旧 Sending 的独立重试，使通知可靠性不再依赖后续 Agent 报告。
 - 诊断状态为 Pending、Running、Completed 或 Failed；同一事件同时只保留一个活动诊断键。
 - 证据、诊断结果和引用关系分表保存。详细协议与配置见 [M3_DIAGNOSTICS.md](./M3_DIAGNOSTICS.md)。
 
@@ -174,7 +179,7 @@ flowchart LR
 - Web、API、Agent 使用结构化日志。
 - 请求、Agent、VPS 和后续操作使用稳定标识关联日志。
 - Agent 网络中断时采用有上限的退避重试，不因短暂失败退出守护进程。
-- 控制平面根据 `last_seen_at` 判断在线状态，不把暂时未上报等同于资源删除。
+- 控制平面根据 `last_seen_at` 判断在线状态，不把暂时未上报等同于资源删除；超过配置阈值后创建可确认、可静默、可恢复的机器级事件。
 - Agent 重装或重启不得静默创建重复 VPS；重新绑定行为必须明确。
 
 ## 9. 架构决策记录
@@ -192,7 +197,7 @@ flowchart LR
 
 ## 10. 明确延后能力
 
-- M3 后续：systemd/file 日志、GitHub App、Agent 失联/恢复和真实模型生产验收；Docker 自动发现与 Web 单服务确认已进入当前实现。
+- M3 后续：systemd/file 日志、GitHub App、Agent 失联/恢复生产验收和真实模型生产验收；Docker 自动发现、Web 单服务确认及 Agent 可用性本地闭环已进入当前实现。
 - M4：安全重启、部署、回滚和完整审计。
 - M5：全局/上下文对话、仓库知识和诊断历史增强。
 - M6：Web SSH、PWA/移动审批、团队协作和自托管产品化。

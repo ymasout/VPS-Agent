@@ -4,7 +4,7 @@ import { summarizeFleet } from "@/lib/fleet";
 import { RegistrationPanel } from "./registration-panel";
 
 export const dynamic = "force-dynamic";
-const consoleVersion = "0.3.1-dev";
+const consoleVersion = "0.3.2-dev";
 
 function Metric({ label, value }: { label: string; value: string }) {
   return <div className="metric"><span>{label}</span><strong>{value}</strong></div>;

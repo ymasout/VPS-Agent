@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .alerts import evaluate_service_alerts
+from .alerts import evaluate_agent_availability, evaluate_service_alerts
 from .config import Settings, get_settings
 from .database import get_session
 from .models import (
@@ -150,10 +150,22 @@ async def report_agent(
     settings: Settings = Depends(get_settings),
 ) -> ReportReceipt:
     received_at = now_utc()
-    agent.hostname = payload.hostname
-    agent.version = payload.version
-    agent.capabilities = payload.capabilities
-    agent.last_seen_at = received_at
+    locked_agent = await session.scalar(
+        select(Agent).where(Agent.id == agent.id).with_for_update()
+    )
+    if locked_agent is None:
+        raise HTTPException(status_code=401, detail="agent not found")
+    await evaluate_agent_availability(
+        session,
+        locked_agent,
+        received_at,
+        online=True,
+        offline_after_seconds=settings.agent_offline_after_seconds,
+    )
+    locked_agent.hostname = payload.hostname
+    locked_agent.version = payload.version
+    locked_agent.capabilities = payload.capabilities
+    locked_agent.last_seen_at = received_at
     previous_services = list(
         (
             await session.scalars(select(ServiceStatus).where(ServiceStatus.agent_id == agent.id))
@@ -161,7 +173,7 @@ async def report_agent(
     )
     await evaluate_service_alerts(
         session,
-        agent,
+        locked_agent,
         payload,
         received_at,
         settings.alert_pending_observations,

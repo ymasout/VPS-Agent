@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .config import Settings
 from .database import session_factory
 from .models import (
+    Agent,
     AlertEvent,
     DeploymentVersion,
     DiagnosticCitation,
@@ -179,7 +180,8 @@ async def collect_control_plane_evidence(
     session: AsyncSession,
     diagnostic: DiagnosticRun,
     event: AlertEvent,
-    instance: ServiceInstance,
+    instance: ServiceInstance | None,
+    settings: Settings,
 ) -> None:
     await add_evidence(
         session,
@@ -200,6 +202,94 @@ async def collect_control_plane_evidence(
         ),
         event.last_observed_at,
     )
+    if event.source == "agent":
+        agent = await session.get(Agent, event.agent_id)
+        if agent is not None:
+            cutoff = utcnow() - timedelta(seconds=settings.agent_offline_after_seconds)
+            online = bool(agent.last_seen_at and agent.last_seen_at >= cutoff)
+            await add_evidence(
+                session,
+                diagnostic.id,
+                "agent_availability",
+                "Agent 连接状态",
+                json.dumps(
+                    {
+                        "agent_id": agent.id,
+                        "name": agent.name,
+                        "hostname": agent.hostname,
+                        "os": agent.os,
+                        "arch": agent.arch,
+                        "version": agent.version,
+                        "last_seen_at": (
+                            agent.last_seen_at.isoformat() if agent.last_seen_at else None
+                        ),
+                        "online": online,
+                        "offline_after_seconds": settings.agent_offline_after_seconds,
+                    },
+                    ensure_ascii=False,
+                ),
+                event.last_observed_at,
+            )
+        metric = await session.scalar(
+            select(MetricSnapshot)
+            .where(MetricSnapshot.agent_id == event.agent_id)
+            .order_by(MetricSnapshot.collected_at.desc())
+            .limit(1)
+        )
+        if metric:
+            await add_evidence(
+                session,
+                diagnostic.id,
+                "metrics",
+                "失联前最后资源快照",
+                json.dumps(
+                    {
+                        "cpu_percent": metric.cpu_percent,
+                        "memory_percent": metric.memory_percent,
+                        "disks": metric.disks,
+                    },
+                    ensure_ascii=False,
+                ),
+                metric.collected_at,
+            )
+        services = list(
+            (
+                await session.scalars(
+                    select(ServiceStatus)
+                    .where(ServiceStatus.agent_id == event.agent_id)
+                    .order_by(ServiceStatus.kind, ServiceStatus.name)
+                    .limit(128)
+                )
+            ).all()
+        )
+        if services:
+            await add_evidence(
+                session,
+                diagnostic.id,
+                "service_snapshot",
+                "失联前最后服务快照",
+                json.dumps(
+                    [
+                        {
+                            "kind": service.kind,
+                            "key": service.service_key,
+                            "name": service.name,
+                            "state": service.state,
+                            "detail": service.detail,
+                            "healthy": service.healthy,
+                            "observed_at": service.observed_at.isoformat(),
+                        }
+                        for service in services
+                    ],
+                    ensure_ascii=False,
+                ),
+                max(service.observed_at for service in services),
+                max_bytes=65536,
+            )
+        return
+
+    if instance is None:
+        return
     service = await session.scalar(
         select(ServiceStatus).where(
             ServiceStatus.agent_id == instance.agent_id,

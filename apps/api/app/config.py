@@ -12,7 +12,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     admin_api_token: str = "change-me-in-production"
     dev_agent_registration_token: str | None = None
-    agent_offline_after_seconds: int = 90
+    agent_offline_after_seconds: int = Field(default=90, ge=30, le=3600)
+    agent_availability_scan_interval_seconds: int = Field(default=30, ge=5, le=300)
     agent_release_repository: str = "ymasout/VPS-Agent"
     alert_pending_observations: int = 2
     dingtalk_webhook_url: str | None = None
@@ -39,6 +40,8 @@ class Settings(BaseSettings):
     def validate_diagnostic_timing(self) -> "Settings":
         if self.diagnostic_run_stale_seconds <= self.diagnostic_timeout_seconds:
             raise ValueError("diagnostic run stale threshold must exceed provider timeout")
+        if self.agent_availability_scan_interval_seconds > self.agent_offline_after_seconds:
+            raise ValueError("agent availability scan interval must not exceed offline threshold")
         return self
 
 

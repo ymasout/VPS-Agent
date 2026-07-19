@@ -51,18 +51,27 @@ def dingtalk_payload(
     event: AlertEvent, notification_type: str, console_public_url: str
 ) -> dict[str, object]:
     resolved = notification_type == "resolved"
-    heading = "✅ 服务已恢复" if resolved else "🔴 服务异常"
+    agent_event = event.source == "agent"
+    if agent_event:
+        heading = "✅ VPS 已恢复连接" if resolved else "🔴 VPS 失联"
+    else:
+        heading = "✅ 服务已恢复" if resolved else "🔴 服务异常"
     status = "Resolved" if resolved else "Firing"
     detail = escape_markdown((event.detail or "无额外详情")[:300])
     title = escape_markdown(event.title)
-    service = escape_markdown(f"{event.service_kind or 'service'} / {event.service_key or '-'}")
+    target_label = "机器" if agent_event else "服务"
+    target = (
+        escape_markdown(event.agent_id)
+        if agent_event
+        else escape_markdown(f"{event.service_kind or 'service'} / {event.service_key or '-'}")
+    )
     event_url = f"{console_public_url.rstrip('/')}/events/{event.id}"
     text = "\n\n".join(
         [
             f"### {heading}",
             f"- **事件**：{title}",
             f"- **状态**：{status}",
-            f"- **服务**：{service}",
+            f"- **{target_label}**：{target}",
             f"- **详情**：{detail}",
             f"- [查看事件与诊断]({event_url})",
         ]

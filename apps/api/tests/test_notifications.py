@@ -81,6 +81,21 @@ def test_dingtalk_markdown_escapes_untrusted_service_text() -> None:
     assert "https://ops.example.com/events/event-01" in text
 
 
+def test_dingtalk_payload_labels_agent_disconnect_as_vps_event() -> None:
+    current = event()
+    current.source = "agent"
+    current.service_kind = None
+    current.service_key = None
+    current.title = "test-vps: Agent 失联"
+
+    firing = dingtalk_payload(current, "firing", "https://ops.example.com")
+    resolved = dingtalk_payload(current, "resolved", "https://ops.example.com")
+
+    assert firing["markdown"]["title"] == "🔴 VPS 失联"  # type: ignore[index]
+    assert "**机器**：agent-01" in firing["markdown"]["text"]  # type: ignore[index]
+    assert resolved["markdown"]["title"] == "✅ VPS 已恢复连接"  # type: ignore[index]
+
+
 def test_dingtalk_sender_accepts_success_and_rejects_api_error() -> None:
     requests: list[httpx.Request] = []
 

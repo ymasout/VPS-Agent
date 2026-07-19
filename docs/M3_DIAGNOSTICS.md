@@ -48,6 +48,23 @@ AGENT_EVIDENCE_SOURCES_JSON='[{"key":"payment-api-logs","kind":"docker_logs","ta
 6. Agent 使用固定参数调用 `docker logs`，并在容器目标前加入 `--` 参数分隔符，没有 Shell 拼接；结果在上传前脱敏并按上限截断，再通过 `POST /api/v1/agents/evidence-requests/{id}/complete` 回传。
 7. 控制平面再次执行行数、字节数和敏感信息限制，然后调用诊断提供者并验证固定结构及全部证据引用。
 
+### Agent 失联、恢复与机器级诊断
+
+- 控制平面维护循环每 `AGENT_AVAILABILITY_SCAN_INTERVAL_SECONDS` 秒检查一次 `last_seen_at`。当最后心跳早于 `AGENT_OFFLINE_AFTER_SECONDS` 阈值时，创建 `source=agent` 的机器级 Firing 事件；实际发现延迟最多再增加一个巡检周期。API 每次启动先等待一个完整失联阈值，让仍存活的 Agent 重新上报，避免把控制平面自身停机误报为整批 VPS 失联；通知重试不等待该宽限期。
+- 巡检使用 Agent 行锁和 `SKIP LOCKED`；Agent 报告在更新 `last_seen_at` 前锁定同一行并解析活动失联事件。多 API 实例及巡检/恢复竞争不会生成第二个活动事件。
+- 失联与恢复继续使用 M2 活动指纹、确认/静默和通知序号，重复离线巡检不重复发送；恢复投递沿用同一事件的下一个 sequence。
+- 独立维护循环同时重试 Pending、Failed 和陈旧 Sending 通知，不依赖任何 Agent 后续报告，因此所有 Agent 都离线时仍能发送失联告警。
+- 机器级手动诊断不等待离线 Agent，也不创建证据请求。它只保存控制平面的告警事件、最后心跳、非敏感 Agent 元数据、最后资源快照和最多 128 条最后服务状态，再交给同一结构化诊断提供者。
+
+相关配置：
+
+```dotenv
+AGENT_OFFLINE_AFTER_SECONDS=90
+AGENT_AVAILABILITY_SCAN_INTERVAL_SECONDS=30
+```
+
+巡检周期必须不大于失联阈值。两项配置分别限制在 30–3600 秒和 5–300 秒。
+
 首个映射请求示例（`X-Admin-Token` 只由受信任管理端持有）：
 
 ```json
@@ -128,12 +145,14 @@ Agent 和控制平面均遮蔽 Authorization、Bearer Token、密码、Cookie、
 
 2026-07-19 v0.3.1 产品化金丝雀（自动发现模式）在生产 control-plane 宿主机实证同一闭环：control-plane Agent 保留身份升级到 `v0.3.1` 并以 `--evidence-policy docker-logs` 开启自动发现，全程不手工编辑证据源 JSON。Agent 自动发现 compose 栈 5 个容器，稳定 `service_key` 为 `compose:vps-agent-console:<service>:1`；`agent_evidence_sources` 与 `agent_evidence_source_bindings` 均无 target 列，控制平面只能引用 Agent 已声明的 source_key 并下发时间、行数、字节数和超时上限。浏览器在机器详情页确认 `m3-auto-canary` 候选即建立映射，无需手填 source_key、容器 ID 或 JSON，也不手敲映射 API。停止 canary 进入 Firing 后触发诊断进入 Completed，证据请求经 Caddy 无 401，docker_logs 证据中 `fake-secret` 计数为 0、`[REDACTED]` 为 97。同名重建 canary（新容器 ID）后 `service_key` 与映射不变，第二次诊断仍 Completed，稳定身份跨重建存活。控制平面每上报周期 reconcile `agent_evidence_sources` 与 `service_statuses`，Agent 停止声明的来源与状态自动清除；清理后 control-plane 回到纯自动发现，DB 孤儿清理完毕。
 
+同日使用隔离 PostgreSQL 验证 Agent 可用性事件：并发执行两次失联巡检只生成一个活动事件和一条 Firing sequence 1；从该机器事件手动触发诊断，不创建远程证据请求，直接以告警和最后心跳等控制平面证据进入 Completed；随后通过真实 Agent 报告处理路径恢复同一事件，生成 Resolved sequence 2。临时 PostgreSQL 容器和匿名数据卷已清理，本项尚未生产验收。
+
 ## 8. 当前未包含与已知限制
 
 - 自动发现当前只为 Docker 生成日志能力；systemd 仍只有状态发现，没有 journal 取证来源。
 - systemd journal 和文件日志。
 - GitHub App 安装、Webhook 和仓库文件同步。
-- 自动诊断调度、Agent 失联/恢复事件和独立任务队列。
+- 自动诊断调度和通用独立任务队列；当前控制平面维护循环只负责 Agent 可用性巡检与通知重试。
 - 全局聊天、页面上下文对话、向量数据库和诊断历史增强。
 - 任何 M4 写操作。
 - 证据领取仍在 Agent 的报告循环中串行执行：单次采集最多阻塞该循环 15 秒，每周期只处理一个证据请求。当前默认 30 秒报告间隔可接受；请求密度增加前应拆成独立、有并发上限的轮询循环。
