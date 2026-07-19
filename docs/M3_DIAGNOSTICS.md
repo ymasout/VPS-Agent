@@ -50,7 +50,7 @@ AGENT_EVIDENCE_SOURCES_JSON='[{"key":"payment-api-logs","kind":"docker_logs","ta
 3. `POST /api/v1/events/{event_id}/diagnostics` 手动触发诊断。同一事件同时只允许一个 Pending/Running 诊断。
 4. 控制平面先保存告警、最新服务状态、最新资源快照和部署版本证据，再创建只包含 `source_key`、时间窗口、行数、字节数和超时的请求。
 5. Agent 通过 `GET /api/v1/agents/evidence-requests/next` 主动领取请求，在本地用 `source_key` 查找目标；未命中本地白名单时直接失败，不接受控制平面提供容器名或命令。
-6. Docker 来源使用固定参数调用 `docker logs`，并在容器目标前加入 `--` 参数分隔符；systemd 来源使用固定参数调用 `journalctl --unit <本地 Unit> --since <RFC3339> --until <RFC3339> --lines <上限> --output=short-iso --no-pager`。两者都不经过 Shell，结果在上传前脱敏并按上限截断，再通过 `POST /api/v1/agents/evidence-requests/{id}/complete` 回传。
+6. Docker 来源使用固定参数调用 `docker logs`，并在容器目标前加入 `--` 参数分隔符；systemd 来源使用固定参数调用 `journalctl --unit <本地 Unit> --since <YYYY-MM-DD HH:MM:SS UTC> --until <YYYY-MM-DD HH:MM:SS UTC> --lines <上限> --output=short-iso --no-pager`（不使用 RFC3339 `T...Z`：旧版 systemd journalctl 无法解析，会报 “Failed to parse timestamp”；v0.3.3 起改用空格分隔 + UTC 缩写以兼容旧版及更广范围的 systemd）。两者都不经过 Shell，结果在上传前脱敏并按上限截断，再通过 `POST /api/v1/agents/evidence-requests/{id}/complete` 回传。
 7. 控制平面再次执行行数、字节数和敏感信息限制，然后调用诊断提供者并验证固定结构及全部证据引用。
 
 ### Agent 失联、恢复与机器级诊断
@@ -184,11 +184,15 @@ Agent 和控制平面均遮蔽 Authorization、Bearer Token、密码、Cookie、
 
 同日完成 GitHub App 最小只读与 systemd journal 的隔离闭环：官方 Caddy 镜像校验配置为 `Valid configuration`；真实 PostgreSQL 创建 20 张当前模型表；使用模拟 GitHub REST 传输验证短期安装令牌、授权仓库、默认分支 Commit 和精确白名单 README 快照同步，测试 secret 在持久化前被脱敏；真实 API 数据流接收 Agent 声明的 systemd journal 能力，两次失败状态形成 Firing，Web 候选模型建立 systemd 映射，Agent Claim/Complete 有限 journal 后诊断进入 Completed。最终证据包含 `alert_event`、`deployment_version`、`metrics`、`repository_file`、`service_status` 和 `systemd_journal`，测试 secret 未进入任何证据，Agent 来源/绑定及 GitHub 绑定表均无采集 target 列。该验证没有连接真实 GitHub 安装，也没有部署生产。
 
+2026-07-20 GitHub App 最小只读生产金丝雀在控制平面宿主机跑通（真实 GitHub App `vps-agent-canary` 安装到 `ymasout/MagicPDF`）：手动同步真实拉取 JWT->安装令牌->授权仓库->默认分支 Commit SHA + 白名单 README 快照（脱敏后 2604 字节，docker-compose.yml/compose.yaml 404 跳过）；push 触发真实 GitHub 签名 Webhook，HMAC 验签通过（202），后台重同步抓到新 head_sha；卸载安装触发 `installation` action=`deleted`，`disable_github_installation` 置 binding `enabled=False` 并删除仓库文件快照（0 行），`/repositories` 清空。全链路 GitHub->Cloudflare->Caddy->api 验签->同步->DB 跑通，无令牌/原始载荷/target 落库。部署坑：`git pull` 替换 `deploy/Caddyfile` 后 caddy 容器单文件 bind mount 仍指向旧 inode，`caddy reload` 无效，需 `$DC up -d --no-deps --force-recreate caddy`。
+
+2026-07-20 systemd journal 生产金丝雀在 DMIT（无 docker）跑通：Agent 升级到 `v0.3.3` 并开启 `--evidence-policy systemd-journal`，自动发现 101 个 systemd Unit；Web 确认 `m3-journal-canary.service` 映射；kill 服务进 failed -> Firing -> 触发诊断，journalctl 取证成功（6113 字节），`fake-journal-secret` 计数 0、`[REDACTED]` 计数 36（双端脱敏）；恢复服务 -> Resolved。首次因旧版 systemd journalctl 不认 RFC3339 `T...Z` 时间戳失败（exit 1），v0.3.3 改用 `YYYY-MM-DD HH:MM:SS UTC` 后成功（兼容旧版及更广范围的 systemd）。
+
 ## 9. 当前未包含与已知限制
 
 - 文件日志与任意路径读取。
 - GitHub App 首版只支持一个安装 ID、至多 1000 个授权仓库和精确路径快照；同步采用 1–8 路受限并发，但仍在 API 后台任务或管理员请求内执行，尚无独立持久任务队列、全仓库检索和增量知识索引。
-- GitHub App 与 systemd journal 尚未在真实 GitHub 安装和外部 VPS 上完成生产金丝雀；当前仅有单元测试与隔离 PostgreSQL 闭环。
+- GitHub App 与 systemd journal 已在 2026-07-20 完成生产金丝雀（见第 8 节验证记录）；真实 AI 模型网关（`http_json` 提供者）的生产验收、文件日志、自动诊断调度和完整仓库同步仍未做。
 - 自动诊断调度和通用独立任务队列；当前控制平面维护循环只负责 Agent 可用性巡检与通知重试。
 - 全局聊天、页面上下文对话、向量数据库和诊断历史增强。
 - 任何 M4 写操作。

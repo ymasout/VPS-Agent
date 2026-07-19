@@ -1,6 +1,6 @@
 # Agent 发布、安装与升级
 
-VPS Agent 通过 GitHub Release 发布 Linux 静态二进制，当前生产 control-plane 金丝雀版本为 `v0.3.1`，其余机器版本以项目状态中的推广记录为准；当前开发树为 `v0.3.2-dev`。Release 支持 `amd64` 和 `arm64`，同时包含安装脚本和 `SHA256SUMS`，安装器会在替换程序前自动校验二进制。
+VPS Agent 通过 GitHub Release 发布 Linux 静态二进制。生产各机器版本：control-plane `v0.3.1`、DMIT `v0.3.3`（systemd journal 金丝雀验证用，含旧版 journalctl 时间戳兼容修复）、两台腾讯云 `v0.2.4`；当前开发树为 `v0.3.4-dev`。Release 支持 `amd64` 和 `arm64`，同时包含安装脚本和 `SHA256SUMS`，安装器会在替换程序前自动校验二进制。
 
 ## 1. 发布新版本
 

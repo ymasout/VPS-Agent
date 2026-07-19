@@ -5,7 +5,7 @@ import { RegistrationPanel } from "./registration-panel";
 import { GitHubPanel } from "./github-panel";
 
 export const dynamic = "force-dynamic";
-const consoleVersion = "0.3.2-dev";
+const consoleVersion = "0.3.4-dev";
 
 function Metric({ label, value }: { label: string; value: string }) {
   return <div className="metric"><span>{label}</span><strong>{value}</strong></div>;

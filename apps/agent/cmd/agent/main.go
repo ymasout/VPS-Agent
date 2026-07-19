@@ -16,7 +16,7 @@ import (
 	"github.com/example/vps-agent-console/apps/agent/internal/config"
 )
 
-var version = "0.3.2-dev"
+var version = "0.3.4-dev"
 
 var capabilities = []string{"host.metrics", "docker.status", "systemd.status", "http.healthcheck", "evidence.docker_logs.v1", "evidence.systemd_journal.v1"}
 

@@ -202,7 +202,7 @@ flowchart LR
 
 ## 10. 明确延后能力
 
-- M3 后续：GitHub App 与 systemd journal 生产金丝雀、文件日志、真实模型生产验收和同步任务可靠性增强；Docker 自动发现、Web 单服务确认、Agent 可用性以及 GitHub/systemd 隔离闭环已进入当前实现。
+- M3 后续：文件日志、真实模型生产验收和同步任务可靠性增强；Docker 自动发现、Web 单服务确认、Agent 可用性、GitHub/systemd 隔离闭环以及两条生产金丝雀（GitHub App 同步/Webhook/撤权、外部 systemd journal 取证）已进入当前实现。
 - M4：安全重启、部署、回滚和完整审计。
 - M5：全局/上下文对话、仓库知识和诊断历史增强。
 - M6：Web SSH、PWA/移动审批、团队协作和自托管产品化。
