@@ -70,10 +70,12 @@ func CollectEvidence(ctx context.Context, source config.EvidenceSource, request 
 func systemdJournalArgs(
 	source config.EvidenceSource, request client.EvidenceRequest, lines int,
 ) []string {
+	// 旧版 systemd 的 journalctl 无法解析 RFC3339 的 "T...Z" 格式
+	// （报 "Failed to parse timestamp"），改用空格分隔 + UTC 缩写以兼容更广的 systemd。
 	return []string{
 		"--unit", source.Target,
-		"--since", request.SinceAt.UTC().Format(time.RFC3339),
-		"--until", request.UntilAt.UTC().Format(time.RFC3339),
+		"--since", request.SinceAt.UTC().Format("2006-01-02 15:04:05 MST"),
+		"--until", request.UntilAt.UTC().Format("2006-01-02 15:04:05 MST"),
 		"--lines", strconv.Itoa(lines),
 		"--output=short-iso", "--no-pager",
 	}

@@ -218,8 +218,8 @@ func TestSystemdJournalArgsUseFixedBoundedArguments(t *testing.T) {
 
 	want := []string{
 		"--unit", "payments-api.service",
-		"--since", "2026-07-17T00:00:00Z",
-		"--until", "2026-07-17T00:05:00Z",
+		"--since", "2026-07-17 00:00:00 UTC",
+		"--until", "2026-07-17 00:05:00 UTC",
 		"--lines", "200", "--output=short-iso", "--no-pager",
 	}
 	if fmt.Sprint(args) != fmt.Sprint(want) {
