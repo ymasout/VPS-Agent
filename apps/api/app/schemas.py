@@ -68,9 +68,9 @@ class ServiceReport(BaseModel):
 
 class EvidenceSourceReport(BaseModel):
     key: str = Field(min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9._-]+$")
-    kind: Literal["docker_logs"]
+    kind: Literal["docker_logs", "systemd_journal"]
     display_name: str = Field(min_length=1, max_length=255)
-    service_kind: Literal["docker"] | None = None
+    service_kind: Literal["docker", "systemd"] | None = None
     service_key: str | None = Field(default=None, min_length=1, max_length=255)
 
     @model_validator(mode="after")
@@ -221,6 +221,34 @@ class ServiceMappingCandidate(BaseModel):
     log_source_name: str
     mapped: bool
     instance_id: str | None
+
+
+class GitHubRepositoryView(BaseModel):
+    id: str
+    full_name: str
+    default_branch: str
+    private: bool
+    head_sha: str | None
+    synchronized_at: datetime | None
+    last_error: str | None
+
+
+class GitHubSyncReceipt(BaseModel):
+    status: str = "completed"
+    repository_count: int
+
+
+class GitHubStatusView(BaseModel):
+    configured: bool
+    app_slug: str | None
+    installation_url: str | None
+    allowed_file_paths: list[str]
+    repository_count: int
+
+
+class GitHubWebhookReceipt(BaseModel):
+    status: str = "accepted"
+    duplicate: bool = False
 
 
 class EvidenceRequestWork(BaseModel):

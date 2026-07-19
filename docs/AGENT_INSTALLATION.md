@@ -1,6 +1,6 @@
 # Agent 发布、安装与升级
 
-VPS Agent 通过 GitHub Release 发布 Linux 静态二进制，当前生产金丝雀版本为 `v0.3.0`，支持 `amd64` 和 `arm64`。每个 Release 同时包含安装脚本和 `SHA256SUMS`，安装器会在替换程序前自动校验二进制；其余机器是否升级以项目状态中的推广记录为准。
+VPS Agent 通过 GitHub Release 发布 Linux 静态二进制，当前生产 control-plane 金丝雀版本为 `v0.3.1`，其余机器版本以项目状态中的推广记录为准；当前开发树为 `v0.3.2-dev`。Release 支持 `amd64` 和 `arm64`，同时包含安装脚本和 `SHA256SUMS`，安装器会在替换程序前自动校验二进制。
 
 ## 1. 发布新版本
 
@@ -86,7 +86,7 @@ sudo bash install-agent.sh \
 
 - `--healthcheck https://example.com/healthz`：一个或多个逗号分隔的 HTTP 检查地址。
 - `--interval 30s`：上报间隔。
-- `--evidence-policy docker-logs`：明确允许 Agent 为已发现 Docker 容器生成有限日志诊断能力；使用 `disabled` 时仅监控。
+- `--evidence-policy docker-systemd`：明确允许 Agent 为已发现 Docker 容器和 systemd Unit 生成有限日志诊断能力；也可使用 `docker-logs`、`systemd-journal` 或仅监控的 `disabled`。
 - `--version 0.3.0`：安装指定版本；默认安装最新 Release。
 
 安装器会创建：
@@ -97,21 +97,23 @@ sudo bash install-agent.sh \
 - `/var/lib/vps-agent/machine-id`
 - `/etc/systemd/system/vps-agent.service`
 
-M3 Docker 日志自动发现默认关闭。推荐在 Web 生成安装命令时选择“监控与 Docker 只读诊断”，命令会包含：
+M3 日志自动发现默认关闭。新机器推荐在 Web 生成安装命令时选择“监控与 Docker/systemd 只读诊断”，命令会包含：
 
 ```text
---evidence-policy docker-logs
+--evidence-policy docker-systemd
 ```
 
-安装器将其保存为 `AGENT_EVIDENCE_POLICY=docker_logs`。Agent 只为本机已发现的 Docker 容器生成受限日志能力，控制平面会收到稳定服务关联和来源键，但不会收到真实采集目标。旧 Agent 升级若没有明确设置则保持 `disabled`。
+安装器将其保存为 `AGENT_EVIDENCE_POLICY=docker_logs,systemd_journal`。Agent 只为本机已发现的 Docker 容器和 systemd Unit 生成受限日志能力，控制平面会收到稳定服务关联和来源键，但不会收到真实容器或 Unit 目标。旧 Agent 升级会保留已有策略；没有明确设置仍保持 `disabled`，不会因为升级自动增加 journal 读取面。
 
 特殊服务仍可在 `/etc/vps-agent/agent.env` 中使用手工兼容白名单，然后重启 Agent：
 
 ```dotenv
 AGENT_EVIDENCE_SOURCES_JSON='[{"key":"payment-api-logs","kind":"docker_logs","target":"payment-api","display_name":"payment-api-logs"}]'
+# systemd 示例：
+# AGENT_EVIDENCE_SOURCES_JSON='[{"key":"payment-api-journal","kind":"systemd_journal","target":"payment-api.service","display_name":"payment-api-journal"}]'
 ```
 
-容器目标只保存在 VPS 本地；控制平面只能引用 Agent 声明的 `key` 并下发有限时间、行数、字节数和超时。机器详情页可确认自动发现的诊断服务，不需要手工填写容器 ID 或 `source_key`。完整协议见 [M3_DIAGNOSTICS.md](./M3_DIAGNOSTICS.md)。
+容器/Unit 目标只保存在 VPS 本地；控制平面只能引用 Agent 声明的 `key` 并下发有限时间、行数、字节数和超时。机器详情页可确认自动发现的诊断服务，不需要手工填写容器 ID、Unit 参数或 `source_key`。完整协议见 [M3_DIAGNOSTICS.md](./M3_DIAGNOSTICS.md)。
 
 注册成功后，一次性令牌会从配置文件删除，后续重启和升级使用已保存的独立 Agent 身份。
 

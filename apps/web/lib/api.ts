@@ -15,6 +15,22 @@ export type ServiceMappingCandidate = {
   mapped: boolean;
   instance_id: string | null;
 };
+export type GitHubRepository = {
+  id: string;
+  full_name: string;
+  default_branch: string;
+  private: boolean;
+  head_sha: string | null;
+  synchronized_at: string | null;
+  last_error: string | null;
+};
+export type GitHubStatus = {
+  configured: boolean;
+  app_slug: string | null;
+  installation_url: string | null;
+  allowed_file_paths: string[];
+  repository_count: number;
+};
 export type AlertEvent = {
   id: string;
   agent_id: string;
@@ -86,6 +102,8 @@ export const getAgents = () => request<Agent[]>("/api/v1/agents");
 export const getAgent = (id: string) => request<AgentDetail>(`/api/v1/agents/${id}`);
 export const getServiceMappingCandidates = (id: string) =>
   request<ServiceMappingCandidate[]>(`/api/v1/agents/${id}/service-mapping-candidates`);
+export const getGitHubStatus = () => request<GitHubStatus>("/api/v1/github/status");
+export const getGitHubRepositories = () => request<GitHubRepository[]>("/api/v1/github/repositories");
 export const getEvents = () => request<AlertEvent[]>("/api/v1/events");
 export const getEvent = (id: string) => request<AlertEvent>(`/api/v1/events/${id}`);
 export const getEventDiagnostics = (id: string) =>

@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,9 +32,33 @@ class Settings(BaseSettings):
     diagnostic_collection_timeout_seconds: int = Field(default=10, ge=1, le=15)
     diagnostic_request_claim_seconds: int = Field(default=60, ge=30, le=600)
     diagnostic_run_stale_seconds: int = Field(default=300, ge=60, le=3600)
+    github_app_id: str | None = None
+    github_app_private_key_base64: str | None = None
+    github_app_installation_id: int | None = Field(default=None, gt=0)
+    github_app_slug: str | None = None
+    github_webhook_secret: str | None = None
+    github_api_url: str = "https://api.github.com"
+    github_api_version: str = "2026-03-10"
+    github_allowed_file_paths: str = "README.md,docker-compose.yml,compose.yaml"
+    github_max_file_bytes: int = Field(default=65536, ge=1024, le=65536)
+    github_webhook_max_bytes: int = Field(default=1048576, ge=1024, le=1048576)
+    github_sync_concurrency: int = Field(default=4, ge=1, le=8)
+    github_webhook_rate_limit_per_minute: int = Field(default=120, ge=0, le=10000)
     skip_database_init: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @field_validator(
+        "github_app_id",
+        "github_app_private_key_base64",
+        "github_app_installation_id",
+        "github_app_slug",
+        "github_webhook_secret",
+        mode="before",
+    )
+    @classmethod
+    def empty_github_values_are_unset(cls, value: object) -> object:
+        return None if value == "" else value
 
     @model_validator(mode="after")
     def validate_diagnostic_timing(self) -> "Settings":
@@ -42,6 +66,19 @@ class Settings(BaseSettings):
             raise ValueError("diagnostic run stale threshold must exceed provider timeout")
         if self.agent_availability_scan_interval_seconds > self.agent_offline_after_seconds:
             raise ValueError("agent availability scan interval must not exceed offline threshold")
+        github_values = (
+            self.github_app_id,
+            self.github_app_private_key_base64,
+            self.github_app_installation_id,
+            self.github_webhook_secret,
+        )
+        if any(value is not None for value in github_values) and not all(
+            value is not None for value in github_values
+        ):
+            raise ValueError(
+                "GitHub App id, private key, installation id and webhook secret "
+                "must be set together"
+            )
         return self
 
 

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     DateTime,
     Float,
@@ -153,6 +154,64 @@ class Repository(Base):
     full_name: Mapped[str] = mapped_column(String(255), unique=True)
     default_branch: Mapped[str] = mapped_column(String(255), default="main")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class GitHubRepositoryBinding(Base):
+    """控制平面 GitHub App 授权的仓库元数据，不保存安装令牌。"""
+
+    __tablename__ = "github_repository_bindings"
+    __table_args__ = (
+        UniqueConstraint("repository_id"),
+        UniqueConstraint("github_repository_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    repository_id: Mapped[str] = mapped_column(
+        ForeignKey("repositories.id", ondelete="CASCADE"), index=True
+    )
+    installation_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    github_repository_id: Mapped[int] = mapped_column(BigInteger)
+    private: Mapped[bool] = mapped_column(Boolean, default=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    head_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    synchronized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+
+class GitHubRepositoryFile(Base):
+    """白名单仓库文件的有界脱敏快照。"""
+
+    __tablename__ = "github_repository_files"
+    __table_args__ = (UniqueConstraint("repository_id", "commit_sha", "path"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    repository_id: Mapped[str] = mapped_column(
+        ForeignKey("repositories.id", ondelete="CASCADE"), index=True
+    )
+    commit_sha: Mapped[str] = mapped_column(String(64), index=True)
+    path: Mapped[str] = mapped_column(String(512))
+    content: Mapped[str] = mapped_column(Text)
+    content_sha256: Mapped[str] = mapped_column(String(64))
+    byte_size: Mapped[int] = mapped_column(Integer)
+    redacted: Mapped[bool] = mapped_column(Boolean, default=True)
+    truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class GitHubWebhookDelivery(Base):
+    """GitHub App Webhook 的最小审计记录，不持久化原始载荷。"""
+
+    __tablename__ = "github_webhook_deliveries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    delivery_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    event: Mapped[str] = mapped_column(String(64))
+    action: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    installation_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class DeploymentVersion(Base):

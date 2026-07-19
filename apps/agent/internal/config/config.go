@@ -30,8 +30,10 @@ type EvidenceSource struct {
 }
 
 const EvidencePolicyDockerLogs = "docker_logs"
+const EvidencePolicySystemdJournal = "systemd_journal"
 
 var sourceKeyPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+var systemdUnitPattern = regexp.MustCompile(`^[a-zA-Z0-9_.@:-]+\.service$`)
 
 func Load() Config {
 	interval := durationOrDefault("AGENT_REPORT_INTERVAL", 30*time.Second)
@@ -49,10 +51,36 @@ func Load() Config {
 }
 
 func evidencePolicy(value string) string {
-	if strings.TrimSpace(value) == EvidencePolicyDockerLogs {
-		return EvidencePolicyDockerLogs
+	requested := map[string]bool{}
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" || item == "disabled" {
+			continue
+		}
+		if item != EvidencePolicyDockerLogs && item != EvidencePolicySystemdJournal {
+			return "disabled"
+		}
+		requested[item] = true
 	}
-	return "disabled"
+	policies := make([]string, 0, 2)
+	for _, item := range []string{EvidencePolicyDockerLogs, EvidencePolicySystemdJournal} {
+		if requested[item] {
+			policies = append(policies, item)
+		}
+	}
+	if len(policies) == 0 {
+		return "disabled"
+	}
+	return strings.Join(policies, ",")
+}
+
+func EvidencePolicyAllows(policy, capability string) bool {
+	for _, item := range strings.Split(policy, ",") {
+		if item == capability {
+			return true
+		}
+	}
+	return false
 }
 
 func parseEvidenceSources(value string) []EvidenceSource {
@@ -66,8 +94,11 @@ func parseEvidenceSources(value string) []EvidenceSource {
 	result := make([]EvidenceSource, 0, len(sources))
 	seen := map[string]bool{}
 	for _, source := range sources {
-		if !sourceKeyPattern.MatchString(source.Key) || source.Kind != "docker_logs" ||
-			strings.TrimSpace(source.Target) == "" || seen[source.Key] {
+		validTarget := source.Kind == "docker_logs" && strings.TrimSpace(source.Target) != ""
+		if source.Kind == "systemd_journal" {
+			validTarget = !strings.HasPrefix(source.Target, "-") && systemdUnitPattern.MatchString(source.Target)
+		}
+		if !sourceKeyPattern.MatchString(source.Key) || !validTarget || seen[source.Key] {
 			continue
 		}
 		if source.DisplayName == "" {

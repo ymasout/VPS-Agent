@@ -18,6 +18,8 @@ from .models import (
     DiagnosticRun,
     EvidenceItem,
     EvidenceRequest,
+    GitHubRepositoryBinding,
+    GitHubRepositoryFile,
     MetricSnapshot,
     Repository,
     ServiceInstance,
@@ -366,6 +368,52 @@ async def collect_control_plane_evidence(
             ),
             deployment.recorded_at,
         )
+        if repository:
+            binding = await session.scalar(
+                select(GitHubRepositoryBinding).where(
+                    GitHubRepositoryBinding.repository_id == repository.id,
+                    GitHubRepositoryBinding.enabled.is_(True),
+                )
+            )
+            files = (
+                list(
+                    (
+                        await session.scalars(
+                            select(GitHubRepositoryFile)
+                            .where(GitHubRepositoryFile.repository_id == repository.id)
+                            .order_by(GitHubRepositoryFile.path)
+                            .limit(8)
+                        )
+                    ).all()
+                )
+                if binding
+                else []
+            )
+            repository_budget = 131072
+            for file in files:
+                if repository_budget <= 0:
+                    break
+                bounded_content, budget_truncated = truncate_utf8(
+                    file.content, min(repository_budget, 65536)
+                )
+                await add_evidence(
+                    session,
+                    diagnostic.id,
+                    "repository_file",
+                    f"GitHub {repository.full_name} · {file.path}",
+                    bounded_content,
+                    file.fetched_at,
+                    truncated=file.truncated or budget_truncated,
+                    source_metadata={
+                        "repository": repository.full_name,
+                        "path": file.path,
+                        "commit_sha": file.commit_sha,
+                        "repository_head_sha": binding.head_sha if binding else None,
+                        "untrusted_input": True,
+                    },
+                    max_bytes=65536,
+                )
+                repository_budget -= len(bounded_content.encode())
 
 
 async def finalize_diagnostic(

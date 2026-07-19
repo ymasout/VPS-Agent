@@ -67,7 +67,7 @@ func TestAutomaticDockerEvidenceSourcesUseStableServiceAssociation(t *testing.T)
 		{Kind: "systemd", Key: "ssh.service", Name: "ssh.service", Healthy: &healthy},
 	}
 
-	sources := EvidenceSourcesForServices(services, nil, true)
+	sources := EvidenceSourcesForServices(services, nil, true, false)
 
 	if len(sources) != 1 || sources[0].Target != "payments-api-1" {
 		t.Fatalf("unexpected sources: %#v", sources)
@@ -87,7 +87,7 @@ func TestManualEvidenceSourceOverridesAutomaticSourceWithSameKey(t *testing.T) {
 		Key: automaticKey, Kind: "docker_logs", Target: "api", DisplayName: "custom",
 	}}
 
-	sources := EvidenceSourcesForServices([]client.Service{service}, configured, true)
+	sources := EvidenceSourcesForServices([]client.Service{service}, configured, true, false)
 
 	if len(sources) != 1 || sources[0].DisplayName != "custom" {
 		t.Fatalf("manual source should win: %#v", sources)
@@ -104,10 +104,30 @@ func TestAutomaticEvidenceSourcesAreBounded(t *testing.T) {
 		services = append(services, client.Service{Kind: "docker", Key: "docker:" + name, Name: name})
 	}
 
-	sources := EvidenceSourcesForServices(services, nil, true)
+	sources := EvidenceSourcesForServices(services, nil, true, false)
 
 	if len(sources) != 128 {
 		t.Fatalf("expected 128 bounded sources, got %d", len(sources))
+	}
+}
+
+func TestAutomaticSystemdEvidenceSourcesUseExactUnitAssociation(t *testing.T) {
+	services := []client.Service{
+		{Kind: "systemd", Key: "payments-api.service", Name: "payments-api.service"},
+		{Kind: "docker", Key: "docker:api", Name: "api"},
+	}
+
+	sources := EvidenceSourcesForServices(services, nil, false, true)
+
+	if len(sources) != 1 || sources[0].Target != "payments-api.service" {
+		t.Fatalf("unexpected systemd sources: %#v", sources)
+	}
+	if sources[0].Kind != "systemd_journal" || sources[0].ServiceKind != "systemd" ||
+		sources[0].ServiceKey != "payments-api.service" {
+		t.Fatalf("systemd source is not bound to the discovered unit: %#v", sources[0])
+	}
+	if !strings.HasPrefix(sources[0].Key, "systemd-journal-") {
+		t.Fatalf("unexpected systemd source key: %q", sources[0].Key)
 	}
 }
 
@@ -182,6 +202,28 @@ func TestDockerLogArgsSeparateTargetFromOptions(t *testing.T) {
 
 	if len(args) < 2 || args[len(args)-2] != "--" || args[len(args)-1] != "--malicious-looking-target" {
 		t.Fatalf("target is not separated from options: %#v", args)
+	}
+}
+
+func TestSystemdJournalArgsUseFixedBoundedArguments(t *testing.T) {
+	request := client.EvidenceRequest{
+		SinceAt: time.Date(2026, 7, 17, 0, 0, 0, 0, time.UTC),
+		UntilAt: time.Date(2026, 7, 17, 0, 5, 0, 0, time.UTC),
+	}
+	args := systemdJournalArgs(
+		config.EvidenceSource{Kind: "systemd_journal", Target: "payments-api.service"},
+		request,
+		200,
+	)
+
+	want := []string{
+		"--unit", "payments-api.service",
+		"--since", "2026-07-17T00:00:00Z",
+		"--until", "2026-07-17T00:05:00Z",
+		"--lines", "200", "--output=short-iso", "--no-pager",
+	}
+	if fmt.Sprint(args) != fmt.Sprint(want) {
+		t.Fatalf("unexpected journalctl arguments: %#v", args)
 	}
 }
 

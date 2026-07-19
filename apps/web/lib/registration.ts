@@ -20,7 +20,7 @@ export function shellQuote(value: string) {
 export function buildInstallCommand(
   controlPlaneURL: string,
   agentName: string,
-  evidencePolicy: "disabled" | "docker-logs" = "disabled",
+  evidencePolicy: "disabled" | "docker-logs" | "systemd-journal" | "docker-systemd" = "disabled",
 ) {
   const baseURL = controlPlaneURL.replace(/\/$/, "");
   const downloadBaseURL = `${baseURL}/agent-downloads`;

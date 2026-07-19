@@ -16,9 +16,9 @@ import (
 	"github.com/example/vps-agent-console/apps/agent/internal/config"
 )
 
-var version = "0.3.1-dev"
+var version = "0.3.2-dev"
 
-var capabilities = []string{"host.metrics", "docker.status", "systemd.status", "http.healthcheck", "evidence.docker_logs.v1"}
+var capabilities = []string{"host.metrics", "docker.status", "systemd.status", "http.healthcheck", "evidence.docker_logs.v1", "evidence.systemd_journal.v1"}
 
 func main() {
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
@@ -63,7 +63,8 @@ func main() {
 		localSources := collector.EvidenceSourcesForServices(
 			services,
 			cfg.EvidenceSources,
-			cfg.EvidencePolicy == config.EvidencePolicyDockerLogs,
+			config.EvidencePolicyAllows(cfg.EvidencePolicy, config.EvidencePolicyDockerLogs),
+			config.EvidencePolicyAllows(cfg.EvidencePolicy, config.EvidencePolicySystemdJournal),
 		)
 		sources := make([]client.EvidenceSource, 0, len(localSources))
 		for _, source := range localSources {

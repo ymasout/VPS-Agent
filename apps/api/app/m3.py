@@ -24,6 +24,7 @@ from .models import (
     DiagnosticRun,
     EvidenceItem,
     EvidenceRequest,
+    GitHubRepositoryBinding,
     InstanceLogSource,
     ManagedService,
     Repository,
@@ -116,12 +117,17 @@ async def diagnostic_view(session: AsyncSession, diagnostic: DiagnosticRun) -> D
 async def create_service_mapping(
     payload: ServiceMappingCreate,
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> ServiceMappingView:
     agent = await session.get(Agent, payload.agent_id)
     if agent is None:
         raise HTTPException(status_code=404, detail="agent not found")
-    if payload.service_kind != "docker":
-        raise HTTPException(status_code=409, detail="first diagnostic slice supports Docker only")
+    expected_source_kind = {
+        "docker": "docker_logs",
+        "systemd": "systemd_journal",
+    }.get(payload.service_kind)
+    if expected_source_kind is None:
+        raise HTTPException(status_code=409, detail="service kind is not diagnosable")
     duplicate = await session.scalar(
         select(ServiceInstance).where(
             ServiceInstance.agent_id == payload.agent_id,
@@ -146,7 +152,7 @@ async def create_service_mapping(
             AgentEvidenceSource.source_key == payload.log_source_key,
         )
     )
-    if advertised_source is None or advertised_source.kind != "docker_logs":
+    if advertised_source is None or advertised_source.kind != expected_source_kind:
         raise HTTPException(status_code=409, detail="log source is not in the agent allowlist")
     source_binding = await session.scalar(
         select(AgentEvidenceSourceBinding).where(
@@ -189,12 +195,29 @@ async def create_service_mapping(
             select(Repository).where(Repository.full_name == payload.repository_full_name)
         )
         if repository is None:
+            if settings.github_app_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail="repository is not authorized by the configured GitHub App",
+                )
             repository = Repository(
                 full_name=payload.repository_full_name,
                 default_branch=payload.default_branch,
             )
             session.add(repository)
             await session.flush()
+        if settings.github_app_id:
+            binding = await session.scalar(
+                select(GitHubRepositoryBinding).where(
+                    GitHubRepositoryBinding.repository_id == repository.id,
+                    GitHubRepositoryBinding.enabled.is_(True),
+                )
+            )
+            if binding is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="repository is not authorized by the configured GitHub App",
+                )
     if payload.commit_sha or payload.image_digest or repository:
         session.add(
             DeploymentVersion(
@@ -256,7 +279,7 @@ async def list_service_mapping_candidates(
             .where(
                 ServiceStatus.agent_id == agent_id,
                 AgentEvidenceSource.agent_id == agent_id,
-                ServiceStatus.kind == "docker",
+                ServiceStatus.kind.in_(["docker", "systemd"]),
             )
             .order_by(ServiceStatus.name, AgentEvidenceSource.source_key)
         )
@@ -488,10 +511,12 @@ async def complete_evidence_request(
     request.completed_at = now_utc()
     request.error = payload.error
     if payload.status == "completed":
+        log_source = await session.get(InstanceLogSource, request.log_source_id)
+        evidence_type = log_source.kind if log_source is not None else "service_logs"
         await add_evidence(
             session,
             diagnostic.id,
-            "docker_logs",
+            evidence_type,
             f"受限日志源 {request.source_key}",
             payload.content,
             payload.collected_at,

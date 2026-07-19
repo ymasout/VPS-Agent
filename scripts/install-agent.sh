@@ -24,7 +24,7 @@ Options:
   --token TOKEN         One-time registration token (interactive prompt recommended)
   --healthcheck URLS    Comma-separated HTTP healthcheck URLs
   --interval DURATION   Report interval (default: 30s)
-  --evidence-policy POLICY  Evidence policy: disabled or docker-logs
+  --evidence-policy POLICY  Evidence policy: disabled, docker-logs, systemd-journal, or docker-systemd
   --version VERSION     Release version such as 0.2.2 (default: latest)
   --download-base-url URL  Optional control-plane download mirror
   -h, --help            Show this help
@@ -92,7 +92,9 @@ done
 case "${EVIDENCE_POLICY}" in
   disabled) AGENT_EVIDENCE_POLICY="disabled" ;;
   docker-logs|docker_logs) AGENT_EVIDENCE_POLICY="docker_logs" ;;
-  *) fail "--evidence-policy must be disabled or docker-logs" ;;
+  systemd-journal|systemd_journal) AGENT_EVIDENCE_POLICY="systemd_journal" ;;
+  docker-systemd|docker_logs,systemd_journal) AGENT_EVIDENCE_POLICY="docker_logs,systemd_journal" ;;
+  *) fail "--evidence-policy must be disabled, docker-logs, systemd-journal, or docker-systemd" ;;
 esac
 
 if [[ ! -f "${IDENTITY_FILE}" && -z "${REGISTRATION_TOKEN}" ]]; then

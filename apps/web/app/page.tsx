@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { Agent, AlertEvent, formatBytes, getAgents, getEvents } from "@/lib/api";
+import { Agent, AlertEvent, GitHubRepository, GitHubStatus, formatBytes, getAgents, getEvents, getGitHubRepositories, getGitHubStatus } from "@/lib/api";
 import { summarizeFleet } from "@/lib/fleet";
 import { RegistrationPanel } from "./registration-panel";
+import { GitHubPanel } from "./github-panel";
 
 export const dynamic = "force-dynamic";
 const consoleVersion = "0.3.2-dev";
@@ -32,8 +33,13 @@ function AgentCard({ agent }: { agent: Agent }) {
 export default async function Home() {
   let agents: Agent[] = [];
   let events: AlertEvent[] = [];
+  let githubStatus: GitHubStatus | null = null;
+  let repositories: GitHubRepository[] = [];
   let error = "";
-  try { [agents, events] = await Promise.all([getAgents(), getEvents()]); } catch { error = "控制平面暂时不可用，请检查 API 服务。"; }
+  try {
+    [agents, events, githubStatus] = await Promise.all([getAgents(), getEvents(), getGitHubStatus()]);
+    if (githubStatus.configured) repositories = await getGitHubRepositories();
+  } catch { error = "控制平面暂时不可用，请检查 API 服务。"; }
   const fleet = summarizeFleet(agents);
   return (
     <main>
@@ -43,6 +49,7 @@ export default async function Home() {
         <p>{fleet.total} 台 VPS · {fleet.online} 台在线 · organization: local</p>
       </section>
       <RegistrationPanel />
+      {githubStatus?.configured && <GitHubPanel status={githubStatus} repositories={repositories} />}
       {error && <div className="empty error">{error}</div>}
       {!error && agents.length === 0 && <div className="empty"><strong>还没有已注册的 VPS</strong><span>启动带注册令牌的 Agent 后，机器会自动出现在这里。</span></div>}
       <section className="fleet">{agents.map((agent) => <AgentCard key={agent.id} agent={agent} />)}</section>

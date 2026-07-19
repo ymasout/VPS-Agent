@@ -27,7 +27,7 @@ var evidenceRedactionRules = []*regexp.Regexp{
 
 func CollectEvidence(ctx context.Context, source config.EvidenceSource, request client.EvidenceRequest) client.EvidenceResult {
 	result := client.EvidenceResult{Status: "failed", CollectedAt: time.Now().UTC(), Redacted: true}
-	if source.Kind != "docker_logs" {
+	if source.Kind != "docker_logs" && source.Kind != "systemd_journal" {
 		result.Error = "unsupported evidence source kind"
 		return result
 	}
@@ -45,18 +45,38 @@ func CollectEvidence(ctx context.Context, source config.EvidenceSource, request 
 	}
 	collectCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	command := exec.CommandContext(collectCtx, "docker", dockerLogArgs(source, request, lines)...)
+	commandName := "docker"
+	commandArgs := dockerLogArgs(source, request, lines)
+	failureLabel := "docker log"
+	if source.Kind == "systemd_journal" {
+		commandName = "journalctl"
+		commandArgs = systemdJournalArgs(source, request, lines)
+		failureLabel = "systemd journal"
+	}
+	command := exec.CommandContext(collectCtx, commandName, commandArgs...)
 	buffer := &boundedBuffer{limit: maxBytes}
 	command.Stdout = buffer
 	command.Stderr = buffer
 	if err := command.Run(); err != nil {
-		result.Error = fmt.Sprintf("docker log collection failed: %v", err)
+		result.Error = fmt.Sprintf("%s collection failed: %v", failureLabel, err)
 		return result
 	}
 	result.Status = "completed"
 	result.Content = redactEvidence(buffer.String())
 	result.Truncated = buffer.truncated
 	return result
+}
+
+func systemdJournalArgs(
+	source config.EvidenceSource, request client.EvidenceRequest, lines int,
+) []string {
+	return []string{
+		"--unit", source.Target,
+		"--since", request.SinceAt.UTC().Format(time.RFC3339),
+		"--until", request.UntilAt.UTC().Format(time.RFC3339),
+		"--lines", strconv.Itoa(lines),
+		"--output=short-iso", "--no-pager",
+	}
 }
 
 func dockerLogArgs(

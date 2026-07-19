@@ -11,7 +11,7 @@ export function RegistrationPanel() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState("");
-  const [evidencePolicy, setEvidencePolicy] = useState<"disabled" | "docker-logs">("docker-logs");
+  const [evidencePolicy, setEvidencePolicy] = useState<"disabled" | "docker-logs" | "systemd-journal" | "docker-systemd">("docker-systemd");
 
   const controlPlaneURL = typeof window === "undefined" ? "" : window.location.origin;
   const installCommand = buildInstallCommand(
@@ -64,12 +64,14 @@ export function RegistrationPanel() {
         <select
           id="evidence-policy"
           value={evidencePolicy}
-          onChange={(event) => setEvidencePolicy(event.target.value as "disabled" | "docker-logs")}
+          onChange={(event) => setEvidencePolicy(event.target.value as "disabled" | "docker-logs" | "systemd-journal" | "docker-systemd")}
         >
-          <option value="docker-logs">监控与 Docker 只读诊断（推荐）</option>
+          <option value="docker-systemd">监控与 Docker/systemd 只读诊断（推荐）</option>
+          <option value="docker-logs">监控与 Docker 只读诊断</option>
+          <option value="systemd-journal">监控与 systemd 只读诊断</option>
           <option value="disabled">仅监控</option>
         </select>
-        <small className="field-help">诊断模式只允许读取自动发现容器的有限日志，不开放 Shell 或任意路径。</small>
+        <small className="field-help">诊断模式只允许读取自动发现容器或 Unit 的有限日志，不开放 Shell、任意 Unit 参数或任意路径。</small>
       </form>
       {error && <div className="registration-error" role="alert">{error}</div>}
       {created && (

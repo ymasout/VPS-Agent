@@ -1,9 +1,9 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { ServiceMappingCandidate } from "@/lib/api";
+import { GitHubRepository, ServiceMappingCandidate } from "@/lib/api";
 
-function MappingForm({ candidate }: { candidate: ServiceMappingCandidate }) {
+function MappingForm({ candidate, repositories }: { candidate: ServiceMappingCandidate; repositories: GitHubRepository[] }) {
   const [mapped, setMapped] = useState(candidate.mapped);
   const [directory, setDirectory] = useState("");
   const [repository, setRepository] = useState("");
@@ -49,7 +49,7 @@ function MappingForm({ candidate }: { candidate: ServiceMappingCandidate }) {
       <div className="mapping-fields">
         <label>环境<select value={environment} onChange={(event) => setEnvironment(event.target.value)}><option value="production">production</option><option value="staging">staging</option><option value="development">development</option></select></label>
         <label>部署目录（可选）<input value={directory} onChange={(event) => setDirectory(event.target.value)} placeholder="/opt/apps/service" /></label>
-        <label>GitHub 仓库（可选）<input value={repository} onChange={(event) => setRepository(event.target.value)} placeholder="owner/repository" /></label>
+        <label>GitHub App 仓库（可选）<input list="authorized-github-repositories" value={repository} onChange={(event) => setRepository(event.target.value)} placeholder={repositories.length ? "选择已授权仓库" : "owner/repository"} /></label>
       </div>
       {error && <p className="mapping-error" role="alert">{error}</p>}
       <button type="submit" disabled={loading || mapped}>{mapped ? "已建立诊断映射" : loading ? "保存中…" : "确认用于诊断"}</button>
@@ -57,13 +57,14 @@ function MappingForm({ candidate }: { candidate: ServiceMappingCandidate }) {
   );
 }
 
-export function ServiceMappingPanel({ candidates }: { candidates: ServiceMappingCandidate[] }) {
+export function ServiceMappingPanel({ candidates, repositories }: { candidates: ServiceMappingCandidate[]; repositories: GitHubRepository[] }) {
   if (candidates.length === 0) return null;
   return (
     <section className="section">
       <div className="section-title"><h2>诊断服务发现</h2><span>{candidates.length} candidates</span></div>
-      <p className="section-copy">Agent 已在本机授权这些 Docker 日志能力。确认业务信息后即可从事件发起诊断，无需填写容器 ID、source_key 或 JSON。</p>
-      <div className="mapping-list">{candidates.map((candidate) => <MappingForm candidate={candidate} key={`${candidate.service_key}-${candidate.log_source_key}`} />)}</div>
+      <p className="section-copy">Agent 已在本机授权这些 Docker/systemd 日志能力。确认业务信息后即可从事件发起诊断，无需填写容器 ID、Unit 参数、source_key 或 JSON。</p>
+      <datalist id="authorized-github-repositories">{repositories.map((repository) => <option value={repository.full_name} key={repository.id} />)}</datalist>
+      <div className="mapping-list">{candidates.map((candidate) => <MappingForm candidate={candidate} repositories={repositories} key={`${candidate.service_key}-${candidate.log_source_key}`} />)}</div>
     </section>
   );
 }

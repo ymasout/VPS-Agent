@@ -70,12 +70,14 @@ func TestLoadParsesOnlyValidEvidenceAllowlistEntries(t *testing.T) {
 		{"key":"api-logs","kind":"docker_logs","target":"api","display_name":"API logs"},
 		{"key":"api-logs","kind":"docker_logs","target":"duplicate"},
 		{"key":"bad key","kind":"docker_logs","target":"bad"},
+		{"key":"api-journal","kind":"systemd_journal","target":"api.service"},
+		{"key":"bad-journal","kind":"systemd_journal","target":"--system.service"},
 		{"key":"shell","kind":"shell","target":"whoami"}
 	]`)
 
 	sources := Load().EvidenceSources
 
-	if len(sources) != 1 || sources[0].Key != "api-logs" || sources[0].Target != "api" {
+	if len(sources) != 2 || sources[0].Key != "api-logs" || sources[1].Key != "api-journal" {
 		t.Fatalf("unexpected evidence sources: %#v", sources)
 	}
 }
@@ -95,5 +97,21 @@ func TestEvidencePolicyRequiresExplicitDockerLogsOptIn(t *testing.T) {
 	t.Setenv("AGENT_EVIDENCE_POLICY", "anything-else")
 	if policy := Load().EvidencePolicy; policy != "disabled" {
 		t.Fatalf("unknown policy must be disabled: %q", policy)
+	}
+}
+
+func TestEvidencePolicySupportsExplicitCombinedReadOnlySources(t *testing.T) {
+	t.Setenv("AGENT_EVIDENCE_POLICY", "systemd_journal,docker_logs")
+	policy := Load().EvidencePolicy
+	if policy != "docker_logs,systemd_journal" {
+		t.Fatalf("unexpected canonical policy: %q", policy)
+	}
+	if !EvidencePolicyAllows(policy, EvidencePolicyDockerLogs) ||
+		!EvidencePolicyAllows(policy, EvidencePolicySystemdJournal) {
+		t.Fatalf("combined policy did not enable both capabilities: %q", policy)
+	}
+	t.Setenv("AGENT_EVIDENCE_POLICY", "docker_logs,unknown")
+	if policy := Load().EvidencePolicy; policy != "disabled" {
+		t.Fatalf("unknown combined policy must fail closed: %q", policy)
 	}
 }

@@ -73,3 +73,15 @@ def test_evidence_source_requires_complete_service_association() -> None:
             display_name="API logs",
             service_kind="docker",
         )
+
+
+def test_systemd_journal_source_accepts_only_systemd_association() -> None:
+    source = EvidenceSourceReport(
+        key="systemd-journal-api",
+        kind="systemd_journal",
+        display_name="API journal",
+        service_kind="systemd",
+        service_key="api.service",
+    )
+
+    assert source.service_kind == "systemd"

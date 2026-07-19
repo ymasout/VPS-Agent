@@ -40,14 +40,14 @@ compose.yaml        本地完整开发环境
 ### FastAPI 控制平面
 
 - 系统可信核心，负责 Agent 身份、资源拓扑、数据持久化和 API。
-- 当前负责 Agent 身份、资源/服务报告、M2 告警与通知，以及 M3 服务映射、有限取证和结构化诊断。
-- 后续继续扩展 GitHub 集成；任务执行、审批和操作审计仍属于 M4。
+- 当前负责 Agent 身份、资源/服务报告、M2 告警与通知，以及 M3 服务映射、有限取证、GitHub App 只读仓库快照和结构化诊断。
+- GitHub App 首版只读取安装授权仓库及精确白名单文件；任务执行、仓库写入、审批和操作审计仍属于 M4/M5。
 
 ### Go Agent
 
 - 作为 Linux VPS 上的轻量守护进程运行，主动连接控制平面。
 - 当前负责注册、心跳、基础资源和 Docker/systemd/HTTP 状态采集。
-- M3 首条闭环先使用本地显式白名单验证 Docker 有限日志取证；当前 Agent 已能在本地策略明确启用后，根据已发现 Docker 服务生成稳定能力目录，控制平面仍只能引用 Agent 已声明的能力，不能自行构造容器目标、路径或命令。
+- M3 已支持 Docker logs 和 systemd journal 的有限取证。Agent 只有在本地策略明确启用后，才根据已发现服务生成稳定能力目录；控制平面仍只能引用 Agent 已声明的能力，不能自行构造容器目标、Unit、路径或命令。
 - 后续只执行控制平面签名且命中已授权能力策略或 Runbook 的任务。
 
 ### PostgreSQL
@@ -90,7 +90,7 @@ Release 安装器在首次安装时生成独立的 Agent machine-id，保存在 
 - Next.js、FastAPI、PostgreSQL、Redis 和 Caddy 由生产 Docker Compose 托管。
 - 外部 VPS 上的 Agent 由各自主机的 systemd 托管，只需访问控制平面的 443 端口。
 - 控制平面宿主机可以运行同一 Agent 进行自监控，但该 Agent 与控制面容器生命周期分离；控制面整体故障时，自监控上报也会中断，这是当前单实例部署的已知盲区。
-- M1 全量发布基线为 Agent `v0.2.4`；M3 生产金丝雀已验证 `v0.3.0`。两者均支持 Linux `amd64` 和 `arm64`，后续全量升级需经过产品化金丝雀。
+- M1 全量发布基线为 Agent `v0.2.4`；M3 生产金丝雀已验证 DMIT `v0.3.0` 与 control-plane `v0.3.1`。这些版本均支持 Linux `amd64` 和 `arm64`，后续全量升级需经过产品化金丝雀。
 
 ## 5. M1 协议方向
 
@@ -122,19 +122,24 @@ Release 安装器在首次安装时生成独立的 Agent machine-id，保存在 
 flowchart LR
   W["Web 事件页"] -->|"管理端手动触发"| C["FastAPI 控制平面"]
   C -->|"保存状态/指标/版本证据"| P["PostgreSQL"]
+  G["GitHub App 安装"] -->|"短期安装令牌 + 白名单文件"| C
+  H["GitHub Webhook"] -->|"1 MiB + HMAC 验签"| C
   T["控制平面定时巡检"] -->|"last_seen_at 超时"| C
   C -->|"机器 Firing/Resolved + 通知"| P
   A["Go Agent"] -->|"出站轮询 source_key + 硬上限"| C
-  A -->|"本地白名单 Docker logs + 上传前脱敏"| C
+  A -->|"本地策略 Docker logs/systemd journal + 上传前脱敏"| C
   C -->|"二次限制和脱敏"| P
   C -->|"不可信证据 + 固定输出契约"| D["可替换诊断提供者"]
   D -->|"事实/推断/建议/缺失证据"| C
 ```
 
 - 业务服务与运行实例使用独立模型；`ServiceStatus` 只作为最新观测。
-- Agent 只有在本地 `AGENT_EVIDENCE_POLICY=docker_logs` 时才为已发现 Docker 容器生成日志能力；升级时缺省为 `disabled`，不会静默扩大读取面。
+- Agent 只有在本地策略显式包含 `docker_logs` 和/或 `systemd_journal` 时才生成对应日志能力；升级时缺省为 `disabled`，未知策略整体关闭，不会静默扩大读取面。
 - Docker Compose 实例使用 project/service/副本号形成稳定键，普通容器使用容器名；Agent 同时生成来源键和稳定服务关联，但真实容器目标不上传。
+- systemd 使用已发现 Unit 名作为稳定服务键；真实 Unit 目标同样不上传，取证只使用固定 `journalctl` 参数和有限时间、行数、字节数、超时。
 - 控制平面保存来源与稳定服务键的关联，机器详情页只展示 Agent 已声明的候选服务，并通过服务端管理令牌代理确认业务映射。手工 JSON 继续作为兼容入口。
+- GitHub App 私钥和短期安装令牌只存在于控制平面；数据库只保存授权绑定、Commit SHA、脱敏后的精确白名单文件快照和不含原始载荷的 Webhook 审计。安装撤销后绑定立即失效并清理文件快照；仓库同步使用可配置的受限并发。
+- GitHub Webhook 在 Caddy 1 MiB 边界和应用层 HMAC 验签之外，使用 Redis 固定窗口提供跨 API 实例限流；Redis 故障时限流降级但验签不降级。
 - Agent 首次从容器 ID 切换到稳定键时，控制平面根据前后同名观测迁移活动 M2 事件和既有 M3 服务映射，避免重复告警、丢失恢复通知或诊断断链。
 - 控制平面独立维护循环根据 `last_seen_at` 创建 Agent 失联事件，并在下一次合法报告刷新心跳前解析恢复；巡检和报告锁定同一 Agent 行，多 API 实例使用 `SKIP LOCKED` 分配巡检对象。API 启动时给予一个完整失联阈值的重连宽限期，避免控制平面自身停机造成 Fleet 级误报。
 - 机器事件复用 M2 状态机与钉钉投递，并可在现有事件页发起只使用控制平面最后快照的只读诊断；离线时不向 Agent 发取证请求。
@@ -197,7 +202,7 @@ flowchart LR
 
 ## 10. 明确延后能力
 
-- M3 后续：systemd/file 日志、GitHub App、Agent 失联/恢复生产验收和真实模型生产验收；Docker 自动发现、Web 单服务确认及 Agent 可用性本地闭环已进入当前实现。
+- M3 后续：GitHub App 与 systemd journal 生产金丝雀、文件日志、真实模型生产验收和同步任务可靠性增强；Docker 自动发现、Web 单服务确认、Agent 可用性以及 GitHub/systemd 隔离闭环已进入当前实现。
 - M4：安全重启、部署、回滚和完整审计。
 - M5：全局/上下文对话、仓库知识和诊断历史增强。
 - M6：Web SSH、PWA/移动审批、团队协作和自托管产品化。

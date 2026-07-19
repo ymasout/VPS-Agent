@@ -197,16 +197,22 @@ func dockerLogSourceKey(serviceKey string) string {
 	return "docker-logs-" + fmt.Sprintf("%x", digest[:12])
 }
 
+func systemdJournalSourceKey(serviceKey string) string {
+	digest := sha256.Sum256([]byte(serviceKey))
+	return "systemd-journal-" + fmt.Sprintf("%x", digest[:12])
+}
+
 // EvidenceSourcesForServices 把本地配置和自动发现结果合并为有限能力目录。
 // Docker 目标仅保留在 Agent 内存中，控制平面只看到稳定服务键和来源键。
 func EvidenceSourcesForServices(
-	services []client.Service, configured []config.EvidenceSource, automatic bool,
+	services []client.Service, configured []config.EvidenceSource,
+	automaticDocker bool, automaticSystemd bool,
 ) []config.EvidenceSource {
 	const maxSources = 128
-	servicesByName := map[string]client.Service{}
+	servicesByTarget := map[string]client.Service{}
 	for _, service := range services {
-		if service.Kind == "docker" {
-			servicesByName[service.Name] = service
+		if service.Kind == "docker" || service.Kind == "systemd" {
+			servicesByTarget[service.Kind+"|"+service.Name] = service
 		}
 	}
 	capacity := len(configured) + len(services)
@@ -219,7 +225,11 @@ func EvidenceSourcesForServices(
 		if len(result) >= maxSources || seen[source.Key] {
 			return
 		}
-		if service, ok := servicesByName[source.Target]; ok {
+		serviceKind := "docker"
+		if source.Kind == "systemd_journal" {
+			serviceKind = "systemd"
+		}
+		if service, ok := servicesByTarget[serviceKind+"|"+source.Target]; ok {
 			source.ServiceKind = service.Kind
 			source.ServiceKey = service.Key
 		}
@@ -229,7 +239,7 @@ func EvidenceSourcesForServices(
 	for _, source := range configured {
 		add(source)
 	}
-	if automatic {
+	if automaticDocker {
 		for _, service := range services {
 			if service.Kind != "docker" {
 				continue
@@ -237,6 +247,18 @@ func EvidenceSourcesForServices(
 			add(config.EvidenceSource{
 				Key: dockerLogSourceKey(service.Key), Kind: "docker_logs", Target: service.Name,
 				DisplayName: "Docker logs · " + service.Name,
+				ServiceKind: service.Kind, ServiceKey: service.Key,
+			})
+		}
+	}
+	if automaticSystemd {
+		for _, service := range services {
+			if service.Kind != "systemd" {
+				continue
+			}
+			add(config.EvidenceSource{
+				Key: systemdJournalSourceKey(service.Key), Kind: "systemd_journal", Target: service.Name,
+				DisplayName: "systemd journal · " + service.Name,
 				ServiceKind: service.Kind, ServiceKey: service.Key,
 			})
 		}

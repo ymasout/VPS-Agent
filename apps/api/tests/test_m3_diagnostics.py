@@ -185,7 +185,7 @@ def test_service_mapping_rejects_source_not_advertised_by_agent() -> None:
     )
 
     with pytest.raises(__import__("fastapi").HTTPException, match="allowlist"):
-        asyncio.run(create_service_mapping(payload, session))
+        asyncio.run(create_service_mapping(payload, session, Settings()))
 
     session.add.assert_not_called()
     session.commit.assert_not_awaited()
@@ -214,7 +214,7 @@ def test_service_mapping_rejects_source_bound_to_another_service() -> None:
     )
 
     with pytest.raises(__import__("fastapi").HTTPException, match="another service"):
-        asyncio.run(create_service_mapping(payload, session))
+        asyncio.run(create_service_mapping(payload, session, Settings()))
 
     session.add.assert_not_called()
 
@@ -290,6 +290,99 @@ def test_mapping_candidates_only_expose_agent_declared_association() -> None:
     assert result[0].service_key == "docker:api"
     assert result[0].log_source_key == "docker-logs-1234"
     assert result[0].mapped is False
+
+
+def test_mapping_candidates_include_agent_declared_systemd_journal() -> None:
+    service = ServiceStatus(
+        agent_id="agent-1",
+        kind="systemd",
+        service_key="payments-api.service",
+        name="payments-api.service",
+        state="active",
+        healthy=True,
+    )
+    source = AgentEvidenceSource(
+        agent_id="agent-1",
+        source_key="systemd-journal-1234",
+        kind="systemd_journal",
+        display_name="systemd journal · payments-api.service",
+    )
+    session = AsyncMock()
+    session.get.return_value = Agent(id="agent-1")
+    rows = MagicMock()
+    rows.all.return_value = [(service, source, None)]
+    session.execute.return_value = rows
+
+    result = asyncio.run(list_service_mapping_candidates("agent-1", session))
+
+    assert len(result) == 1
+    assert result[0].service_kind == "systemd"
+    assert result[0].log_source_key == "systemd-journal-1234"
+
+
+def test_systemd_mapping_rejects_docker_log_source() -> None:
+    session = AsyncMock()
+    session.get.return_value = Agent(id="agent-1")
+    session.scalar.side_effect = [
+        None,
+        ServiceStatus(id="status-1"),
+        AgentEvidenceSource(id="source-1", agent_id="agent-1", kind="docker_logs"),
+    ]
+    payload = ServiceMappingCreate(
+        name="payments-api",
+        agent_id="agent-1",
+        service_kind="systemd",
+        service_key="payments-api.service",
+        log_source_key="wrong-source",
+    )
+
+    with pytest.raises(__import__("fastapi").HTTPException, match="allowlist"):
+        asyncio.run(create_service_mapping(payload, session, Settings()))
+
+
+def test_configured_github_app_rejects_repository_outside_installation() -> None:
+    session = AsyncMock()
+    session.get.return_value = Agent(id="agent-1")
+    source = AgentEvidenceSource(
+        id="source-1",
+        agent_id="agent-1",
+        source_key="docker-logs-api",
+        kind="docker_logs",
+        display_name="Docker logs · api",
+    )
+    repository = __import__("app.models", fromlist=["Repository"]).Repository(
+        id="repository-1",
+        full_name="example/private-api",
+        default_branch="main",
+    )
+    session.scalar.side_effect = [
+        None,
+        ServiceStatus(id="status-1"),
+        source,
+        None,
+        repository,
+        None,
+    ]
+    session.add = MagicMock()
+    payload = ServiceMappingCreate(
+        name="api",
+        agent_id="agent-1",
+        service_kind="docker",
+        service_key="docker:api",
+        log_source_key="docker-logs-api",
+        repository_full_name="example/private-api",
+    )
+    settings = Settings(
+        github_app_id="123",
+        github_app_private_key_base64="ZmFrZQ==",
+        github_app_installation_id=42,
+        github_webhook_secret="test-secret",
+    )
+
+    with pytest.raises(__import__("fastapi").HTTPException, match="not authorized"):
+        asyncio.run(create_service_mapping(payload, session, settings))
+
+    session.commit.assert_not_awaited()
 
 
 def test_duplicate_active_diagnostic_is_returned_without_new_request() -> None:

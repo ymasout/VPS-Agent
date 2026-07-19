@@ -9,6 +9,7 @@ from sqlalchemy import select
 from .api import router
 from .config import get_settings
 from .database import engine, session_factory
+from .github import router as github_router
 from .logging import configure_logging
 from .m3 import router as m3_router
 from .maintenance import control_plane_maintenance_loop
@@ -71,6 +72,7 @@ app.add_middleware(
 )
 app.include_router(router)
 app.include_router(m3_router)
+app.include_router(github_router)
 app.include_router(releases_router)
 
 
