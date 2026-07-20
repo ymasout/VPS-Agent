@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getEvent, getEventDiagnostics } from "@/lib/api";
 import { notFound } from "next/navigation";
 import { DiagnosticTrigger } from "./diagnostic-trigger";
+import { OperationCreate } from "./operation-create";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
       <h1>{event.title}</h1>
       <p>{event.service_kind ?? event.source} · {event.service_key ?? event.agent_id} · 观测 {event.observation_count} 次</p>
       <DiagnosticTrigger eventId={event.id} disabled={active} />
+      {!machineEvent && event.service_kind === "docker" && <OperationCreate eventId={event.id} diagnosticId={diagnostics[0]?.id} />}
     </section>
 
     {diagnostics.length === 0 && <div className="empty"><strong>尚无诊断</strong><span>{machineEvent ? "发起后只分析控制平面保存的最后心跳、资源与服务快照，不会等待离线 Agent。" : "发起后，Agent 只会读取本地白名单中的有限日志窗口。"}</span></div>}

@@ -14,9 +14,10 @@ import (
 	"github.com/example/vps-agent-console/apps/agent/internal/client"
 	"github.com/example/vps-agent-console/apps/agent/internal/collector"
 	"github.com/example/vps-agent-console/apps/agent/internal/config"
+	operationexecutor "github.com/example/vps-agent-console/apps/agent/internal/operation"
 )
 
-var version = "0.3.4-dev"
+var version = "0.4.0-dev"
 
 var capabilities = []string{"host.metrics", "docker.status", "systemd.status", "http.healthcheck", "evidence.docker_logs.v1", "evidence.systemd_journal.v1"}
 
@@ -73,7 +74,17 @@ func main() {
 				ServiceKind: source.ServiceKind, ServiceKey: source.ServiceKey,
 			})
 		}
-		report := client.Report{Hostname: host.Hostname, Version: version, Capabilities: capabilities, CollectedAt: time.Now().UTC(), Metrics: metrics, Services: services, EvidenceSources: sources}
+		operationCapabilities := make([]client.OperationCapability, 0)
+		if config.OperationPolicyAllows(cfg.OperationPolicy, config.OperationPolicyDockerRestart) && cfg.OperationKeyID != "" && cfg.OperationPublicKey != "" {
+			for _, service := range services {
+				if service.Kind == "docker" {
+					operationCapabilities = append(operationCapabilities, client.OperationCapability{
+						ActionType: "docker_restart", ServiceKind: "docker", ServiceKey: service.Key,
+					})
+				}
+			}
+		}
+		report := client.Report{Hostname: host.Hostname, Version: version, Capabilities: capabilities, CollectedAt: time.Now().UTC(), Metrics: metrics, Services: services, EvidenceSources: sources, OperationCapabilities: operationCapabilities}
 		if err = api.SendReport(ctx, identity.Credential, report); err != nil {
 			logger.Error("report failed", "error", err)
 			return
@@ -103,6 +114,84 @@ func main() {
 			return
 		}
 		logger.Info("evidence request completed", "request_id", claim.Request.ID, "status", result.Status, "truncated", result.Truncated)
+	}
+	ledger, ledgerErr := operationexecutor.OpenLedger(cfg.OperationStateFile)
+	if ledgerErr != nil {
+		logger.Error("operation ledger initialization failed; write operations disabled", "error", ledgerErr)
+	} else {
+		pollOperations := func() {
+			for key, pending := range ledger.Pending() {
+				if err := api.CompleteOperation(ctx, identity.Credential, pending.OperationID, pending.Result); err != nil {
+					logger.Error("operation result retry failed", "operation_id", pending.OperationID, "error", err)
+					return
+				}
+				if err := ledger.MarkDelivered(key); err != nil {
+					logger.Error("operation ledger delivery update failed", "operation_id", pending.OperationID, "error", err)
+					return
+				}
+			}
+			claim, err := api.ClaimOperation(ctx, identity.Credential)
+			if err != nil {
+				logger.Error("operation poll failed", "error", err)
+				return
+			}
+			if claim.Task == nil {
+				return
+			}
+			task := *claim.Task
+			if err = operationexecutor.Verify(task, identity.AgentID, cfg, time.Now().UTC()); err != nil {
+				exitCode := -1
+				result := client.OperationResult{Status: "failed", ExitCode: &exitCode, ErrorCode: "task_rejected", ErrorDetail: err.Error(), CompletedAt: time.Now().UTC()}
+				if completeErr := api.CompleteOperation(ctx, identity.Credential, task.OperationID, result); completeErr != nil {
+					logger.Error("operation rejection upload failed", "operation_id", task.OperationID, "error", completeErr)
+				}
+				return
+			}
+			cached, execute, err := ledger.Prepare(task)
+			if err != nil {
+				logger.Error("operation ledger prepare failed", "operation_id", task.OperationID, "error", err)
+				exitCode := -1
+				result := client.OperationResult{Status: "failed", ExitCode: &exitCode, ErrorCode: "ledger_unavailable", ErrorDetail: "operation ledger could not safely retain the task", CompletedAt: time.Now().UTC()}
+				if completeErr := api.CompleteOperation(ctx, identity.Credential, task.OperationID, result); completeErr != nil {
+					logger.Error("operation ledger rejection upload failed", "operation_id", task.OperationID, "error", completeErr)
+				}
+				return
+			}
+			if err = api.StartOperation(ctx, identity.Credential, task.OperationID); err != nil {
+				logger.Error("operation start acknowledgement failed", "operation_id", task.OperationID, "error", err)
+				return
+			}
+			result := cached
+			if execute {
+				result = operationexecutor.ExecuteDockerRestart(ctx, task)
+				if err = ledger.Complete(task.IdempotencyKey, result); err != nil {
+					logger.Error("operation ledger completion failed", "operation_id", task.OperationID, "error", err)
+					return
+				}
+			}
+			if err = api.CompleteOperation(ctx, identity.Credential, task.OperationID, result); err != nil {
+				logger.Error("operation result upload failed", "operation_id", task.OperationID, "error", err)
+				return
+			}
+			if err = ledger.MarkDelivered(task.IdempotencyKey); err != nil {
+				logger.Error("operation ledger delivery update failed", "operation_id", task.OperationID, "error", err)
+				return
+			}
+			logger.Info("operation execution reported", "operation_id", task.OperationID, "status", result.Status)
+		}
+		go func() {
+			pollOperations()
+			ticker := time.NewTicker(cfg.OperationPollInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					pollOperations()
+				}
+			}
+		}()
 	}
 	send()
 	ticker := time.NewTicker(cfg.ReportInterval)

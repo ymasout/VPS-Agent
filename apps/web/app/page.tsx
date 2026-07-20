@@ -5,7 +5,7 @@ import { RegistrationPanel } from "./registration-panel";
 import { GitHubPanel } from "./github-panel";
 
 export const dynamic = "force-dynamic";
-const consoleVersion = "0.3.4-dev";
+const consoleVersion = "0.4.0-dev";
 
 function Metric({ label, value }: { label: string; value: string }) {
   return <div className="metric"><span>{label}</span><strong>{value}</strong></div>;
@@ -48,7 +48,7 @@ export default async function Home() {
         <h1>机器<span>可见</span></h1>
         <p>{fleet.total} 台 VPS · {fleet.online} 台在线 · organization: local</p>
       </section>
-      <RegistrationPanel />
+      <RegistrationPanel operationKeyId={process.env.AGENT_OPERATION_KEY_ID} operationPublicKey={process.env.AGENT_OPERATION_PUBLIC_KEY_BASE64} />
       {githubStatus?.configured && <GitHubPanel status={githubStatus} repositories={repositories} />}
       {error && <div className="empty error">{error}</div>}
       {!error && agents.length === 0 && <div className="empty"><strong>还没有已注册的 VPS</strong><span>启动带注册令牌的 Agent 后，机器会自动出现在这里。</span></div>}

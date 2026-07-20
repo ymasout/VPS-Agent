@@ -1,5 +1,5 @@
 FROM golang:1.23-alpine AS build
-ARG VERSION=0.3.4-dev
+ARG VERSION=0.4.0-dev
 WORKDIR /src
 COPY apps/agent/go.mod ./
 COPY apps/agent/ .

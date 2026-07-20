@@ -10,6 +10,9 @@ REGISTRATION_TOKEN="${AGENT_REGISTRATION_TOKEN:-}"
 HEALTHCHECK_URLS=""
 REPORT_INTERVAL=""
 EVIDENCE_POLICY=""
+OPERATION_POLICY=""
+OPERATION_KEY_ID=""
+OPERATION_PUBLIC_KEY=""
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/vps-agent"
 DATA_DIR="/var/lib/vps-agent"
@@ -25,6 +28,9 @@ Options:
   --healthcheck URLS    Comma-separated HTTP healthcheck URLs
   --interval DURATION   Report interval (default: 30s)
   --evidence-policy POLICY  Evidence policy: disabled, docker-logs, systemd-journal, or docker-systemd
+  --operation-policy POLICY  Write policy: disabled or docker-restart
+  --operation-key-id ID      Ed25519 verification key identifier
+  --operation-public-key KEY Base64 Ed25519 public key (required for docker-restart)
   --version VERSION     Release version such as 0.2.2 (default: latest)
   --download-base-url URL  Optional control-plane download mirror
   -h, --help            Show this help
@@ -46,6 +52,9 @@ while [[ $# -gt 0 ]]; do
     --healthcheck) HEALTHCHECK_URLS="${2:-}"; shift 2 ;;
     --interval) REPORT_INTERVAL="${2:-}"; shift 2 ;;
     --evidence-policy) EVIDENCE_POLICY="${2:-}"; shift 2 ;;
+    --operation-policy) OPERATION_POLICY="${2:-}"; shift 2 ;;
+    --operation-key-id) OPERATION_KEY_ID="${2:-}"; shift 2 ;;
+    --operation-public-key) OPERATION_PUBLIC_KEY="${2:-}"; shift 2 ;;
     --version) VERSION="${2:-}"; shift 2 ;;
     --download-base-url) DOWNLOAD_BASE_URL="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -81,11 +90,15 @@ HEALTHCHECK_URLS="${HEALTHCHECK_URLS:-$(existing_value AGENT_HEALTHCHECK_URLS)}"
 REPORT_INTERVAL="${REPORT_INTERVAL:-$(existing_value AGENT_REPORT_INTERVAL)}"
 EVIDENCE_POLICY="${EVIDENCE_POLICY:-$(existing_value AGENT_EVIDENCE_POLICY)}"
 EVIDENCE_SOURCES_JSON="${AGENT_EVIDENCE_SOURCES_JSON:-$(existing_value AGENT_EVIDENCE_SOURCES_JSON)}"
+OPERATION_POLICY="${OPERATION_POLICY:-$(existing_value AGENT_OPERATION_POLICY)}"
+OPERATION_KEY_ID="${OPERATION_KEY_ID:-$(existing_value AGENT_OPERATION_KEY_ID)}"
+OPERATION_PUBLIC_KEY="${OPERATION_PUBLIC_KEY:-$(existing_value AGENT_OPERATION_PUBLIC_KEY_BASE64)}"
 AGENT_NAME="${AGENT_NAME:-$(hostname 2>/dev/null || printf 'VPS Agent')}"
 REPORT_INTERVAL="${REPORT_INTERVAL:-30s}"
 EVIDENCE_POLICY="${EVIDENCE_POLICY:-disabled}"
+OPERATION_POLICY="${OPERATION_POLICY:-disabled}"
 
-for value in "${CONTROL_PLANE_URL}" "${AGENT_NAME}" "${HEALTHCHECK_URLS}" "${REPORT_INTERVAL}" "${EVIDENCE_POLICY}" "${EVIDENCE_SOURCES_JSON}"; do
+for value in "${CONTROL_PLANE_URL}" "${AGENT_NAME}" "${HEALTHCHECK_URLS}" "${REPORT_INTERVAL}" "${EVIDENCE_POLICY}" "${EVIDENCE_SOURCES_JSON}" "${OPERATION_POLICY}" "${OPERATION_KEY_ID}" "${OPERATION_PUBLIC_KEY}"; do
   [[ "${value}" != *$'\n'* && "${value}" != *$'\r'* ]] || fail "configuration values cannot contain newlines"
 done
 [[ "${CONTROL_PLANE_URL}" =~ ^https:// ]] || fail "--url must use HTTPS"
@@ -96,6 +109,15 @@ case "${EVIDENCE_POLICY}" in
   docker-systemd|docker_logs,systemd_journal) AGENT_EVIDENCE_POLICY="docker_logs,systemd_journal" ;;
   *) fail "--evidence-policy must be disabled, docker-logs, systemd-journal, or docker-systemd" ;;
 esac
+case "${OPERATION_POLICY}" in
+  disabled) AGENT_OPERATION_POLICY="disabled" ;;
+  docker-restart|docker_restart) AGENT_OPERATION_POLICY="docker_restart" ;;
+  *) fail "--operation-policy must be disabled or docker-restart" ;;
+esac
+if [[ "${AGENT_OPERATION_POLICY}" == "docker_restart" ]]; then
+  [[ "${OPERATION_KEY_ID}" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || fail "--operation-key-id is required and invalid"
+  [[ "${OPERATION_PUBLIC_KEY}" =~ ^[A-Za-z0-9+/]{43}=$ ]] || fail "--operation-public-key must be a Base64 Ed25519 public key"
+fi
 
 if [[ ! -f "${IDENTITY_FILE}" && -z "${REGISTRATION_TOKEN}" ]]; then
   [[ -r /dev/tty ]] || fail "a registration token is required for first installation"
@@ -158,6 +180,10 @@ umask 077
   printf 'AGENT_HEALTHCHECK_URLS=%s\n' "${HEALTHCHECK_URLS}"
   printf 'AGENT_EVIDENCE_POLICY=%s\n' "${AGENT_EVIDENCE_POLICY}"
   printf 'AGENT_EVIDENCE_SOURCES_JSON=%s\n' "${EVIDENCE_SOURCES_JSON:-[]}"
+  printf 'AGENT_OPERATION_POLICY=%s\n' "${AGENT_OPERATION_POLICY}"
+  printf 'AGENT_OPERATION_KEY_ID=%s\n' "${OPERATION_KEY_ID}"
+  printf 'AGENT_OPERATION_PUBLIC_KEY_BASE64=%s\n' "${OPERATION_PUBLIC_KEY}"
+  printf 'AGENT_OPERATION_STATE_FILE=%s\n' "${DATA_DIR}/operations.json"
   if [[ ! -f "${IDENTITY_FILE}" ]]; then
     printf 'AGENT_REGISTRATION_TOKEN=%s\n' "${REGISTRATION_TOKEN}"
   fi

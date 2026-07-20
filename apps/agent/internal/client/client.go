@@ -53,13 +53,20 @@ type Service struct {
 	Healthy *bool  `json:"healthy,omitempty"`
 }
 type Report struct {
-	Hostname        string           `json:"hostname"`
-	Version         string           `json:"version"`
-	Capabilities    []string         `json:"capabilities"`
-	CollectedAt     time.Time        `json:"collected_at"`
-	Metrics         Metrics          `json:"metrics"`
-	Services        []Service        `json:"services"`
-	EvidenceSources []EvidenceSource `json:"evidence_sources"`
+	Hostname              string                `json:"hostname"`
+	Version               string                `json:"version"`
+	Capabilities          []string              `json:"capabilities"`
+	CollectedAt           time.Time             `json:"collected_at"`
+	Metrics               Metrics               `json:"metrics"`
+	Services              []Service             `json:"services"`
+	EvidenceSources       []EvidenceSource      `json:"evidence_sources"`
+	OperationCapabilities []OperationCapability `json:"operation_capabilities"`
+}
+
+type OperationCapability struct {
+	ActionType  string `json:"action_type"`
+	ServiceKind string `json:"service_kind"`
+	ServiceKey  string `json:"service_key"`
 }
 
 type EvidenceSource struct {
@@ -93,6 +100,36 @@ type EvidenceResult struct {
 	Error       string    `json:"error,omitempty"`
 }
 
+type OperationTask struct {
+	Version        string    `json:"version"`
+	OperationID    string    `json:"operation_id"`
+	ActionType     string    `json:"action_type"`
+	AgentID        string    `json:"agent_id"`
+	ServiceKind    string    `json:"service_kind"`
+	ServiceKey     string    `json:"service_key"`
+	IssuedAt       time.Time `json:"issued_at"`
+	ExpiresAt      time.Time `json:"expires_at"`
+	IdempotencyKey string    `json:"idempotency_key"`
+	Attempt        int       `json:"attempt"`
+	Nonce          string    `json:"nonce"`
+	KeyID          string    `json:"key_id"`
+	Signature      string    `json:"signature"`
+}
+
+type OperationClaim struct {
+	Task *OperationTask `json:"task"`
+}
+
+type OperationResult struct {
+	Status      string    `json:"status"`
+	ExitCode    *int      `json:"exit_code,omitempty"`
+	Output      string    `json:"output"`
+	Truncated   bool      `json:"truncated"`
+	ErrorCode   string    `json:"error_code,omitempty"`
+	ErrorDetail string    `json:"error_detail,omitempty"`
+	CompletedAt time.Time `json:"completed_at"`
+}
+
 func New(baseURL string) *Client {
 	return &Client{strings.TrimRight(baseURL, "/"), &http.Client{Timeout: 15 * time.Second}}
 }
@@ -117,6 +154,20 @@ func (c *Client) ClaimEvidence(ctx context.Context, credential string) (Evidence
 
 func (c *Client) CompleteEvidence(ctx context.Context, credential, requestID string, payload EvidenceResult) error {
 	return c.request(ctx, http.MethodPost, "/api/v1/agents/evidence-requests/"+requestID+"/complete", credential, payload, nil)
+}
+
+func (c *Client) ClaimOperation(ctx context.Context, credential string) (OperationClaim, error) {
+	var claim OperationClaim
+	err := c.request(ctx, http.MethodGet, "/api/v1/agents/operations/next", credential, nil, &claim)
+	return claim, err
+}
+
+func (c *Client) StartOperation(ctx context.Context, credential, operationID string) error {
+	return c.request(ctx, http.MethodPost, "/api/v1/agents/operations/"+operationID+"/start", credential, nil, nil)
+}
+
+func (c *Client) CompleteOperation(ctx context.Context, credential, operationID string, payload OperationResult) error {
+	return c.request(ctx, http.MethodPost, "/api/v1/agents/operations/"+operationID+"/complete", credential, payload, nil)
 }
 
 func (c *Client) request(ctx context.Context, method, path, credential string, input, output any) error {
@@ -146,7 +197,11 @@ func (c *Client) request(ctx context.Context, method, path, credential string, i
 		return fmt.Errorf("request returned %s: %s", res.Status, strings.TrimSpace(string(data)))
 	}
 	if output != nil {
-		if err := json.NewDecoder(res.Body).Decode(output); err != nil {
+		decoder := json.NewDecoder(res.Body)
+		if _, strict := output.(*OperationClaim); strict {
+			decoder.DisallowUnknownFields()
+		}
+		if err := decoder.Decode(output); err != nil {
 			return fmt.Errorf("decode response: %w", err)
 		}
 	}

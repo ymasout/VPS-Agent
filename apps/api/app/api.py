@@ -11,6 +11,7 @@ from .models import (
     Agent,
     AgentEvidenceSource,
     AgentEvidenceSourceBinding,
+    AgentOperationCapability,
     AlertEvent,
     MetricSnapshot,
     RegistrationToken,
@@ -150,9 +151,7 @@ async def report_agent(
     settings: Settings = Depends(get_settings),
 ) -> ReportReceipt:
     received_at = now_utc()
-    locked_agent = await session.scalar(
-        select(Agent).where(Agent.id == agent.id).with_for_update()
-    )
+    locked_agent = await session.scalar(select(Agent).where(Agent.id == agent.id).with_for_update())
     if locked_agent is None:
         raise HTTPException(status_code=401, detail="agent not found")
     await evaluate_agent_availability(
@@ -195,6 +194,9 @@ async def report_agent(
     await session.execute(
         delete(AgentEvidenceSource).where(AgentEvidenceSource.agent_id == agent.id)
     )
+    await session.execute(
+        delete(AgentOperationCapability).where(AgentOperationCapability.agent_id == agent.id)
+    )
     session.add_all(
         [
             ServiceStatus(
@@ -208,6 +210,18 @@ async def report_agent(
                 observed_at=payload.collected_at,
             )
             for item in payload.services
+        ]
+    )
+    session.add_all(
+        [
+            AgentOperationCapability(
+                agent_id=agent.id,
+                action_type=item.action_type,
+                service_kind=item.service_kind,
+                service_key=item.service_key,
+                observed_at=payload.collected_at,
+            )
+            for item in payload.operation_capabilities
         ]
     )
     evidence_sources = [
@@ -234,6 +248,10 @@ async def report_agent(
             if item.service_kind is not None and item.service_key is not None
         ]
     )
+    # 延迟导入避免 API 认证依赖与 M4 路由形成模块循环。
+    from .operations import reconcile_operation_verification
+
+    await reconcile_operation_verification(session, locked_agent, payload, received_at, settings)
     await session.commit()
     if settings.dingtalk_webhook_url:
         background_tasks.add_task(deliver_pending_notifications, settings)

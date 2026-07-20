@@ -32,10 +32,12 @@ async def run_async_migrations() -> None:
         poolclass=pool.NullPool,
     )
     async with connectable.connect() as connection:
-        await connection.run_sync(
-            lambda conn: context.configure(connection=conn, target_metadata=target_metadata)
-        )
-        await connection.run_sync(lambda _: context.run_migrations())
+        def run_migrations(connection) -> None:
+            context.configure(connection=connection, target_metadata=target_metadata)
+            with context.begin_transaction():
+                context.run_migrations()
+
+        await connection.run_sync(run_migrations)
     await connectable.dispose()
 
 

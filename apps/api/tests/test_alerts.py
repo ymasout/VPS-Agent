@@ -69,6 +69,12 @@ def test_service_problem_classification_matches_m1_status_semantics() -> None:
     assert service_is_problem(service("active", False))
     assert not service_is_problem(service("inactive", None))
     assert service_is_problem(ServiceReport(kind="docker", key="web", name="web", state="exited"))
+    assert service_is_problem(
+        ServiceReport(kind="docker", key="api", name="api", state="running", healthy=False)
+    )
+    assert not service_is_problem(
+        ServiceReport(kind="docker", key="api", name="api", state="running", healthy=None)
+    )
 
 
 def test_offline_agent_fires_once_and_uses_machine_scope() -> None:

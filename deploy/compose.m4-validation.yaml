@@ -1,0 +1,53 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      CONTROL_PLANE_DOMAIN: ":8080"
+      CADDY_ADMIN_USER: m4-e2e
+      CADDY_ADMIN_PASSWORD_HASH: ${M4_E2E_CADDY_PASSWORD_HASH}
+    ports:
+      - "${M4_E2E_CADDY_PORT:-18080}:8080"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_started
+
+  api:
+    environment:
+      OPERATION_SIGNING_KEY_ID: ${M4_E2E_OPERATION_KEY_ID}
+      OPERATION_SIGNING_PRIVATE_KEY_BASE64: ${M4_E2E_OPERATION_PRIVATE_KEY}
+      OPERATION_OBSERVATION_MAX_AGE_SECONDS: 30
+      OPERATION_CLAIM_LEASE_SECONDS: 30
+      OPERATION_EXECUTION_TIMEOUT_SECONDS: 30
+      OPERATION_EXECUTION_RESULT_GRACE_SECONDS: 15
+      OPERATION_VERIFICATION_WINDOW_SECONDS: 10
+      OPERATION_VERIFICATION_TIMEOUT_SECONDS: 30
+      AGENT_OFFLINE_AFTER_SECONDS: 30
+      AGENT_AVAILABILITY_SCAN_INTERVAL_SECONDS: 5
+
+  agent:
+    environment:
+      CONTROL_PLANE_URL: http://caddy:8080
+      AGENT_NAME: M4 isolated validation agent
+      AGENT_REPORT_INTERVAL: 2s
+      AGENT_EVIDENCE_POLICY: docker_logs
+      AGENT_OPERATION_POLICY: docker_restart
+      AGENT_OPERATION_KEY_ID: ${M4_E2E_OPERATION_KEY_ID}
+      AGENT_OPERATION_PUBLIC_KEY_BASE64: ${M4_E2E_OPERATION_PUBLIC_KEY}
+      AGENT_OPERATION_POLL_INTERVAL: 1s
+      AGENT_OPERATION_STATE_FILE: /var/lib/vps-agent/operations.json
+    depends_on:
+      caddy:
+        condition: service_started
+
+  canary:
+    image: alpine:3.22
+    command: ["sh", "-c", "if [ ! -f /tmp/initialized ]; then touch /tmp/healthy /tmp/initialized; fi; while true; do sleep 60; done"]
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/healthy"]
+      interval: 1s
+      timeout: 1s
+      retries: 3

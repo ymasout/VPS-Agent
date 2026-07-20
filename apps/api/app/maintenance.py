@@ -9,6 +9,7 @@ from .config import Settings
 from .database import session_factory
 from .models import Agent
 from .notifications import deliver_pending_notifications
+from .operations import recover_stale_operations
 
 logger = structlog.get_logger()
 
@@ -68,5 +69,9 @@ async def control_plane_maintenance_loop(settings: Settings) -> None:
         await logger.aexception("notification.pending_delivery_scan_failed")
     await asyncio.sleep(settings.agent_offline_after_seconds)
     while True:
+        try:
+            await recover_stale_operations(settings)
+        except Exception:
+            await logger.aexception("operation.recovery_scan_failed")
         await run_maintenance_once(settings)
         await asyncio.sleep(settings.agent_availability_scan_interval_seconds)

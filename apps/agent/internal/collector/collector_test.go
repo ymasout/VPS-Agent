@@ -60,6 +60,17 @@ func TestParseDockerServicesPreservesStatusDetail(t *testing.T) {
 	}
 }
 
+func TestParseDockerServicesHonorsContainerHealthStatus(t *testing.T) {
+	services := parseDockerServices("abc|api|running|Up 20 seconds (unhealthy)|demo|api|1\n")
+	if len(services) != 1 || services[0].Healthy == nil || *services[0].Healthy {
+		t.Fatalf("unhealthy running container was treated as healthy: %#v", services)
+	}
+	starting := parseDockerServices("abc|api|running|Up 2 seconds (health: starting)|demo|api|1\n")
+	if len(starting) != 1 || starting[0].Healthy != nil {
+		t.Fatalf("health-starting container should remain unknown: %#v", starting)
+	}
+}
+
 func TestAutomaticDockerEvidenceSourcesUseStableServiceAssociation(t *testing.T) {
 	healthy := true
 	services := []client.Service{

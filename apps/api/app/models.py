@@ -117,6 +117,20 @@ class AgentEvidenceSourceBinding(Base):
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class AgentOperationCapability(Base):
+    """Agent 本地明确授权的写能力目录；不包含容器目标。"""
+
+    __tablename__ = "agent_operation_capabilities"
+    __table_args__ = (UniqueConstraint("agent_id", "action_type", "service_kind", "service_key"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), index=True)
+    action_type: Mapped[str] = mapped_column(String(32))
+    service_kind: Mapped[str] = mapped_column(String(32))
+    service_key: Mapped[str] = mapped_column(String(255))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class ManagedService(Base):
     __tablename__ = "managed_services"
 
@@ -125,6 +139,7 @@ class ManagedService(Base):
     name: Mapped[str] = mapped_column(String(255))
     environment: Mapped[str] = mapped_column(String(64), default="production")
     description: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    criticality: Mapped[str] = mapped_column(String(32), default="critical")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -143,6 +158,7 @@ class ServiceInstance(Base):
     service_kind: Mapped[str] = mapped_column(String(32))
     service_key: Mapped[str] = mapped_column(String(255))
     deployment_directory: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    restart_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -373,3 +389,73 @@ class DiagnosticCitation(Base):
     )
     section: Mapped[str] = mapped_column(String(32))
     item_index: Mapped[int] = mapped_column(Integer)
+
+
+class Operation(Base):
+    __tablename__ = "operations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id: Mapped[str] = mapped_column(String(64), default="local", index=True)
+    instance_id: Mapped[str] = mapped_column(
+        ForeignKey("service_instances.id", ondelete="RESTRICT"), index=True
+    )
+    agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id", ondelete="RESTRICT"), index=True)
+    source_event_id: Mapped[str | None] = mapped_column(
+        ForeignKey("alert_events.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    source_diagnostic_id: Mapped[str | None] = mapped_column(
+        ForeignKey("diagnostic_runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    action_type: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(32), default="planned", index=True)
+    active_key: Mapped[str | None] = mapped_column(String(320), unique=True, nullable=True)
+    requested_by: Mapped[str] = mapped_column(String(128))
+    confirmed_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    risk_level: Mapped[str] = mapped_column(String(32), default="medium")
+    impact_summary: Mapped[str] = mapped_column(String(512))
+    plan_snapshot: Mapped[dict] = mapped_column(JSON)
+    precheck_result: Mapped[dict] = mapped_column(JSON)
+    verification_policy: Mapped[dict] = mapped_column(JSON)
+    verification_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True)
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
+    task_nonce: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
+    signing_key_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    task_signature: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    execution_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output: Mapped[str | None] = mapped_column(Text, nullable=True)
+    output_truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_detail: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class OperationTransition(Base):
+    __tablename__ = "operation_transitions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    operation_id: Mapped[str] = mapped_column(
+        ForeignKey("operations.id", ondelete="CASCADE"), index=True
+    )
+    from_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    to_status: Mapped[str] = mapped_column(String(32))
+    actor_type: Mapped[str] = mapped_column(String(32))
+    actor_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

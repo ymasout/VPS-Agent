@@ -54,6 +54,18 @@ func TestSendReportUsesBearerCredential(t *testing.T) {
 	}
 }
 
+func TestClaimOperationRejectsUnknownTaskFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"task":{"version":"v1","operation_id":"op-1","action_type":"docker_restart","agent_id":"agent-1","service_kind":"docker","service_key":"docker:api","issued_at":"2026-01-01T00:00:00Z","expires_at":"2026-01-01T00:05:00Z","idempotency_key":"key-1","attempt":1,"nonce":"nonce","key_id":"key","signature":"signature","command":"unexpected"}}`))
+	}))
+	defer server.Close()
+
+	_, err := New(server.URL).ClaimOperation(context.Background(), "agt_secret")
+	if err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("operation claim accepted an unknown executable field: %v", err)
+	}
+}
+
 func TestRequestReturnsBoundedServerError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)

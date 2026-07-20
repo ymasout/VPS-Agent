@@ -167,10 +167,21 @@ func parseDockerServices(output string) []client.Service {
 			if len(parts) == 7 {
 				project, composeService, replica = parts[4], parts[5], parts[6]
 			}
-			healthy := parts[2] == "running"
+			var healthy *bool
+			if parts[2] == "running" {
+				value := !strings.Contains(strings.ToLower(parts[3]), "(unhealthy)")
+				if strings.Contains(strings.ToLower(parts[3]), "(health: starting)") {
+					healthy = nil
+				} else {
+					healthy = &value
+				}
+			} else {
+				value := false
+				healthy = &value
+			}
 			result = append(result, client.Service{
 				Kind: "docker", Key: stableDockerServiceKey(parts[1], project, composeService, replica),
-				Name: parts[1], State: parts[2], Detail: parts[3], Healthy: &healthy,
+				Name: parts[1], State: parts[2], Detail: parts[3], Healthy: healthy,
 			})
 		}
 	}
@@ -190,6 +201,11 @@ func stableDockerServiceKey(name, project, service, replica string) string {
 	}
 	digest := sha256.Sum256([]byte(key))
 	return key[:230] + ":" + fmt.Sprintf("%x", digest[:12])
+}
+
+// StableDockerServiceKey is shared by discovery and the M4 local target resolver.
+func StableDockerServiceKey(name, project, service, replica string) string {
+	return stableDockerServiceKey(name, project, service, replica)
 }
 
 func dockerLogSourceKey(serviceKey string) string {

@@ -19,6 +19,7 @@ from .models import (
     Agent,
     AgentEvidenceSource,
     AgentEvidenceSourceBinding,
+    AgentOperationCapability,
     AlertEvent,
     DeploymentVersion,
     DiagnosticRun,
@@ -40,6 +41,7 @@ from .schemas import (
     EvidenceRequestReceipt,
     EvidenceRequestWork,
     EvidenceView,
+    RestartPolicyUpdate,
     ServiceMappingCandidate,
     ServiceMappingCreate,
     ServiceMappingView,
@@ -169,6 +171,7 @@ async def create_service_mapping(
         name=payload.name,
         environment=payload.environment,
         description=payload.description,
+        criticality=payload.criticality,
     )
     session.add(managed)
     await session.flush()
@@ -178,6 +181,7 @@ async def create_service_mapping(
         service_kind=payload.service_kind,
         service_key=payload.service_key,
         deployment_directory=payload.deployment_directory,
+        restart_enabled=payload.restart_enabled,
     )
     session.add(instance)
     await session.flush()
@@ -241,6 +245,8 @@ async def create_service_mapping(
         repository_full_name=repository.full_name if repository else None,
         commit_sha=payload.commit_sha,
         image_digest=payload.image_digest,
+        criticality=managed.criticality,
+        restart_enabled=instance.restart_enabled,
     )
 
 
@@ -284,6 +290,45 @@ async def list_service_mapping_candidates(
             .order_by(ServiceStatus.name, AgentEvidenceSource.source_key)
         )
     ).all()
+    capability_rows = (
+        await session.execute(
+            select(
+                AgentOperationCapability.service_kind,
+                AgentOperationCapability.service_key,
+            ).where(
+                AgentOperationCapability.agent_id == agent_id,
+                AgentOperationCapability.action_type == "docker_restart",
+            )
+        )
+    ).all()
+    capabilities = {tuple(item) for item in capability_rows if len(item) == 2}
+    instance_ids = [instance_id for _, _, instance_id in rows if instance_id]
+    instances = (
+        {
+            item.id: item
+            for item in (
+                await session.scalars(
+                    select(ServiceInstance).where(ServiceInstance.id.in_(instance_ids))
+                )
+            ).all()
+        }
+        if instance_ids
+        else {}
+    )
+    services = (
+        {
+            item.id: item
+            for item in (
+                await session.scalars(
+                    select(ManagedService).where(
+                        ManagedService.id.in_([item.service_id for item in instances.values()])
+                    )
+                )
+            ).all()
+        }
+        if instances
+        else {}
+    )
     return [
         ServiceMappingCandidate(
             agent_id=agent_id,
@@ -296,9 +341,84 @@ async def list_service_mapping_candidates(
             log_source_name=source.display_name,
             mapped=instance_id is not None,
             instance_id=instance_id,
+            operation_capable=(service.kind, service.service_key) in capabilities,
+            restart_enabled=bool(instance_id and instances[instance_id].restart_enabled),
+            criticality=(
+                services[instances[instance_id].service_id].criticality
+                if instance_id and instances[instance_id].service_id in services
+                else "critical"
+            ),
         )
         for service, source, instance_id in rows
     ]
+
+
+@router.post(
+    "/service-instances/{instance_id}/restart-policy",
+    response_model=ServiceMappingCandidate,
+    dependencies=[Depends(require_admin)],
+)
+async def update_restart_policy(
+    instance_id: str,
+    payload: RestartPolicyUpdate,
+    session: AsyncSession = Depends(get_session),
+) -> ServiceMappingCandidate:
+    instance = await session.get(ServiceInstance, instance_id)
+    if instance is None:
+        raise HTTPException(status_code=404, detail="service instance not found")
+    managed = await session.get(ManagedService, instance.service_id)
+    status_item = await session.scalar(
+        select(ServiceStatus).where(
+            ServiceStatus.agent_id == instance.agent_id,
+            ServiceStatus.kind == instance.service_kind,
+            ServiceStatus.service_key == instance.service_key,
+        )
+    )
+    source = await session.scalar(
+        select(AgentEvidenceSource)
+        .join(
+            AgentEvidenceSourceBinding,
+            AgentEvidenceSourceBinding.evidence_source_id == AgentEvidenceSource.id,
+        )
+        .where(
+            AgentEvidenceSource.agent_id == instance.agent_id,
+            AgentEvidenceSourceBinding.service_kind == instance.service_kind,
+            AgentEvidenceSourceBinding.service_key == instance.service_key,
+        )
+        .limit(1)
+    )
+    capability = await session.scalar(
+        select(AgentOperationCapability).where(
+            AgentOperationCapability.agent_id == instance.agent_id,
+            AgentOperationCapability.action_type == "docker_restart",
+            AgentOperationCapability.service_kind == instance.service_kind,
+            AgentOperationCapability.service_key == instance.service_key,
+        )
+    )
+    if managed is None or status_item is None or source is None:
+        raise HTTPException(status_code=409, detail="service mapping is not currently observable")
+    if payload.enabled and (instance.service_kind != "docker" or capability is None):
+        raise HTTPException(status_code=409, detail="agent has not enabled Docker restart")
+    if payload.enabled and payload.criticality != "non_critical":
+        raise HTTPException(status_code=409, detail="restart is limited to non-critical services")
+    instance.restart_enabled = payload.enabled
+    managed.criticality = payload.criticality
+    await session.commit()
+    return ServiceMappingCandidate(
+        agent_id=instance.agent_id,
+        service_kind=instance.service_kind,
+        service_key=instance.service_key,
+        service_name=status_item.name,
+        state=status_item.state,
+        healthy=status_item.healthy,
+        log_source_key=source.source_key,
+        log_source_name=source.display_name,
+        mapped=True,
+        instance_id=instance.id,
+        operation_capable=capability is not None,
+        restart_enabled=instance.restart_enabled,
+        criticality=managed.criticality,
+    )
 
 
 @router.get("/events/{event_id}", response_model=AlertEventView)

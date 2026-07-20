@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     diagnostic_collection_timeout_seconds: int = Field(default=10, ge=1, le=15)
     diagnostic_request_claim_seconds: int = Field(default=60, ge=30, le=600)
     diagnostic_run_stale_seconds: int = Field(default=300, ge=60, le=3600)
+    operation_signing_key_id: str = ""
+    operation_signing_private_key_base64: str = ""
+    operation_observation_max_age_seconds: int = Field(default=120, ge=30, le=600)
+    operation_claim_lease_seconds: int = Field(default=60, ge=30, le=300)
+    operation_execution_timeout_seconds: int = Field(default=30, ge=5, le=120)
+    operation_execution_result_grace_seconds: int = Field(default=15, ge=5, le=60)
+    operation_verification_window_seconds: int = Field(default=30, ge=0, le=300)
+    operation_verification_timeout_seconds: int = Field(default=180, ge=30, le=900)
+    operation_max_output_bytes: int = Field(default=16384, ge=1024, le=65536)
+    operation_max_output_lines: int = Field(default=100, ge=1, le=500)
     github_app_id: str | None = None
     github_app_private_key_base64: str | None = None
     github_app_installation_id: int | None = Field(default=None, gt=0)
@@ -66,6 +76,13 @@ class Settings(BaseSettings):
             raise ValueError("diagnostic run stale threshold must exceed provider timeout")
         if self.agent_availability_scan_interval_seconds > self.agent_offline_after_seconds:
             raise ValueError("agent availability scan interval must not exceed offline threshold")
+        if bool(self.operation_signing_key_id) != bool(self.operation_signing_private_key_base64):
+            raise ValueError("operation signing key id and private key must be set together")
+        if (
+            self.operation_verification_timeout_seconds
+            <= self.operation_verification_window_seconds
+        ):
+            raise ValueError("operation verification timeout must exceed stability window")
         github_values = (
             self.github_app_id,
             self.github_app_private_key_base64,

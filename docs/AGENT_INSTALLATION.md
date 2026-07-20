@@ -1,6 +1,6 @@
 # Agent 发布、安装与升级
 
-VPS Agent 通过 GitHub Release 发布 Linux 静态二进制。生产各机器版本：control-plane `v0.3.1`、DMIT `v0.3.3`（systemd journal 金丝雀验证用，含旧版 journalctl 时间戳兼容修复）、两台腾讯云 `v0.2.4`；当前开发树为 `v0.3.4-dev`。Release 支持 `amd64` 和 `arm64`，同时包含安装脚本和 `SHA256SUMS`，安装器会在替换程序前自动校验二进制。
+VPS Agent 通过 GitHub Release 发布 Linux 静态二进制。生产各机器版本：control-plane `v0.3.1`、DMIT `v0.3.3`（systemd journal 金丝雀验证用，含旧版 journalctl 时间戳兼容修复）、两台腾讯云 `v0.2.4`；当前开发树为 `v0.4.0-dev`，M4 尚未发布或部署生产。Release 支持 `amd64` 和 `arm64`，同时包含安装脚本和 `SHA256SUMS`，安装器会在替换程序前自动校验二进制。
 
 ## 1. 发布新版本
 
@@ -87,6 +87,9 @@ sudo bash install-agent.sh \
 - `--healthcheck https://example.com/healthz`：一个或多个逗号分隔的 HTTP 检查地址。
 - `--interval 30s`：上报间隔。
 - `--evidence-policy docker-systemd`：明确允许 Agent 为已发现 Docker 容器和 systemd Unit 生成有限日志诊断能力；也可使用 `docker-logs`、`systemd-journal` 或仅监控的 `disabled`。
+- `--operation-policy docker-restart`：明确允许 Agent 为本机已发现 Docker 服务声明重启能力；默认 `disabled`。启用时必须同时提供 `--operation-key-id` 和 `--operation-public-key`。
+- `--operation-key-id m4-2026-01`：控制平面 Ed25519 签名 key ID。
+- `--operation-public-key BASE64`：对应 32 字节 Ed25519 公钥的 Base64。公钥可以进入安装命令；私钥只能留在控制平面。
 - `--version 0.3.0`：安装指定版本；默认安装最新 Release。
 
 安装器会创建：
@@ -114,6 +117,12 @@ AGENT_EVIDENCE_SOURCES_JSON='[{"key":"payment-api-logs","kind":"docker_logs","ta
 ```
 
 容器/Unit 目标只保存在 VPS 本地；控制平面只能引用 Agent 声明的 `key` 并下发有限时间、行数、字节数和超时。机器详情页可确认自动发现的诊断服务，不需要手工填写容器 ID、Unit 参数或 `source_key`。完整协议见 [M3_DIAGNOSTICS.md](./M3_DIAGNOSTICS.md)。
+
+M4 写操作同样默认关闭。新机器在 Web 明确选择“允许经确认的 Docker 单服务重启”后，安装命令才会包含本地写策略与控制平面公钥。Agent 自动为当前 Docker 服务声明 `docker_restart + stable service_key`，不上传容器 target。控制台仍需把具体服务映射标记为非关键并显式启用重启；任务还必须经过管理员确认和 Ed25519 验签。完整协议见 [M4_OPERATIONS.md](./M4_OPERATIONS.md)。
+
+升级到 `0.4.0-dev` 时需注意 Docker health 行为修正：`running (unhealthy)` 不再被误报为健康，因此可能首次触发 M2 告警；`health: starting` 作为未知状态，不触发异常也不满足 M4 健康验证。部署前应先检查现有容器的 healthcheck 状态，并确保控制平面与 Agent 均使用 NTP/chrony 同步时间。
+
+旧 Agent 升级会保留已有 `AGENT_OPERATION_POLICY`；缺失时写入 `disabled`，不会因升级自动获得写权限。不要把 `OPERATION_SIGNING_PRIVATE_KEY_BASE64` 写入 Agent 配置或安装命令。
 
 注册成功后，一次性令牌会从配置文件删除，后续重启和升级使用已保存的独立 Agent 身份。
 

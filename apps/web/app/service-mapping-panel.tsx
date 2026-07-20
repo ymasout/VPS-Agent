@@ -10,6 +10,8 @@ function MappingForm({ candidate, repositories }: { candidate: ServiceMappingCan
   const [environment, setEnvironment] = useState("production");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [restartEnabled, setRestartEnabled] = useState(candidate.restart_enabled);
+  const [criticality, setCriticality] = useState<"critical" | "non_critical">(candidate.criticality === "non_critical" ? "non_critical" : "critical");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -28,6 +30,8 @@ function MappingForm({ candidate, repositories }: { candidate: ServiceMappingCan
           deployment_directory: directory.trim() || null,
           log_source_key: candidate.log_source_key,
           repository_full_name: repository.trim() || null,
+          criticality,
+          restart_enabled: restartEnabled,
         }),
       });
       const payload = await response.json();
@@ -35,6 +39,27 @@ function MappingForm({ candidate, repositories }: { candidate: ServiceMappingCan
       setMapped(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "映射失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function enableRestart() {
+    if (!candidate.instance_id) return;
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch(`/console/service-instances/${candidate.instance_id}/restart-policy`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: true, criticality: "non_critical" }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail ?? "授权失败");
+      setRestartEnabled(true);
+      setCriticality("non_critical");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "授权失败");
     } finally {
       setLoading(false);
     }
@@ -50,9 +75,15 @@ function MappingForm({ candidate, repositories }: { candidate: ServiceMappingCan
         <label>环境<select value={environment} onChange={(event) => setEnvironment(event.target.value)}><option value="production">production</option><option value="staging">staging</option><option value="development">development</option></select></label>
         <label>部署目录（可选）<input value={directory} onChange={(event) => setDirectory(event.target.value)} placeholder="/opt/apps/service" /></label>
         <label>GitHub App 仓库（可选）<input list="authorized-github-repositories" value={repository} onChange={(event) => setRepository(event.target.value)} placeholder={repositories.length ? "选择已授权仓库" : "owner/repository"} /></label>
+        {!mapped && candidate.operation_capable && candidate.service_kind === "docker" && <>
+          <label>关键性<select value={criticality} onChange={(event) => { const value = event.target.value as "critical" | "non_critical"; setCriticality(value); if (value === "critical") setRestartEnabled(false); }}><option value="critical">关键服务（禁止重启）</option><option value="non_critical">非关键服务</option></select></label>
+          <label><input type="checkbox" checked={restartEnabled} disabled={criticality !== "non_critical"} onChange={(event) => setRestartEnabled(event.target.checked)} /> 明确允许经确认的安全重启</label>
+        </>}
       </div>
       {error && <p className="mapping-error" role="alert">{error}</p>}
       <button type="submit" disabled={loading || mapped}>{mapped ? "已建立诊断映射" : loading ? "保存中…" : "确认用于诊断"}</button>
+      {mapped && candidate.operation_capable && !restartEnabled && <button type="button" disabled={loading} onClick={enableRestart}>标记为非关键并启用安全重启</button>}
+      {mapped && restartEnabled && <small>已授权：非关键 Docker 单服务安全重启</small>}
     </form>
   );
 }

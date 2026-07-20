@@ -5,19 +5,21 @@ import { buildInstallCommand } from "../lib/registration";
 
 type CreatedToken = { token: string; expires_at: string; name: string };
 
-export function RegistrationPanel() {
+export function RegistrationPanel({ operationKeyId = "", operationPublicKey = "" }: { operationKeyId?: string; operationPublicKey?: string }) {
   const [name, setName] = useState("");
   const [created, setCreated] = useState<CreatedToken | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState("");
   const [evidencePolicy, setEvidencePolicy] = useState<"disabled" | "docker-logs" | "systemd-journal" | "docker-systemd">("docker-systemd");
+  const [operationPolicy, setOperationPolicy] = useState<"disabled" | "docker-restart">("disabled");
 
   const controlPlaneURL = typeof window === "undefined" ? "" : window.location.origin;
   const installCommand = buildInstallCommand(
     controlPlaneURL,
     created?.name ?? (name.trim() || "my-vps"),
     evidencePolicy,
+    { policy: operationPolicy, keyId: operationKeyId, publicKey: operationPublicKey },
   );
 
   async function createToken(event: FormEvent) {
@@ -72,6 +74,12 @@ export function RegistrationPanel() {
           <option value="disabled">仅监控</option>
         </select>
         <small className="field-help">诊断模式只允许读取自动发现容器或 Unit 的有限日志，不开放 Shell、任意 Unit 参数或任意路径。</small>
+        <label htmlFor="operation-policy">安全处置能力</label>
+        <select id="operation-policy" value={operationPolicy} onChange={(event) => setOperationPolicy(event.target.value as "disabled" | "docker-restart")}>
+          <option value="disabled">不允许写操作（默认）</option>
+          <option value="docker-restart" disabled={!operationKeyId || !operationPublicKey}>允许经确认的 Docker 单服务重启</option>
+        </select>
+        <small className="field-help">写能力需本机策略、控制台服务授权和签名任务同时成立；不会开放 Shell、容器参数、部署或回滚。</small>
       </form>
       {error && <div className="registration-error" role="alert">{error}</div>}
       {created && (

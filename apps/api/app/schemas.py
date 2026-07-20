@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class RegistrationTokenCreate(BaseModel):
@@ -80,6 +80,13 @@ class EvidenceSourceReport(BaseModel):
         return self
 
 
+class OperationCapabilityReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action_type: Literal["docker_restart"]
+    service_kind: Literal["docker"]
+    service_key: str = Field(min_length=1, max_length=255)
+
+
 class AgentReport(BaseModel):
     hostname: str = Field(min_length=1, max_length=255)
     version: str = Field(min_length=1, max_length=64)
@@ -88,6 +95,9 @@ class AgentReport(BaseModel):
     metrics: Metrics
     services: list[ServiceReport] = Field(default_factory=list, max_length=2000)
     evidence_sources: list[EvidenceSourceReport] = Field(default_factory=list, max_length=128)
+    operation_capabilities: list[OperationCapabilityReport] = Field(
+        default_factory=list, max_length=128
+    )
 
     @model_validator(mode="after")
     def validate_unique_services(self) -> "AgentReport":
@@ -97,6 +107,12 @@ class AgentReport(BaseModel):
         source_keys = [source.key for source in self.evidence_sources]
         if len(source_keys) != len(set(source_keys)):
             raise ValueError("evidence source keys must be unique within a report")
+        operation_keys = [
+            (item.action_type, item.service_kind, item.service_key)
+            for item in self.operation_capabilities
+        ]
+        if len(operation_keys) != len(set(operation_keys)):
+            raise ValueError("operation capabilities must be unique within a report")
         return self
 
 
@@ -183,6 +199,8 @@ class ServiceMappingCreate(BaseModel):
     default_branch: str = Field(default="main", min_length=1, max_length=255)
     commit_sha: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{7,64}$")
     image_digest: str | None = Field(default=None, max_length=255)
+    criticality: Literal["critical", "non_critical"] = "critical"
+    restart_enabled: bool = False
 
     @field_validator("deployment_directory")
     @classmethod
@@ -208,6 +226,8 @@ class ServiceMappingView(BaseModel):
     repository_full_name: str | None
     commit_sha: str | None
     image_digest: str | None
+    criticality: str
+    restart_enabled: bool
 
 
 class ServiceMappingCandidate(BaseModel):
@@ -221,6 +241,108 @@ class ServiceMappingCandidate(BaseModel):
     log_source_name: str
     mapped: bool
     instance_id: str | None
+    operation_capable: bool = False
+    restart_enabled: bool = False
+    criticality: str = "critical"
+
+
+class RestartPolicyUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+    criticality: Literal["critical", "non_critical"]
+
+
+class OperationPlanCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    instance_id: str | None = Field(default=None, max_length=36)
+    event_id: str | None = Field(default=None, max_length=36)
+    diagnostic_id: str | None = Field(default=None, max_length=36)
+    action_type: Literal["docker_restart"] = "docker_restart"
+    expires_in_seconds: int = Field(default=300, ge=60, le=900)
+
+
+class OperationConfirm(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirmed_by: str = Field(default="local-admin", min_length=1, max_length=128)
+
+
+class OperationExecutionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["completed", "failed"]
+    exit_code: int | None = Field(default=None, ge=-1, le=255)
+    output: str = Field(default="", max_length=65536)
+    truncated: bool = False
+    error_code: str | None = Field(default=None, max_length=64)
+    error_detail: str | None = Field(default=None, max_length=512)
+    completed_at: datetime
+
+
+class OperationTask(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: Literal["v1"] = "v1"
+    operation_id: str
+    action_type: Literal["docker_restart"]
+    agent_id: str
+    service_kind: Literal["docker"]
+    service_key: str
+    issued_at: datetime
+    expires_at: datetime
+    idempotency_key: str
+    attempt: int
+    nonce: str
+    key_id: str
+    signature: str
+
+
+class OperationClaim(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    task: OperationTask | None = None
+
+
+class OperationTransitionView(BaseModel):
+    from_status: str | None
+    to_status: str
+    actor_type: str
+    actor_id: str | None
+    reason: str | None
+    details: dict
+    created_at: datetime
+
+
+class OperationView(BaseModel):
+    id: str
+    instance_id: str
+    agent_id: str
+    source_event_id: str | None
+    source_diagnostic_id: str | None
+    action_type: str
+    status: str
+    requested_by: str
+    confirmed_by: str | None
+    risk_level: str
+    impact_summary: str
+    plan_snapshot: dict
+    precheck_result: dict
+    verification_policy: dict
+    verification_result: dict | None
+    expires_at: datetime
+    requested_at: datetime
+    confirmed_at: datetime | None
+    claimed_at: datetime | None
+    started_at: datetime | None
+    execution_completed_at: datetime | None
+    completed_at: datetime | None
+    exit_code: int | None
+    output: str | None
+    output_truncated: bool
+    error_code: str | None
+    error_detail: str | None
+    transitions: list[OperationTransitionView]
+
+
+class OperationReceipt(BaseModel):
+    operation_id: str
+    status: str
 
 
 class GitHubRepositoryView(BaseModel):

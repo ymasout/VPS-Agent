@@ -14,6 +14,9 @@ export type ServiceMappingCandidate = {
   log_source_name: string;
   mapped: boolean;
   instance_id: string | null;
+  operation_capable: boolean;
+  restart_enabled: boolean;
+  criticality: string;
 };
 export type GitHubRepository = {
   id: string;
@@ -89,6 +92,15 @@ export type Diagnostic = {
   started_at: string | null;
   completed_at: string | null;
 };
+export type OperationTransition = { from_status: string | null; to_status: string; actor_type: string; actor_id: string | null; reason: string | null; details: Record<string, unknown>; created_at: string };
+export type Operation = {
+  id: string; instance_id: string; agent_id: string; source_event_id: string | null; source_diagnostic_id: string | null;
+  action_type: string; status: string; requested_by: string; confirmed_by: string | null; risk_level: string; impact_summary: string;
+  plan_snapshot: Record<string, unknown>; precheck_result: Record<string, boolean>; verification_policy: Record<string, unknown>; verification_result: Record<string, unknown> | null;
+  expires_at: string; requested_at: string; confirmed_at: string | null; claimed_at: string | null; started_at: string | null;
+  execution_completed_at: string | null; completed_at: string | null; exit_code: number | null; output: string | null; output_truncated: boolean;
+  error_code: string | null; error_detail: string | null; transitions: OperationTransition[];
+};
 
 const apiURL = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -108,6 +120,7 @@ export const getEvents = () => request<AlertEvent[]>("/api/v1/events");
 export const getEvent = (id: string) => request<AlertEvent>(`/api/v1/events/${id}`);
 export const getEventDiagnostics = (id: string) =>
   request<Diagnostic[]>(`/api/v1/events/${id}/diagnostics`);
+export const getOperation = (id: string) => request<Operation>(`/api/v1/operations/${id}`);
 export function formatBytes(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
