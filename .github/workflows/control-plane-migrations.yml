@@ -1,0 +1,49 @@
+name: Control Plane Migrations
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  create-all-adoption:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vps_agent
+          POSTGRES_PASSWORD: migration_test
+          POSTGRES_DB: vps_agent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vps_agent -d vps_agent"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      DATABASE_URL: postgresql+asyncpg://vps_agent:migration_test@localhost:5432/vps_agent
+      SKIP_DATABASE_INIT: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/api/requirements-dev.txt
+      - run: python -m pip install -r requirements-dev.txt
+      - name: Simulate the production create_all database
+        run: python -m scripts.create_all_adoption_fixture create
+      - name: Verify and adopt the unversioned schema
+        run: |
+          python -m app.schema verify-adoption
+          alembic -c alembic.ini stamp head
+          alembic -c alembic.ini upgrade head
+      - name: Verify revision, schema and retained data
+        run: |
+          python -m app.schema check
+          python -m scripts.create_all_adoption_fixture assert

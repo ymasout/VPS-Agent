@@ -30,15 +30,19 @@ docs/        架构与开发约定
 ## 快速开始
 
 1. 复制 `.env.example` 为 `.env`。
-2. 执行 `docker compose up --build`。
-3. 打开 Web `http://localhost:3000`，API 文档位于 `http://localhost:8000/docs`。
+2. 启动依赖：`docker compose up -d postgres redis`。
+3. 构建 API 并显式执行一次迁移：`docker compose build api`，然后运行 `docker compose run --rm --no-deps api alembic -c /app/alembic.ini upgrade head`。
+4. 执行 `docker compose up --build`。
+5. 打开 Web `http://localhost:3000`，API 文档位于 `http://localhost:8000/docs`。
+
+已有的、由旧版 `create_all` 建立且没有 `alembic_version` 的开发库不能直接盖章：先运行 `docker compose run --rm --no-deps api python -m app.schema verify-adoption`，通过后再依次执行 `alembic stamp head` 和 `alembic upgrade head`。API 启动入口不会自动迁移数据库。
 
 停止环境：`docker compose down`。查看日志：`docker compose logs -f`。
 
 ## 本地开发与检查
 
 - Web：`pnpm install && pnpm dev:web`
-- API：`python -m pip install -r apps/api/requirements-dev.txt`，然后在 `apps/api` 运行 `uvicorn app.main:app --reload`
+- API：`python -m pip install -r apps/api/requirements-dev.txt`，在 `apps/api` 显式运行 `python -m alembic -c alembic.ini upgrade head` 后再运行 `uvicorn app.main:app --reload`
 - Agent：在 `apps/agent` 运行 `go run ./cmd/agent`
 - 全部测试：`make test`；完整检查：`make check`
 

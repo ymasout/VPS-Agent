@@ -190,7 +190,7 @@ M4 控制平面从 v0.3.x 升级到 v0.4.0 时，除常规 `git pull` + `docker 
 
 ### 10.1 迁移 0006 是首个给既有表加列的迁移
 
-`0006_m4_safe_operations` 是项目第一个对既有表 `ALTER ADD COLUMN` 的迁移（`managed_services.criticality`、`service_instances.restart_enabled`）。此前 0001–0005 全部只建新表，生产一直靠 API 启动时的 `Base.metadata.create_all` 即可（create_all 只建缺失的表，不改既有表结构）。M4 之后 create_all 仍会建出 `operations`/`operation_transitions`/`agent_operation_capabilities` 三张新表，但**不会**给既有表加这两列；若不加列，任何加载 `ManagedService` 的查询（含 M3 服务映射候选）会因列缺失报错。升级时必须补这两列（幂等，等效 0006 的列部分）：
+`0006_m4_safe_operations` 是项目第一个对既有表 `ALTER ADD COLUMN` 的迁移（`managed_services.criticality`、`service_instances.restart_enabled`）。此前生产依赖 API 启动时的 `Base.metadata.create_all`；它只建缺失的表，不会给既有表加列。v0.4.0 首次生产金丝雀因此在备份后手动执行了以下幂等 SQL：
 
 ```bash
 $DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"' <<'SQL'
@@ -199,22 +199,30 @@ ALTER TABLE service_instances ADD COLUMN IF NOT EXISTS restart_enabled BOOLEAN  
 SQL
 ```
 
-**执行顺序**：先 `pg_dump` 备份；在旧 API 仍运行时执行上述 ALTER（加列对旧 API 无影响，旧代码不读这两列）；用 `\d managed_services` / `\d service_instances` 确认列存在；再 `build` 并 `up -d` 启动新 API。切勿先启动新 API 再加列--新 API 的 `/healthz` 健康检查不读这两列，可能健康通过，但服务映射候选等查询会在缺列时报错。
+这段 SQL 只记录 v0.4.0 金丝雀的历史处置，不再是 M4.1 之后的标准发布方式。标准方式是把 Alembic 文件打入 API 镜像，在 API 启动前显式运行一次迁移；`/healthz` 也会读取这两列，缺列时不能健康通过。
 
-API Dockerfile 未包含 `migrations/` 与 `alembic.ini`，故不能在容器内跑 `alembic upgrade head`；自托管环境用上述手动 ALTER 即可，0006 的 `has_column`/`has_table` 守卫保证未来引入 alembic 也不会重复执行。
+旧生产库已经拥有当前表结构但没有 `alembic_version`。M4.1 首次接管必须先 `pg_dump`，再运行 `python -m app.schema verify-adoption` 严格比对当前 ORM 结构；只有通过后才执行一次 `alembic stamp head`，随后 `alembic upgrade head`。标准入口为 `sh deploy/control-plane-release.sh adopt`。后续发布只运行显式的 `docker compose run --rm --no-deps api alembic -c /app/alembic.ini upgrade head`，API entrypoint 不自动迁移。
 
 ### 10.2 Caddyfile 变更后必须 reload
 
-`Caddyfile` 以只读 bind-mount 挂入 caddy 容器。`docker compose up -d` 只重建发生变化的容器；caddy 服务定义未变时容器不会重建，运行中的 caddy 不会自动读取新 Caddyfile。M4 在 `@agent_api` 路由新增了 `/api/v1/agents/operations/*`，若不重载，Agent 轮询 `operations/next` 会被旧 Caddy 当作管理 API 挡到 Basic Auth 返回 401（空响应体），而上报 `/agents/report` 因原本就在 Bearer 路由仍正常——“上报正常、操作轮询 401”是典型症状。
+v0.4.0 及更早版本把单个 `Caddyfile` bind-mount 进容器。宿主机更新文件时可能替换 inode，容器仍指向旧 inode；这解释了 M3 必须 `--force-recreate`、M4 又能直接 reload 的不稳定表现。M4.1 改为只挂载专用目录 `deploy/caddy/`，不挂载整个 `deploy/`，因此 `.env.production` 不会暴露给 Caddy；目录挂载会持续反映其中的新文件。
 
 ```bash
-$DC exec caddy caddy reload --config /etc/caddy/Caddyfile
-# 若 reload 不生效（单文件 bind mount 指向旧 inode），restart 仍读旧挂载、无效；需重建容器重新挂载：
-# $DC up -d --no-deps --force-recreate caddy
+$DC exec -T caddy caddy reload --config /etc/caddy/cfg/Caddyfile
+# 脚本在 reload 失败时自动兜底重建：
+sh deploy/control-plane-release.sh reload-caddy
 ```
 
-> M3 的 GitHub App 金丝雀曾遇到 `caddy reload` 不生效、需 `--force-recreate caddy` 的情况（见 PROJECT_STATUS.md §5）。M4 本次 `caddy reload` 生效；若遇异常，用 `--force-recreate`（`restart` 不会重建挂载，对旧 inode 无效）。
+> 首次从旧的单文件挂载升级为目录挂载时，需要重建一次 Caddy 容器以应用新的挂载定义。脚本保留 `up -d --no-deps --force-recreate caddy` 作为 reload 失败的兜底；单纯 `restart` 不能修复旧 inode 挂载。
 
 ### 10.3 Ed25519 签名密钥
 
 控制平面生成 Ed25519 密钥对（命令见 §7）：私钥只写入 `OPERATION_SIGNING_PRIVATE_KEY_BASE64`，公钥写入 web env（`AGENT_OPERATION_PUBLIC_KEY_BASE64`，用于安装命令展示）和 Agent 安装命令。确认接口在签名配置缺失时返回 503，只读链路不受影响。
+
+## 11. M4.1 安全发布基础设施（2026-07-21）
+
+- API 镜像包含 `alembic.ini` 和完整迁移目录，但 API entrypoint 永不执行迁移；启动时只验证数据库 revision 等于代码 head，不匹配则拒绝服务。
+- 旧 `create_all` 生产库采用“备份 -> 精确结构验证 -> 一次性 `stamp head` -> `upgrade head` -> 复核”接管。CI 使用真实 PostgreSQL 复现相同路径并验证旧数据和保守默认值未改变，不再只测 `0005 -> head`。
+- 部署前检查与部署后检查分离。前置检查包含 Compose/Caddy 配置、`pg_dump` 和 `current:head --sql` SQL 预览；后置检查包含 `alembic current == head` 与结构比对、数据库感知的 `/healthz`、公开的 Agent operation 路由健康端点，以及受 Basic Auth 保护的服务映射候选接口。
+- `create_all` 已从应用运行时移除，只保留在历史 `0001` 的空库 bootstrap 和 CI 旧库接管夹具。开发、测试部署和生产统一通过 Alembic 入口演进结构。
+- 操作命令与完整顺序见 [`deploy/README.md`](../deploy/README.md) 和 `deploy/control-plane-release.sh`。

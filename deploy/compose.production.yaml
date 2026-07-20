@@ -3,6 +3,7 @@ name: vps-agent-console
 services:
   caddy:
     image: caddy:2-alpine
+    command: ["caddy", "run", "--config", "/etc/caddy/cfg/Caddyfile", "--adapter", "caddyfile"]
     restart: unless-stopped
     environment:
       CONTROL_PLANE_DOMAIN: ${CONTROL_PLANE_DOMAIN:?set CONTROL_PLANE_DOMAIN}
@@ -13,7 +14,7 @@ services:
       - "443:443"
       - "443:443/udp"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy:/etc/caddy/cfg:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

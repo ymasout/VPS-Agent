@@ -2,20 +2,21 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 
 import structlog
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from .api import router
 from .config import get_settings
-from .database import engine, session_factory
+from .database import engine, get_session, session_factory
 from .github import router as github_router
 from .logging import configure_logging
 from .m3 import router as m3_router
 from .maintenance import control_plane_maintenance_loop
-from .models import Base, RegistrationToken
+from .models import ManagedService, RegistrationToken, ServiceInstance
 from .operations import router as operations_router
 from .releases import router as releases_router
+from .schema import verify_database_current
 from .security import hash_token
 
 settings = get_settings()
@@ -27,8 +28,8 @@ logger = structlog.get_logger()
 async def lifespan(_: FastAPI):
     maintenance_task: asyncio.Task[None] | None = None
     if not settings.skip_database_init:
-        async with engine.begin() as connection:
-            await connection.run_sync(Base.metadata.create_all)
+        async with engine.connect() as connection:
+            await verify_database_current(connection)
     if settings.dev_agent_registration_token and not settings.skip_database_init:
         async with session_factory() as session:
             token_hash = hash_token(settings.dev_agent_registration_token)
@@ -79,5 +80,10 @@ app.include_router(releases_router)
 
 
 @app.get("/healthz", tags=["system"])
-async def health() -> dict[str, str]:
+async def health(
+    session=Depends(get_session), current_settings=Depends(get_settings)
+) -> dict[str, str]:
+    if not current_settings.skip_database_init:
+        await session.execute(select(ManagedService.criticality).limit(1))
+        await session.execute(select(ServiceInstance.restart_enabled).limit(1))
     return {"status": "ok", "service": "api"}

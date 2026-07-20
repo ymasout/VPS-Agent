@@ -1,6 +1,7 @@
 services:
   caddy:
     image: caddy:2-alpine
+    command: ["caddy", "run", "--config", "/etc/caddy/cfg/Caddyfile", "--adapter", "caddyfile"]
     environment:
       CONTROL_PLANE_DOMAIN: ":8080"
       CADDY_ADMIN_USER: m4-e2e
@@ -8,7 +9,7 @@ services:
     ports:
       - "${M4_E2E_CADDY_PORT:-18080}:8080"
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/caddy:/etc/caddy/cfg:ro
     depends_on:
       api:
         condition: service_healthy

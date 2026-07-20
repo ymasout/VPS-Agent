@@ -88,6 +88,8 @@ Release 安装器在首次安装时生成独立的 Agent machine-id，保存在 
 
 - Caddy 是唯一公网入口，终止 HTTPS，并分别路由 Web、控制 API、Agent API 和 Release 中转。
 - Next.js、FastAPI、PostgreSQL、Redis 和 Caddy 由生产 Docker Compose 托管。
+- Alembic 是开发和生产数据库结构的唯一演进机制。部署在 API 启动前显式执行一次迁移；API entrypoint 不运行迁移，只在启动时核对数据库 revision，版本不匹配则拒绝启动。
+- 从历史 `create_all` 数据库接管时，必须先备份并对照当前 ORM 元数据验证结构，再一次性 `stamp head`；不得对未知或不完整结构盲目 stamp。`create_all` 仅保留在历史 `0001` 的空库 bootstrap 和 CI 旧库切换夹具中，不再由应用运行时调用。
 - 外部 VPS 上的 Agent 由各自主机的 systemd 托管，只需访问控制平面的 443 端口。
 - 控制平面宿主机可以运行同一 Agent 进行自监控，但该 Agent 与控制面容器生命周期分离；控制面整体故障时，自监控上报也会中断，这是当前单实例部署的已知盲区。
 - M1 全量发布基线为 Agent `v0.2.4`；M3 生产金丝雀已验证 DMIT `v0.3.0` 与 control-plane `v0.3.1`。这些版本均支持 Linux `amd64` 和 `arm64`，后续全量升级需经过产品化金丝雀。

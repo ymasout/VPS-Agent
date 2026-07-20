@@ -63,6 +63,11 @@ ALLOWED_TRANSITIONS = {
 }
 
 
+@router.get("/agents/operations/healthz")
+async def operation_route_health() -> dict[str, str]:
+    return {"status": "ok", "service": "agent-operations"}
+
+
 def task_time(value: datetime) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
