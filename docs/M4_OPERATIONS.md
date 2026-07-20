@@ -158,7 +158,7 @@ rm -f /tmp/vps-agent-m4-ed25519.pem
 
 已实现自动化覆盖：未确认不可领取；并发唯一约束冲突返回 409；任务字段签名；篡改、过期、key ID/attempt/签名长度和本地策略关闭拒绝；未知动作拒绝；取消的合法/非法状态；确认前预检漂移；Running/Verifying/Expired 陈旧恢复；`SKIP LOCKED` Claim；本地账本崩溃防重放和未送达结果保留；退出 0 进入 Verifying；双端输出限制与脱敏；健康稳定窗口成功；Docker unhealthy 不视为健康；现有 M1/M2/M3 回归。
 
-Agent Docker 健康语义在 `0.4.0-dev` 有一项有意修正：`running (unhealthy)` 现在上报 `healthy=false`，会触发此前漏掉的 M2 异常；`health: starting` 上报 `healthy=null`，不会在正常重启窗口直接触发异常，也不会被 M4 当作验证成功。升级前应检查现有带 healthcheck 的容器，避免把新增的真实 unhealthy 告警误认为升级故障。
+Agent Docker 健康语义在 `v0.4.0` 有一项有意修正：`running (unhealthy)` 现在上报 `healthy=false`，会触发此前漏掉的 M2 异常；`health: starting` 上报 `healthy=null`，不会在正常重启窗口直接触发异常，也不会被 M4 当作验证成功。升级前应检查现有带 healthcheck 的容器，避免把新增的真实 unhealthy 告警误认为升级故障。
 
 2026-07-20 使用独立 Compose 项目完成真实隔离验收，包含 PostgreSQL、Redis、Caddy、API、Web、Agent 和非关键 Docker canary：
 
@@ -169,4 +169,52 @@ Agent Docker 健康语义在 `0.4.0-dev` 有一项有意修正：`running (unhea
 - Agent 确认后离线时任务保持 Queued，Agent 恢复后成功完成。API 在 Claimed 状态重启后由租约和本地账本安全续接；在 Running 状态重启且结果未知时进入 `execution_outcome_unknown`，不自动重放；在 Verifying 状态重启后由新鲜健康报告继续并成功。
 - 使用 M3 基线代码创建 `0005` 旧结构和旧数据，再由当前 Alembic 升级到 `0006_m4_safe_operations`；Agent、服务、实例和 M2 事件均保留，新增策略默认 `critical`/`restart_enabled=false`。同时修复在线迁移事务未显式提交的既有问题。
 
-自动检查通过 API 102 项测试、Web 26 项测试、全部 Go 包测试、Ruff、ESLint、`go vet` 和 Web 生产构建。隔离项目及其测试卷在验收后删除。未经明确要求不进行生产部署或生产金丝雀。
+自动检查通过 API 102 项测试、Web 26 项测试、全部 Go 包测试、Ruff、ESLint、`go vet` 和 Web 生产构建。隔离项目及其测试卷在验收后删除。
+
+### 生产发布与金丝雀（2026-07-20/21）
+
+M4 首批通过提交前安全审计（有条件通过，全部 P2/P3 已处理），提交 `84cb4a2` 推送至 `main`，并发布 `v0.4.0` Release（标签触发 GitHub Actions：先 `go test ./...`，再构建 amd64/arm64 + 安装器 + SHA256SUMS）。
+
+生产金丝雀在 aliyun VPS（新机、无其他业务、有 Docker）跑通端到端闭环：
+
+- 控制平面升级到 `84cb4a2`（API/Web 重建 + 手动加列、Caddy reload，见 §10），配置 Ed25519 签名密钥；金丝雀 Agent 以 `--operation-policy docker-restart` 安装 `v0.4.0`。
+- `m4-canary`（compose 服务，stable key `compose:m4canary:m4-canary:1`）映射为 `non_critical` + `restart_enabled=true`。
+- 创建计划 -> 确认（Ed25519 签发）-> `queued -> claimed -> running -> verifying -> succeeded`，审计 8 次转换完整，`output` 为固定摘要、不含容器 target。
+- Agent 经 Caddy Bearer 轮询领取并验签，本地按 stable service_key 重解析 target 后以固定 `docker restart --` 执行（无 Shell），退出 0 后由后续新鲜健康观测跨越 30s 稳定窗口判定 `succeeded`（非退出码判定）。
+
+非 Docker 的 VPS（DMIT/腾讯云）无需为了首轮 M4 单独升级：`docker_restart` 只对 Docker 生效，`healthy` 语义修正只在 Docker 解析路径；旧 v0.3.x Agent 与 v0.4.0 控制平面兼容。若仍升级到 v0.4.0（策略 disabled），Agent 会初始化本地账本并以默认 5s 轮询空操作队列（无任务、不执行写操作），属可接受的额外空轮询，而非零行为变更。
+
+## 10. 生产部署注意事项（控制平面）
+
+M4 控制平面从 v0.3.x 升级到 v0.4.0 时，除常规 `git pull` + `docker compose build` + `up -d` 外，需注意以下三项：10.1、10.2 为本次金丝雀部署中实际遇到并处理的坑，10.3 为签名密钥配置要点。
+
+### 10.1 迁移 0006 是首个给既有表加列的迁移
+
+`0006_m4_safe_operations` 是项目第一个对既有表 `ALTER ADD COLUMN` 的迁移（`managed_services.criticality`、`service_instances.restart_enabled`）。此前 0001–0005 全部只建新表，生产一直靠 API 启动时的 `Base.metadata.create_all` 即可（create_all 只建缺失的表，不改既有表结构）。M4 之后 create_all 仍会建出 `operations`/`operation_transitions`/`agent_operation_capabilities` 三张新表，但**不会**给既有表加这两列；若不加列，任何加载 `ManagedService` 的查询（含 M3 服务映射候选）会因列缺失报错。升级时必须补这两列（幂等，等效 0006 的列部分）：
+
+```bash
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"' <<'SQL'
+ALTER TABLE managed_services   ADD COLUMN IF NOT EXISTS criticality     VARCHAR(32) NOT NULL DEFAULT 'critical';
+ALTER TABLE service_instances ADD COLUMN IF NOT EXISTS restart_enabled BOOLEAN     NOT NULL DEFAULT false;
+SQL
+```
+
+**执行顺序**：先 `pg_dump` 备份；在旧 API 仍运行时执行上述 ALTER（加列对旧 API 无影响，旧代码不读这两列）；用 `\d managed_services` / `\d service_instances` 确认列存在；再 `build` 并 `up -d` 启动新 API。切勿先启动新 API 再加列--新 API 的 `/healthz` 健康检查不读这两列，可能健康通过，但服务映射候选等查询会在缺列时报错。
+
+API Dockerfile 未包含 `migrations/` 与 `alembic.ini`，故不能在容器内跑 `alembic upgrade head`；自托管环境用上述手动 ALTER 即可，0006 的 `has_column`/`has_table` 守卫保证未来引入 alembic 也不会重复执行。
+
+### 10.2 Caddyfile 变更后必须 reload
+
+`Caddyfile` 以只读 bind-mount 挂入 caddy 容器。`docker compose up -d` 只重建发生变化的容器；caddy 服务定义未变时容器不会重建，运行中的 caddy 不会自动读取新 Caddyfile。M4 在 `@agent_api` 路由新增了 `/api/v1/agents/operations/*`，若不重载，Agent 轮询 `operations/next` 会被旧 Caddy 当作管理 API 挡到 Basic Auth 返回 401（空响应体），而上报 `/agents/report` 因原本就在 Bearer 路由仍正常——“上报正常、操作轮询 401”是典型症状。
+
+```bash
+$DC exec caddy caddy reload --config /etc/caddy/Caddyfile
+# 若 reload 不生效（单文件 bind mount 指向旧 inode），restart 仍读旧挂载、无效；需重建容器重新挂载：
+# $DC up -d --no-deps --force-recreate caddy
+```
+
+> M3 的 GitHub App 金丝雀曾遇到 `caddy reload` 不生效、需 `--force-recreate caddy` 的情况（见 PROJECT_STATUS.md §5）。M4 本次 `caddy reload` 生效；若遇异常，用 `--force-recreate`（`restart` 不会重建挂载，对旧 inode 无效）。
+
+### 10.3 Ed25519 签名密钥
+
+控制平面生成 Ed25519 密钥对（命令见 §7）：私钥只写入 `OPERATION_SIGNING_PRIVATE_KEY_BASE64`，公钥写入 web env（`AGENT_OPERATION_PUBLIC_KEY_BASE64`，用于安装命令展示）和 Agent 安装命令。确认接口在签名配置缺失时返回 503，只读链路不受影响。
