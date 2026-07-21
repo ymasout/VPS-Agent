@@ -226,3 +226,7 @@ sh deploy/control-plane-release.sh reload-caddy
 - 部署前检查与部署后检查分离。前置检查包含 Compose/Caddy 配置、`pg_dump` 和 `current:head --sql` SQL 预览；后置检查包含 `alembic current == head` 与结构比对、数据库感知的 `/healthz`、公开的 Agent operation 路由健康端点，以及受 Basic Auth 保护的服务映射候选接口。
 - `create_all` 已从应用运行时移除，只保留在历史 `0001` 的空库 bootstrap 和 CI 旧库接管夹具。开发、测试部署和生产统一通过 Alembic 入口演进结构。
 - 操作命令与完整顺序见 [`deploy/README.md`](../deploy/README.md) 和 `deploy/control-plane-release.sh`。
+
+### 生产验证（2026-07-21）
+
+M4.1 已在生产控制平面落地：`git pull` 到 `dbb237b` 后构建新 API/Web 镜像，运行 `sh deploy/control-plane-release.sh adopt` 一次性接管旧 `create_all` 库（`pg_dump` 备份 -> `verify-adoption` 严格结构校验通过 -> `stamp head` 到 `0006` -> `upgrade head` -> `check` 复核），随后 preflight / migrate / `up -d` / reload-caddy / postflight 全部通过。postflight 确认 revision/schema 一致、`/healthz` 200、Agent operation 路由 200（非 401）、服务映射候选 200；Caddy 已切到 `deploy/caddy/` 目录挂载。M4 写闭环回归：在 aliyun-VPS 重起 canary，操作 `queued -> claimed -> running -> verifying -> succeeded`、8 次审计转换、`output` 不含容器 target、`succeeded` 由独立健康观测判定。手动 ALTER 与单文件 Caddy 挂载自此成为历史，标准发布改为显式 Alembic 迁移 + 目录挂载。
