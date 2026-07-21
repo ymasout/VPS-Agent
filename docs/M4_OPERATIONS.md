@@ -230,3 +230,7 @@ sh deploy/control-plane-release.sh reload-caddy
 ### 生产验证（2026-07-21）
 
 M4.1 已在生产控制平面落地：先在实现提交 `dbb237b` 构建并部署 API/Web 镜像，运行 `sh deploy/control-plane-release.sh adopt` 一次性接管旧 `create_all` 库（`pg_dump` 备份 -> `verify-adoption` 严格结构校验通过 -> `stamp head` 到 `0006` -> `upgrade head` -> `check` 复核），随后 preflight / migrate / `up -d` / reload-caddy / postflight 全部通过。postflight 确认 revision/schema 一致、`/healthz` 200、Agent operation 路由 200（非 401）、服务映射候选 200；Caddy 已切到 `deploy/caddy/` 目录挂载。生产宿主机当前仓库 HEAD 为文档收尾提交 `632ad10`，运行代码仍对应 `dbb237b` 的 M4.1 实现。M4 写闭环回归：在 aliyun-VPS 重起 canary，操作 `queued -> claimed -> running -> verifying -> succeeded`、8 次审计转换、`output` 不含容器 target、`succeeded` 由独立健康观测判定；该 canary 当前继续运行，保留为 M4.2 测试候选。手动 ALTER 与单文件 Caddy 挂载自此成为历史，标准发布改为显式 Alembic 迁移 + 目录挂载。
+
+## 12. M4.2 安全部署
+
+M4.2 把受控写操作从"重启"扩展到"部署"：非关键单副本 Docker Compose 服务，从当前不可变 digest 部署到**同一仓库**的另一不可变 digest，失败后只能通过另一笔明确确认的操作回滚到冻结的旧 digest。复用 M4 的 Operation 框架（状态机、Ed25519 签名、`active_key`、审计、本地账本幂等），但使用**独立的协议 v2 任务**，不扩展 M4 v1；旧 v0.4.0 Agent 只声明 restart 能力，收不到部署任务。威胁模型、范围冻结、部署机制（临时 override 文件 + `docker pull repo@sha256:...` + `docker compose ... up -d --no-deps --force-recreate`）、digest 验证（实际运行 digest == 目标 digest）、显式回滚和分阶段（a 只读 / b 执行 / c 回滚）验收见 [M4.2_DEPLOY.md](./M4.2_DEPLOY.md)。
