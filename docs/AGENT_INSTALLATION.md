@@ -1,6 +1,6 @@
 # Agent 发布、安装与升级
 
-VPS Agent 通过 GitHub Release 发布 Linux 静态二进制。生产各机器版本：control-plane `v0.3.1`、DMIT `v0.3.3`（systemd journal 金丝雀验证用，含旧版 journalctl 时间戳兼容修复）、两台腾讯云 `v0.2.4`、aliyun-VPS `v0.4.0`（M4 安全重启金丝雀机，`docker-restart` 策略，金丝雀容器已清理、Agent 保留为第 5 台长期监控机）。`v0.4.0` 已发布，M4 生产金丝雀已在 aliyun VPS 跑通；其余非 Docker 机器无需为首轮 M4 单独升级（旧 v0.3.x Agent 与 v0.4.0 控制平面兼容）。Release 支持 `amd64` 和 `arm64`，同时包含安装脚本和 `SHA256SUMS`，安装器会在替换程序前自动校验二进制。
+VPS Agent 通过 GitHub Release 发布 Linux 静态二进制。当前生产版本：control-plane 自监控、两台腾讯云和 aliyun-VPS 均为 `v0.4.0`，DMIT 为 `v0.3.3`；所有机器保留原身份。只有 aliyun-VPS 明确启用 `docker-restart`，其 `m4-canary` 继续运行并保留为 M4.2 测试候选；其余机器没有首轮 M4 写权限。DMIT 无需为了首轮 M4 单独升级，`v0.2.4` 与 v0.4.0 控制平面兼容。Release 支持 `amd64` 和 `arm64`，同时包含安装脚本和 `SHA256SUMS`，安装器会在替换程序前自动校验二进制。
 
 ## 1. 发布新版本
 

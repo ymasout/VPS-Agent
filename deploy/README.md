@@ -29,6 +29,8 @@ sh deploy/control-plane-release.sh adopt
 
 脚本先确认当前代码 head 仍是 `0006_m4_safe_operations`，执行 `pg_dump`，再用当前 ORM 元数据严格核对真实结构。只有结构完全匹配才会 `alembic stamp head`，随后执行幂等的 `upgrade head` 和结构复核。校验失败时不得绕过并盲目 stamp；应先查清数据库差异。
 
+项目生产库已于 2026-07-21 完成这次接管，当前生产环境**不得再次运行 `adopt`**。本节只供仍停留在无 `alembic_version`、且结构与 `0006` 完全一致的旧自托管实例使用；已经由 Alembic 管理的数据库直接进入常规发布流程。
+
 ## 常规发布
 
 ```bash
@@ -37,12 +39,37 @@ sh deploy/control-plane-release.sh preflight
 sh deploy/control-plane-release.sh migrate
 docker compose --env-file deploy/.env.production -f deploy/compose.production.yaml up -d api web
 sh deploy/control-plane-release.sh reload-caddy
-CONTROL_PLANE_URL=https://你的域名 \
-CONTROL_PLANE_BASIC_AUTH='用户名:原始密码' \
+export CONTROL_PLANE_URL=https://你的域名
+read -rsp 'Caddy 用户名:原始密码: ' CONTROL_PLANE_BASIC_AUTH
+printf '\n'
+export CONTROL_PLANE_BASIC_AUTH
 sh deploy/control-plane-release.sh postflight
+unset CONTROL_PLANE_BASIC_AUTH
 ```
 
 `preflight` 包含 Compose 配置检查、候选 Caddy 配置校验、`pg_dump` 和从当前 revision 到 head 的离线 SQL 预览。`--sql` 只生成 SQL，不执行数据库事务，因此是“预览”而不是真正的 dry-run。`postflight` 检查数据库 revision/结构、`/healthz`、Agent operation 路由以及至少一台 Agent 的服务映射候选接口；最后一项会捕获既有表缺列，operation 健康端点会捕获 Caddy 仍把 Agent 路由挡成 401 的问题。
+
+## 备份校验与失败恢复
+
+`adopt` 和 `preflight` 默认把 PostgreSQL custom-format 备份写入 `/var/backups/vps-agent-console`，权限分别为目录 `0700`、文件 `0600`，并在成功输出中打印确切文件名。脚本不会自动删除备份。至少保留 pre-adoption 备份到 M4.2 生产验证完成，并保留最近三份 pre-migration 备份；清理前先确认已有更新且验证过的备份。
+
+迁移前应使用脚本输出的确切路径检查文件非空且目录可被 `pg_restore` 读取：
+
+```bash
+BACKUP=/var/backups/vps-agent-console/脚本输出的文件名.dump
+test -s "$BACKUP"
+docker compose --env-file deploy/.env.production -f deploy/compose.production.yaml \
+  exec -T postgres pg_restore --list < "$BACKUP" >/dev/null
+```
+
+失败时按发生阶段处理：
+
+- `verify-adoption` 或 preflight 在迁移前失败：数据库尚未被迁移；停止发布、保留备份并修复检查项。不得绕过校验执行 `stamp`。
+- `migrate` 失败：不要启动新 API，也不要立即重跑或执行 `alembic downgrade`。先查看容器日志，再运行 `docker compose --env-file deploy/.env.production -f deploy/compose.production.yaml run --rm --no-deps api python -m app.schema revisions` 确认数据库 revision；只有确认事务已完整回滚后才能修复并重试。
+- API/Web 启动或 postflight 失败，但 `app.schema check` 已通过：优先把应用和 Caddy 回到上一个已知可用提交，保留当前数据库和备份；不要仅因应用问题恢复数据库。
+- 只有确认数据库结构或数据已经不一致时才考虑恢复备份。恢复前停止 Caddy、Web 和 API 的写入，保留失败现场的二次备份，并针对脚本输出的确切备份文件制定单独、复核过的 `pg_restore` 操作；不要直接对在线生产库使用通用的 `--clean` 恢复命令。
+
+M4.1 的一次性接管是在结构已经与 `0006` 完全一致后才 stamp，因此单纯回退 M4.1 应用代码不需要删除 `alembic_version` 或恢复数据库。
 
 ## 检查
 
