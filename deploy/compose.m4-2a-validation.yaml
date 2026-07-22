@@ -1,0 +1,10 @@
+services:
+  candidate:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: m42a_candidate_only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 1s
+      timeout: 1s
+      retries: 20

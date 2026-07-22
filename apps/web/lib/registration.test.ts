@@ -21,6 +21,19 @@ describe("registration token request protection", () => {
     expect(command).toContain("https://ops.example.com/agent-downloads/latest/install-agent.sh");
     expect(command).toContain(`--name 'owner'"'"'s vps'`);
     expect(command).toContain("--evidence-policy docker-logs");
+    expect(command).toContain("--deploy-policy disabled");
     expect(command).not.toContain("reg_");
+  });
+
+  it("requires an explicit plan-only deployment discovery flag", () => {
+    const command = buildInstallCommand(
+      "https://ops.example.com",
+      "canary",
+      "disabled",
+      { policy: "disabled" },
+      "plan-only",
+    );
+    expect(command).toContain("--deploy-policy plan-only");
+    expect(command).toContain("--operation-policy disabled");
   });
 });

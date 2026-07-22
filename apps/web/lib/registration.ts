@@ -22,11 +22,12 @@ export function buildInstallCommand(
   agentName: string,
   evidencePolicy: "disabled" | "docker-logs" | "systemd-journal" | "docker-systemd" = "disabled",
   operation?: { policy: "disabled" | "docker-restart"; keyId?: string; publicKey?: string },
+  deployPolicy: "disabled" | "plan-only" = "disabled",
 ) {
   const baseURL = controlPlaneURL.replace(/\/$/, "");
   const downloadBaseURL = `${baseURL}/agent-downloads`;
   const operationArgs = operation?.policy === "docker-restart" && operation.keyId && operation.publicKey
     ? ` --operation-policy docker-restart --operation-key-id ${shellQuote(operation.keyId)} --operation-public-key ${shellQuote(operation.publicKey)}`
     : " --operation-policy disabled";
-  return `curl -fsSL --proto '=https' --tlsv1.2 ${downloadBaseURL}/latest/install-agent.sh | bash -s -- --url ${baseURL} --download-base-url ${downloadBaseURL} --name ${shellQuote(agentName)} --evidence-policy ${evidencePolicy}${operationArgs}`;
+  return `curl -fsSL --proto '=https' --tlsv1.2 ${downloadBaseURL}/latest/install-agent.sh | bash -s -- --url ${baseURL} --download-base-url ${downloadBaseURL} --name ${shellQuote(agentName)} --evidence-policy ${evidencePolicy}${operationArgs} --deploy-policy ${deployPolicy}`;
 }

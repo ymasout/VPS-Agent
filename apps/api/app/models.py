@@ -131,6 +131,23 @@ class AgentOperationCapability(Base):
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class AgentDeploymentCandidate(Base):
+    """Read-only Compose deployment discovery; never an executable capability."""
+
+    __tablename__ = "agent_deployment_candidates"
+    __table_args__ = (UniqueConstraint("agent_id", "service_kind", "service_key"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), index=True)
+    service_kind: Mapped[str] = mapped_column(String(32))
+    service_key: Mapped[str] = mapped_column(String(255))
+    repository: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    current_digest: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    eligible: Mapped[bool] = mapped_column(Boolean, default=False)
+    reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class ManagedService(Base):
     __tablename__ = "managed_services"
 

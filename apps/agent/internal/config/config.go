@@ -23,6 +23,7 @@ type Config struct {
 	OperationPublicKey    string
 	OperationStateFile    string
 	OperationPollInterval time.Duration
+	DeployPolicy          string
 }
 
 type EvidenceSource struct {
@@ -57,10 +58,12 @@ func Load() Config {
 		OperationPublicKey:    os.Getenv("AGENT_OPERATION_PUBLIC_KEY_BASE64"),
 		OperationStateFile:    valueOrDefault("AGENT_OPERATION_STATE_FILE", "/var/lib/vps-agent/operations.json"),
 		OperationPollInterval: durationOrDefault("AGENT_OPERATION_POLL_INTERVAL", 5*time.Second),
+		DeployPolicy:          deployPolicy(os.Getenv("AGENT_DEPLOY_POLICY")),
 	}
 }
 
 const OperationPolicyDockerRestart = "docker_restart"
+const DeployPolicyPlanOnly = "plan_only"
 
 func operationPolicy(value string) string {
 	if strings.TrimSpace(value) == OperationPolicyDockerRestart {
@@ -70,6 +73,17 @@ func operationPolicy(value string) string {
 }
 
 func OperationPolicyAllows(policy, capability string) bool {
+	return policy == capability
+}
+
+func deployPolicy(value string) string {
+	if strings.TrimSpace(value) == DeployPolicyPlanOnly {
+		return DeployPolicyPlanOnly
+	}
+	return "disabled"
+}
+
+func DeployPolicyAllows(policy, capability string) bool {
 	return policy == capability
 }
 

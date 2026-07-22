@@ -9,10 +9,12 @@ from .config import Settings, get_settings
 from .database import get_session
 from .models import (
     Agent,
+    AgentDeploymentCandidate,
     AgentEvidenceSource,
     AgentEvidenceSourceBinding,
     AgentOperationCapability,
     AlertEvent,
+    ManagedService,
     MetricSnapshot,
     RegistrationToken,
     ServiceInstance,
@@ -27,6 +29,7 @@ from .schemas import (
     AgentSummary,
     AlertEventAction,
     AlertEventView,
+    DeploymentCandidateView,
     MetricView,
     RegistrationTokenCreate,
     RegistrationTokenCreated,
@@ -197,6 +200,9 @@ async def report_agent(
     await session.execute(
         delete(AgentOperationCapability).where(AgentOperationCapability.agent_id == agent.id)
     )
+    await session.execute(
+        delete(AgentDeploymentCandidate).where(AgentDeploymentCandidate.agent_id == agent.id)
+    )
     session.add_all(
         [
             ServiceStatus(
@@ -210,6 +216,21 @@ async def report_agent(
                 observed_at=payload.collected_at,
             )
             for item in payload.services
+        ]
+    )
+    session.add_all(
+        [
+            AgentDeploymentCandidate(
+                agent_id=agent.id,
+                service_kind=item.service_kind,
+                service_key=item.service_key,
+                repository=item.repository,
+                current_digest=item.current_digest,
+                eligible=item.eligible,
+                reason_code=item.reason_code,
+                observed_at=received_at,
+            )
+            for item in payload.deployment_candidates
         ]
     )
     session.add_all(
@@ -390,6 +411,78 @@ async def get_agent(
             for item in services
         ],
     )
+
+
+@router.get(
+    "/agents/{agent_id}/deployment-candidates",
+    response_model=list[DeploymentCandidateView],
+)
+async def list_deployment_candidates(
+    agent_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> list[DeploymentCandidateView]:
+    if await session.get(Agent, agent_id) is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    candidates = list(
+        (
+            await session.scalars(
+                select(AgentDeploymentCandidate)
+                .where(AgentDeploymentCandidate.agent_id == agent_id)
+                .order_by(AgentDeploymentCandidate.service_key)
+            )
+        ).all()
+    )
+    instances = list(
+        (
+            await session.scalars(
+                select(ServiceInstance).where(ServiceInstance.agent_id == agent_id)
+            )
+        ).all()
+    )
+    by_key = {(item.service_kind, item.service_key): item for item in instances}
+    observations = {
+        (item.kind, item.service_key): item
+        for item in (
+            await session.scalars(select(ServiceStatus).where(ServiceStatus.agent_id == agent_id))
+        ).all()
+    }
+    service_ids = {item.service_id for item in instances}
+    managed = (
+        {
+            item.id: item
+            for item in (
+                await session.scalars(
+                    select(ManagedService).where(ManagedService.id.in_(service_ids))
+                )
+            ).all()
+        }
+        if service_ids
+        else {}
+    )
+    result: list[DeploymentCandidateView] = []
+    for candidate in candidates:
+        instance = by_key.get((candidate.service_kind, candidate.service_key))
+        service = managed.get(instance.service_id) if instance else None
+        observation = observations.get((candidate.service_kind, candidate.service_key))
+        result.append(
+            DeploymentCandidateView(
+                agent_id=agent_id,
+                service_kind=candidate.service_kind,
+                service_key=candidate.service_key,
+                repository=candidate.repository,
+                current_digest=candidate.current_digest,
+                eligible=candidate.eligible,
+                reason_code=candidate.reason_code,
+                observed_at=candidate.observed_at,
+                mapped=instance is not None,
+                instance_id=instance.id if instance else None,
+                service_name=service.name if service else None,
+                criticality=service.criticality if service else "critical",
+                state=observation.state if observation else None,
+                healthy=observation.healthy if observation else None,
+            )
+        )
+    return result
 
 
 @router.get("/events", response_model=list[AlertEventView])

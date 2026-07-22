@@ -9,8 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .api import agent_is_online, current_agent, now_utc, require_admin
 from .config import Settings, get_settings
 from .database import get_session, session_factory
+from .image_refs import parse_digest_reference
 from .models import (
     Agent,
+    AgentDeploymentCandidate,
     AgentOperationCapability,
     AlertEvent,
     DiagnosticRun,
@@ -23,6 +25,7 @@ from .models import (
 from .redaction import redact_text, truncate_lines, truncate_utf8
 from .schemas import (
     AgentReport,
+    DeploymentPlanCreate,
     OperationClaim,
     OperationConfirm,
     OperationExecutionResult,
@@ -35,6 +38,8 @@ from .schemas import (
 from .security import sign_operation
 
 router = APIRouter(prefix="/api/v1")
+RESTART_ACTION = "docker_restart"
+DEPLOY_ACTION = "docker_compose_deploy"
 
 ACTIVE_STATUSES = {
     "planned",
@@ -188,6 +193,14 @@ async def operation_view(session: AsyncSession, operation: Operation) -> Operati
     )
 
 
+def require_restart_action(operation: Operation) -> None:
+    if operation.action_type != RESTART_ACTION:
+        raise HTTPException(
+            status_code=409,
+            detail="deployment plans are plan-only and cannot enter an execution endpoint",
+        )
+
+
 async def resolve_instance(
     session: AsyncSession, payload: OperationPlanCreate
 ) -> tuple[ServiceInstance, AlertEvent | None, DiagnosticRun | None]:
@@ -287,6 +300,8 @@ async def create_operation(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> OperationView:
+    if payload.action_type != RESTART_ACTION:
+        raise HTTPException(status_code=422, detail="unsupported operation action")
     current_time = now_utc()
     instance, event, diagnostic = await resolve_instance(session, payload)
     checks, agent, managed, observed = await run_prechecks(
@@ -368,6 +383,133 @@ async def create_operation(
 
 
 @router.post(
+    "/deployment-plans",
+    response_model=OperationView,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin)],
+)
+async def create_deployment_plan(
+    payload: DeploymentPlanCreate,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> OperationView:
+    """Persist an M4.2a snapshot which is permanently non-executable."""
+
+    current_time = now_utc()
+    instance = await session.get(ServiceInstance, payload.instance_id)
+    if instance is None:
+        raise HTTPException(status_code=404, detail="service instance not found")
+    agent = await session.get(Agent, instance.agent_id)
+    managed = await session.get(ManagedService, instance.service_id)
+    if agent is None or managed is None:
+        raise HTTPException(status_code=409, detail="service mapping is incomplete")
+    candidate = await session.scalar(
+        select(AgentDeploymentCandidate).where(
+            AgentDeploymentCandidate.agent_id == instance.agent_id,
+            AgentDeploymentCandidate.service_kind == instance.service_kind,
+            AgentDeploymentCandidate.service_key == instance.service_key,
+        )
+    )
+    observed = await session.scalar(
+        select(ServiceStatus).where(
+            ServiceStatus.agent_id == instance.agent_id,
+            ServiceStatus.kind == instance.service_kind,
+            ServiceStatus.service_key == instance.service_key,
+        )
+    )
+    if candidate is None:
+        raise HTTPException(status_code=409, detail="deployment candidate is not reported")
+    if not candidate.eligible or not candidate.repository or not candidate.current_digest:
+        raise HTTPException(
+            status_code=409,
+            detail=f"deployment candidate is ineligible: {candidate.reason_code or 'unknown'}",
+        )
+    target_repository, canonical_target = parse_digest_reference(payload.target_digest)
+    if canonical_target != payload.target_digest or target_repository != candidate.repository:
+        raise HTTPException(status_code=409, detail="target image must use the current repository")
+    if payload.target_digest == candidate.current_digest:
+        raise HTTPException(status_code=409, detail="target digest must differ from current digest")
+    checks = {
+        "agent_online": agent_is_online(
+            agent.last_seen_at, current_time, settings.agent_offline_after_seconds
+        ),
+        "docker_instance": instance.service_kind == "docker",
+        "mapping_valid": True,
+        "service_observed": observed is not None,
+        "service_running": bool(observed and observed.state == "running"),
+        "service_healthy": bool(observed and observed.healthy is True),
+        "candidate_eligible": candidate.eligible,
+        "non_critical_service": managed.criticality == "non_critical",
+        "observation_fresh": candidate.observed_at
+        >= current_time - timedelta(seconds=settings.operation_observation_max_age_seconds),
+        "same_repository": True,
+        "different_digest": True,
+    }
+    checks["passed"] = all(checks.values())
+    if not checks["passed"]:
+        failed = [name for name, passed in checks.items() if name != "passed" and not passed]
+        raise HTTPException(
+            status_code=409,
+            detail="deployment plan rejected: " + ", ".join(failed),
+        )
+    operation = Operation(
+        instance_id=instance.id,
+        agent_id=agent.id,
+        action_type=DEPLOY_ACTION,
+        status="planned",
+        active_key=None,
+        requested_by="local-admin",
+        risk_level="medium",
+        impact_summary="Read-only deployment preview; this plan can never execute.",
+        plan_snapshot={
+            "plan_version": "m4.2a-plan-only-v1",
+            "execution_policy": "none",
+            "permanently_non_executable": True,
+            "machine": {"id": agent.id, "name": agent.name, "hostname": agent.hostname},
+            "service": {
+                "id": managed.id,
+                "name": managed.name,
+                "environment": managed.environment,
+                "instance_id": instance.id,
+                "service_kind": instance.service_kind,
+                "service_key": instance.service_key,
+            },
+            "repository": candidate.repository,
+            "current_digest": candidate.current_digest,
+            "target_digest": payload.target_digest,
+            "candidate_observed_at": candidate.observed_at.isoformat(),
+            "observed_state": observed.state if observed else None,
+            "observed_healthy": observed.healthy if observed else None,
+        },
+        precheck_result=checks,
+        verification_policy={
+            "kind": "future_digest_and_health_verification",
+            "required_state": "running",
+            "requires_healthy": True,
+            "requires_target_digest": True,
+            "execution_available": False,
+        },
+        idempotency_key="plan_" + secrets.token_urlsafe(24),
+        expires_at=current_time + timedelta(seconds=payload.expires_in_seconds),
+    )
+    session.add(operation)
+    await session.flush()
+    session.add(
+        OperationTransition(
+            operation_id=operation.id,
+            from_status=None,
+            to_status="planned",
+            actor_type="admin",
+            actor_id="local-admin",
+            reason="read-only deployment plan created",
+            details={"plan_only": True, "executable": False},
+        )
+    )
+    await session.commit()
+    return await operation_view(session, operation)
+
+
+@router.post(
     "/operations/{operation_id}/confirm",
     response_model=OperationView,
     dependencies=[Depends(require_admin)],
@@ -383,6 +525,7 @@ async def confirm_operation(
     )
     if operation is None:
         raise HTTPException(status_code=404, detail="operation not found")
+    require_restart_action(operation)
     if operation.status == "queued":
         return await operation_view(session, operation)
     if operation.status != "awaiting_confirmation":
@@ -461,6 +604,7 @@ async def cancel_operation(
     )
     if operation is None:
         raise HTTPException(status_code=404, detail="operation not found")
+    require_restart_action(operation)
     if operation.status == "canceled":
         return await operation_view(session, operation)
     if operation.status not in {"awaiting_confirmation", "queued"}:
@@ -488,6 +632,7 @@ async def claim_operation(
         select(Operation)
         .where(
             Operation.agent_id == agent.id,
+            Operation.action_type == RESTART_ACTION,
             Operation.expires_at > current_time,
             or_(
                 Operation.status == "queued",
@@ -554,6 +699,7 @@ async def start_operation(
     )
     if operation is None or operation.agent_id != agent.id:
         raise HTTPException(status_code=404, detail="operation not found")
+    require_restart_action(operation)
     if operation.status == "running":
         return OperationReceipt(operation_id=operation.id, status=operation.status)
     if operation.status != "claimed" or operation.expires_at <= now_utc():
@@ -583,6 +729,7 @@ async def complete_operation(
     )
     if operation is None or operation.agent_id != agent.id:
         raise HTTPException(status_code=404, detail="operation not found")
+    require_restart_action(operation)
     if operation.status in {"verifying", "succeeded", "failed"}:
         return OperationReceipt(operation_id=operation.id, status=operation.status)
     rejected_before_start = operation.status == "claimed" and payload.status == "failed"

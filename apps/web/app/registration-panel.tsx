@@ -13,6 +13,7 @@ export function RegistrationPanel({ operationKeyId = "", operationPublicKey = ""
   const [copied, setCopied] = useState("");
   const [evidencePolicy, setEvidencePolicy] = useState<"disabled" | "docker-logs" | "systemd-journal" | "docker-systemd">("docker-systemd");
   const [operationPolicy, setOperationPolicy] = useState<"disabled" | "docker-restart">("disabled");
+  const [deployPolicy, setDeployPolicy] = useState<"disabled" | "plan-only">("disabled");
 
   const controlPlaneURL = typeof window === "undefined" ? "" : window.location.origin;
   const installCommand = buildInstallCommand(
@@ -20,6 +21,7 @@ export function RegistrationPanel({ operationKeyId = "", operationPublicKey = ""
     created?.name ?? (name.trim() || "my-vps"),
     evidencePolicy,
     { policy: operationPolicy, keyId: operationKeyId, publicKey: operationPublicKey },
+    deployPolicy,
   );
 
   async function createToken(event: FormEvent) {
@@ -80,6 +82,12 @@ export function RegistrationPanel({ operationKeyId = "", operationPublicKey = ""
           <option value="docker-restart" disabled={!operationKeyId || !operationPublicKey}>允许经确认的 Docker 单服务重启</option>
         </select>
         <small className="field-help">写能力需本机策略、控制台服务授权和签名任务同时成立；不会开放 Shell、容器参数、部署或回滚。</small>
+        <label htmlFor="deploy-policy">部署候选发现</label>
+        <select id="deploy-policy" value={deployPolicy} onChange={(event) => setDeployPolicy(event.target.value as "disabled" | "plan-only")}>
+          <option value="disabled">不发现部署候选（默认）</option>
+          <option value="plan-only">只读发现与计划展示</option>
+        </select>
+        <small className="field-help">plan-only 只读取 Docker 镜像元数据，不授予部署写权限，也不会在后续升级时自动变成可执行部署。</small>
       </form>
       {error && <div className="registration-error" role="alert">{error}</div>}
       {created && (

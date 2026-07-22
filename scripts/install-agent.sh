@@ -13,6 +13,7 @@ EVIDENCE_POLICY=""
 OPERATION_POLICY=""
 OPERATION_KEY_ID=""
 OPERATION_PUBLIC_KEY=""
+DEPLOY_POLICY=""
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/vps-agent"
 DATA_DIR="/var/lib/vps-agent"
@@ -31,6 +32,7 @@ Options:
   --operation-policy POLICY  Write policy: disabled or docker-restart
   --operation-key-id ID      Ed25519 verification key identifier
   --operation-public-key KEY Base64 Ed25519 public key (required for docker-restart)
+  --deploy-policy POLICY     Deploy discovery: disabled or plan-only
   --version VERSION     Release version such as 0.2.2 (default: latest)
   --download-base-url URL  Optional control-plane download mirror
   -h, --help            Show this help
@@ -55,6 +57,7 @@ while [[ $# -gt 0 ]]; do
     --operation-policy) OPERATION_POLICY="${2:-}"; shift 2 ;;
     --operation-key-id) OPERATION_KEY_ID="${2:-}"; shift 2 ;;
     --operation-public-key) OPERATION_PUBLIC_KEY="${2:-}"; shift 2 ;;
+    --deploy-policy) DEPLOY_POLICY="${2:-}"; shift 2 ;;
     --version) VERSION="${2:-}"; shift 2 ;;
     --download-base-url) DOWNLOAD_BASE_URL="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -93,12 +96,14 @@ EVIDENCE_SOURCES_JSON="${AGENT_EVIDENCE_SOURCES_JSON:-$(existing_value AGENT_EVI
 OPERATION_POLICY="${OPERATION_POLICY:-$(existing_value AGENT_OPERATION_POLICY)}"
 OPERATION_KEY_ID="${OPERATION_KEY_ID:-$(existing_value AGENT_OPERATION_KEY_ID)}"
 OPERATION_PUBLIC_KEY="${OPERATION_PUBLIC_KEY:-$(existing_value AGENT_OPERATION_PUBLIC_KEY_BASE64)}"
+DEPLOY_POLICY="${DEPLOY_POLICY:-$(existing_value AGENT_DEPLOY_POLICY)}"
 AGENT_NAME="${AGENT_NAME:-$(hostname 2>/dev/null || printf 'VPS Agent')}"
 REPORT_INTERVAL="${REPORT_INTERVAL:-30s}"
 EVIDENCE_POLICY="${EVIDENCE_POLICY:-disabled}"
 OPERATION_POLICY="${OPERATION_POLICY:-disabled}"
+DEPLOY_POLICY="${DEPLOY_POLICY:-disabled}"
 
-for value in "${CONTROL_PLANE_URL}" "${AGENT_NAME}" "${HEALTHCHECK_URLS}" "${REPORT_INTERVAL}" "${EVIDENCE_POLICY}" "${EVIDENCE_SOURCES_JSON}" "${OPERATION_POLICY}" "${OPERATION_KEY_ID}" "${OPERATION_PUBLIC_KEY}"; do
+for value in "${CONTROL_PLANE_URL}" "${AGENT_NAME}" "${HEALTHCHECK_URLS}" "${REPORT_INTERVAL}" "${EVIDENCE_POLICY}" "${EVIDENCE_SOURCES_JSON}" "${OPERATION_POLICY}" "${OPERATION_KEY_ID}" "${OPERATION_PUBLIC_KEY}" "${DEPLOY_POLICY}"; do
   [[ "${value}" != *$'\n'* && "${value}" != *$'\r'* ]] || fail "configuration values cannot contain newlines"
 done
 [[ "${CONTROL_PLANE_URL}" =~ ^https:// ]] || fail "--url must use HTTPS"
@@ -118,6 +123,11 @@ if [[ "${AGENT_OPERATION_POLICY}" == "docker_restart" ]]; then
   [[ "${OPERATION_KEY_ID}" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || fail "--operation-key-id is required and invalid"
   [[ "${OPERATION_PUBLIC_KEY}" =~ ^[A-Za-z0-9+/]{43}=$ ]] || fail "--operation-public-key must be a Base64 Ed25519 public key"
 fi
+case "${DEPLOY_POLICY}" in
+  disabled) AGENT_DEPLOY_POLICY="disabled" ;;
+  plan-only|plan_only) AGENT_DEPLOY_POLICY="plan_only" ;;
+  *) fail "--deploy-policy must be disabled or plan-only" ;;
+esac
 
 if [[ ! -f "${IDENTITY_FILE}" && -z "${REGISTRATION_TOKEN}" ]]; then
   [[ -r /dev/tty ]] || fail "a registration token is required for first installation"
@@ -184,6 +194,7 @@ umask 077
   printf 'AGENT_OPERATION_KEY_ID=%s\n' "${OPERATION_KEY_ID}"
   printf 'AGENT_OPERATION_PUBLIC_KEY_BASE64=%s\n' "${OPERATION_PUBLIC_KEY}"
   printf 'AGENT_OPERATION_STATE_FILE=%s\n' "${DATA_DIR}/operations.json"
+  printf 'AGENT_DEPLOY_POLICY=%s\n' "${AGENT_DEPLOY_POLICY}"
   if [[ ! -f "${IDENTITY_FILE}" ]]; then
     printf 'AGENT_REGISTRATION_TOKEN=%s\n' "${REGISTRATION_TOKEN}"
   fi

@@ -82,6 +82,7 @@ services:
       AGENT_OPERATION_PUBLIC_KEY_BASE64: ${AGENT_OPERATION_PUBLIC_KEY_BASE64:-}
       AGENT_OPERATION_POLL_INTERVAL: ${AGENT_OPERATION_POLL_INTERVAL:-5s}
       AGENT_OPERATION_STATE_FILE: /var/lib/vps-agent/operations.json
+      AGENT_DEPLOY_POLICY: ${AGENT_DEPLOY_POLICY:-disabled}
       AGENT_CREDENTIAL_FILE: /var/lib/vps-agent/identity.json
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:

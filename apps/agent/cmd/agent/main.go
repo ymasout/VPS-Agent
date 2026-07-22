@@ -84,7 +84,19 @@ func main() {
 				}
 			}
 		}
-		report := client.Report{Hostname: host.Hostname, Version: version, Capabilities: capabilities, CollectedAt: time.Now().UTC(), Metrics: metrics, Services: services, EvidenceSources: sources, OperationCapabilities: operationCapabilities}
+		deploymentCandidates := make([]client.DeploymentCandidate, 0)
+		if config.DeployPolicyAllows(cfg.DeployPolicy, config.DeployPolicyPlanOnly) {
+			serviceKeys := make(map[string]bool, len(services))
+			for _, service := range services {
+				serviceKeys[service.Kind+"\x00"+service.Key] = true
+			}
+			for _, candidate := range collector.DeploymentCandidates(ctx) {
+				if serviceKeys[candidate.ServiceKind+"\x00"+candidate.ServiceKey] {
+					deploymentCandidates = append(deploymentCandidates, candidate)
+				}
+			}
+		}
+		report := client.Report{Hostname: host.Hostname, Version: version, Capabilities: capabilities, CollectedAt: time.Now().UTC(), Metrics: metrics, Services: services, EvidenceSources: sources, OperationCapabilities: operationCapabilities, DeploymentCandidates: deploymentCandidates}
 		if err = api.SendReport(ctx, identity.Credential, report); err != nil {
 			logger.Error("report failed", "error", err)
 			return

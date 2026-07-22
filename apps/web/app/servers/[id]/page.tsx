@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { Service, formatBytes, getAgent, getGitHubRepositories, getServiceMappingCandidates } from "@/lib/api";
+import { Service, formatBytes, getAgent, getDeploymentCandidates, getGitHubRepositories, getServiceMappingCandidates } from "@/lib/api";
 import { notFound } from "next/navigation";
 import { isGoodState, isServiceProblem, serviceStatusTone } from "@/lib/service-status";
 import { ServiceMappingPanel } from "../../service-mapping-panel";
+import { DeploymentPlanPanel } from "../../deployment-plan-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -36,9 +37,10 @@ export default async function ServerPage({ params }: { params: Promise<{ id: str
   const { id } = await params;
   let agent;
   try { agent = await getAgent(id); } catch { notFound(); }
-  const [candidates, repositories] = await Promise.all([
+  const [candidates, repositories, deploymentCandidates] = await Promise.all([
     getServiceMappingCandidates(id).catch(() => []),
     getGitHubRepositories().catch(() => []),
+    getDeploymentCandidates(id).catch(() => []),
   ]);
 
   const metric = agent.latest_metrics;
@@ -89,6 +91,7 @@ export default async function ServerPage({ params }: { params: Promise<{ id: str
       </section>
 
       <ServiceMappingPanel candidates={candidates} repositories={repositories} />
+      <DeploymentPlanPanel candidates={deploymentCandidates} />
     </main>
   );
 }

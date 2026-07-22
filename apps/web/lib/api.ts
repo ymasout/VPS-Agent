@@ -18,6 +18,22 @@ export type ServiceMappingCandidate = {
   restart_enabled: boolean;
   criticality: string;
 };
+export type DeploymentCandidate = {
+  agent_id: string;
+  service_kind: string;
+  service_key: string;
+  repository: string | null;
+  current_digest: string | null;
+  eligible: boolean;
+  reason_code: string | null;
+  observed_at: string;
+  mapped: boolean;
+  instance_id: string | null;
+  service_name: string | null;
+  criticality: string;
+  state: string | null;
+  healthy: boolean | null;
+};
 export type GitHubRepository = {
   id: string;
   full_name: string;
@@ -114,6 +130,8 @@ export const getAgents = () => request<Agent[]>("/api/v1/agents");
 export const getAgent = (id: string) => request<AgentDetail>(`/api/v1/agents/${id}`);
 export const getServiceMappingCandidates = (id: string) =>
   request<ServiceMappingCandidate[]>(`/api/v1/agents/${id}/service-mapping-candidates`);
+export const getDeploymentCandidates = (id: string) =>
+  request<DeploymentCandidate[]>(`/api/v1/agents/${id}/deployment-candidates`);
 export const getGitHubStatus = () => request<GitHubStatus>("/api/v1/github/status");
 export const getGitHubRepositories = () => request<GitHubRepository[]>("/api/v1/github/repositories");
 export const getEvents = () => request<AlertEvent[]>("/api/v1/events");

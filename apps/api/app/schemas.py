@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .image_refs import normalize_repository, parse_digest_reference
+
 
 class RegistrationTokenCreate(BaseModel):
     name: str = Field(default="VPS Agent", min_length=1, max_length=255)
@@ -87,6 +89,43 @@ class OperationCapabilityReport(BaseModel):
     service_key: str = Field(min_length=1, max_length=255)
 
 
+DeploymentCandidateReason = Literal[
+    "multiple_replicas",
+    "healthcheck_missing",
+    "digest_unresolved",
+    "digest_ambiguous",
+    "repository_unresolved",
+    "inspect_failed",
+]
+
+
+class DeploymentCandidateReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    service_kind: Literal["docker"]
+    service_key: str = Field(min_length=1, max_length=255)
+    repository: str | None = Field(default=None, max_length=255)
+    current_digest: str | None = Field(default=None, max_length=512)
+    eligible: bool
+    reason_code: DeploymentCandidateReason | None = None
+
+    @model_validator(mode="after")
+    def validate_candidate(self) -> "DeploymentCandidateReport":
+        if self.repository is not None:
+            if normalize_repository(self.repository) != self.repository:
+                raise ValueError("repository must use its canonical form")
+        if self.current_digest is not None:
+            digest_repository, canonical = parse_digest_reference(self.current_digest)
+            if canonical != self.current_digest or digest_repository != self.repository:
+                raise ValueError("current digest must match the canonical repository")
+        if self.eligible and (
+            self.repository is None or self.current_digest is None or self.reason_code is not None
+        ):
+            raise ValueError("eligible candidates require a digest and no reason code")
+        if not self.eligible and self.reason_code is None:
+            raise ValueError("ineligible candidates require a reason code")
+        return self
+
+
 class AgentReport(BaseModel):
     hostname: str = Field(min_length=1, max_length=255)
     version: str = Field(min_length=1, max_length=64)
@@ -96,6 +135,9 @@ class AgentReport(BaseModel):
     services: list[ServiceReport] = Field(default_factory=list, max_length=2000)
     evidence_sources: list[EvidenceSourceReport] = Field(default_factory=list, max_length=128)
     operation_capabilities: list[OperationCapabilityReport] = Field(
+        default_factory=list, max_length=128
+    )
+    deployment_candidates: list[DeploymentCandidateReport] = Field(
         default_factory=list, max_length=128
     )
 
@@ -113,6 +155,14 @@ class AgentReport(BaseModel):
         ]
         if len(operation_keys) != len(set(operation_keys)):
             raise ValueError("operation capabilities must be unique within a report")
+        deployment_keys = [
+            (item.service_kind, item.service_key) for item in self.deployment_candidates
+        ]
+        if len(deployment_keys) != len(set(deployment_keys)):
+            raise ValueError("deployment candidates must be unique within a report")
+        service_identities = set(identities)
+        if any(identity not in service_identities for identity in deployment_keys):
+            raise ValueError("deployment candidates must reference a service in the same report")
         return self
 
 
@@ -250,6 +300,38 @@ class RestartPolicyUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool
     criticality: Literal["critical", "non_critical"]
+
+
+class DeploymentCandidateView(BaseModel):
+    agent_id: str
+    service_kind: str
+    service_key: str
+    repository: str | None
+    current_digest: str | None
+    eligible: bool
+    reason_code: str | None
+    observed_at: datetime
+    mapped: bool
+    instance_id: str | None
+    service_name: str | None
+    criticality: str
+    state: str | None
+    healthy: bool | None
+
+
+class DeploymentPlanCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    instance_id: str = Field(min_length=1, max_length=36)
+    target_digest: str = Field(min_length=1, max_length=512)
+    expires_in_seconds: int = Field(default=900, ge=60, le=3600)
+
+    @field_validator("target_digest")
+    @classmethod
+    def validate_target_digest(cls, value: str) -> str:
+        _, canonical = parse_digest_reference(value)
+        if canonical != value:
+            raise ValueError("target digest must use its canonical repository form")
+        return value
 
 
 class OperationPlanCreate(BaseModel):

@@ -61,12 +61,22 @@ type Report struct {
 	Services              []Service             `json:"services"`
 	EvidenceSources       []EvidenceSource      `json:"evidence_sources"`
 	OperationCapabilities []OperationCapability `json:"operation_capabilities"`
+	DeploymentCandidates  []DeploymentCandidate `json:"deployment_candidates"`
 }
 
 type OperationCapability struct {
 	ActionType  string `json:"action_type"`
 	ServiceKind string `json:"service_kind"`
 	ServiceKey  string `json:"service_key"`
+}
+
+type DeploymentCandidate struct {
+	ServiceKind   string `json:"service_kind"`
+	ServiceKey    string `json:"service_key"`
+	Repository    string `json:"repository,omitempty"`
+	CurrentDigest string `json:"current_digest,omitempty"`
+	Eligible      bool   `json:"eligible"`
+	ReasonCode    string `json:"reason_code,omitempty"`
 }
 
 type EvidenceSource struct {

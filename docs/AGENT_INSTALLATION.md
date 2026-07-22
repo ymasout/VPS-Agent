@@ -90,6 +90,7 @@ sudo bash install-agent.sh \
 - `--operation-policy docker-restart`：明确允许 Agent 为本机已发现 Docker 服务声明重启能力；默认 `disabled`。启用时必须同时提供 `--operation-key-id` 和 `--operation-public-key`。
 - `--operation-key-id m4-2026-01`：控制平面 Ed25519 签名 key ID。
 - `--operation-public-key BASE64`：对应 32 字节 Ed25519 公钥的 Base64。公钥可以进入安装命令；私钥只能留在控制平面。
+- `--deploy-policy plan-only`：M4.2a 只读发现 Compose 部署候选并允许控制平面生成永久不可执行的冻结计划；默认 `disabled`。它不授予部署写权限，不需要签名密钥。
 - `--version 0.3.0`：安装指定版本；默认安装最新 Release。
 
 安装器会创建：
@@ -123,6 +124,8 @@ M4 写操作同样默认关闭。新机器在 Web 明确选择“允许经确认
 升级到 `0.4.0-dev` 时需注意 Docker health 行为修正：`running (unhealthy)` 不再被误报为健康，因此可能首次触发 M2 告警；`health: starting` 作为未知状态，不触发异常也不满足 M4 健康验证。部署前应先检查现有容器的 healthcheck 状态，并确保控制平面与 Agent 均使用 NTP/chrony 同步时间。
 
 旧 Agent 升级会保留已有 `AGENT_OPERATION_POLICY`；缺失时写入 `disabled`，不会因升级自动获得写权限。不要把 `OPERATION_SIGNING_PRIVATE_KEY_BASE64` 写入 Agent 配置或安装命令。
+
+M4.2a 的 `AGENT_DEPLOY_POLICY=plan_only` 与重启写策略完全分离，只读取容器和镜像 inspect 元数据，不读取或上传 Compose 路径、容器 ID、Docker target 或 Registry 凭据。将来升级到 M4.2b 后 `plan_only` 仍保持只读，必须人工改成新的执行策略才可能获得部署能力。
 
 注册成功后，一次性令牌会从配置文件删除，后续重启和升级使用已保存的独立 Agent 身份。
 
