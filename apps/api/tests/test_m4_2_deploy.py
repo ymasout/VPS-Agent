@@ -28,8 +28,10 @@ from app.operations import (
     confirm_operation,
     create_deployment_operation,
     create_deployment_plan,
+    create_rollback_operation,
     deployment_signing_fields,
     reconcile_operation_verification,
+    run_rollback_prechecks,
     start_operation,
 )
 from app.schemas import (
@@ -39,6 +41,7 @@ from app.schemas import (
     Metrics,
     OperationConfirm,
     OperationExecutionResult,
+    OperationRollbackCreate,
     ServiceReport,
 )
 
@@ -71,6 +74,14 @@ def test_digest_reference_requires_one_canonical_sha256() -> None:
     ):
         with pytest.raises(ValueError):
             parse_digest_reference(invalid)
+
+
+def test_rollback_request_cannot_select_a_target_digest() -> None:
+    with pytest.raises(ValidationError):
+        OperationRollbackCreate(
+            expires_in_seconds=300,
+            target_digest=f"ghcr.io/org/app@{DIGEST_A}",
+        )
 
 
 def test_candidate_schema_preserves_read_only_eligibility_invariants() -> None:
@@ -355,6 +366,16 @@ def signed_executable_deploy_operation(status: str = "queued") -> Operation:
     return operation
 
 
+def failed_executable_deploy_operation() -> Operation:
+    operation = executable_deploy_operation("failed")
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    operation.started_at = now - timedelta(seconds=30)
+    operation.execution_completed_at = now - timedelta(seconds=20)
+    operation.completed_at = now
+    operation.error_code = "verification_timeout"
+    return operation
+
+
 def test_v2_signature_binds_both_digests() -> None:
     now = datetime.now(timezone.utc).replace(microsecond=0)
     operation = executable_deploy_operation()
@@ -403,6 +424,39 @@ def test_agent_claim_returns_strict_v2_deployment_task() -> None:
     assert claim.task.current_digest == operation.current_digest
     assert claim.task.target_digest == operation.target_digest
     assert operation.status == "claimed"
+
+
+def test_agent_claim_returns_same_strict_v2_task_for_explicit_rollback() -> None:
+    operation = signed_executable_deploy_operation()
+    operation.plan_snapshot["plan_version"] = "m4.2c-rollback-v1"
+    operation.rollback_of = "failed-deploy-1"
+    operation.current_digest, operation.target_digest = (
+        operation.target_digest,
+        operation.current_digest,
+    )
+    session = AsyncMock()
+    session.scalar.side_effect = [
+        operation,
+        AgentOperationCapability(
+            agent_id="agent-1",
+            action_type="docker_compose_deploy",
+            service_kind="docker",
+            service_key="compose:demo:api:1",
+        ),
+    ]
+    session.get.return_value = ServiceInstance(
+        id="instance-1",
+        service_kind="docker",
+        service_key="compose:demo:api:1",
+    )
+    session.add = MagicMock()
+
+    claim = asyncio.run(claim_operation(Agent(id="agent-1"), session, Settings()))
+
+    assert claim.task is not None
+    assert claim.task.version == "v2"
+    assert claim.task.current_digest.endswith(DIGEST_B)
+    assert claim.task.target_digest.endswith(DIGEST_A)
 
 
 def test_agent_claim_fails_closed_for_queued_historical_plan() -> None:
@@ -549,6 +603,207 @@ def test_create_executable_deployment_is_new_locked_plan(
     assert result.plan_snapshot["plan_version"] == "m4.2b-executable-v1"
     assert result.current_digest == f"ghcr.io/org/app@{DIGEST_A}"
     assert result.target_digest == f"ghcr.io/org/app@{DIGEST_B}"
+
+
+def test_rollback_prechecks_allow_unhealthy_failed_target() -> None:
+    now = datetime.now(timezone.utc)
+    source = failed_executable_deploy_operation()
+    instance = ServiceInstance(
+        id="instance-1",
+        service_id="service-1",
+        agent_id="agent-1",
+        service_kind="docker",
+        service_key="compose:demo:api:1",
+        deploy_enabled=True,
+    )
+    agent = Agent(id="agent-1", last_seen_at=now)
+    service = ManagedService(id="service-1", criticality="non_critical")
+    observation = ServiceStatus(
+        agent_id="agent-1",
+        kind="docker",
+        service_key=instance.service_key,
+        name="demo-api-1",
+        state="running",
+        healthy=False,
+        observed_at=now,
+    )
+    candidate = AgentDeploymentCandidate(
+        agent_id="agent-1",
+        service_kind="docker",
+        service_key=instance.service_key,
+        repository="ghcr.io/org/app",
+        current_digest=f"ghcr.io/org/app@{DIGEST_B}",
+        eligible=True,
+        observed_at=now,
+    )
+    capability = AgentOperationCapability(
+        agent_id="agent-1",
+        action_type="docker_compose_deploy",
+        service_kind="docker",
+        service_key=instance.service_key,
+    )
+    session = AsyncMock()
+    session.get.side_effect = [agent, service]
+    session.scalar.side_effect = [observation, candidate, capability]
+
+    checks, *_ = asyncio.run(
+        run_rollback_prechecks(session, source, instance, Settings(), now)
+    )
+
+    assert checks["passed"] is True
+    assert checks["recovery_source_observed"] is True
+    assert "service_healthy" not in checks
+
+
+def test_create_rollback_freezes_only_original_digests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(timezone.utc)
+    source = failed_executable_deploy_operation()
+    instance = ServiceInstance(
+        id="instance-1",
+        service_id="service-1",
+        agent_id="agent-1",
+        service_kind="docker",
+        service_key="compose:demo:api:1",
+        deploy_enabled=True,
+    )
+    agent = Agent(id="agent-1", name="canary", hostname="host", last_seen_at=now)
+    service = ManagedService(id="service-1", name="api", criticality="non_critical")
+    observation = ServiceStatus(
+        agent_id="agent-1",
+        kind="docker",
+        service_key=instance.service_key,
+        name="demo-api-1",
+        state="running",
+        healthy=False,
+        observed_at=now,
+    )
+    candidate = AgentDeploymentCandidate(
+        agent_id="agent-1",
+        service_kind="docker",
+        service_key=instance.service_key,
+        repository="ghcr.io/org/app",
+        current_digest=f"ghcr.io/org/app@{DIGEST_B}",
+        eligible=True,
+        observed_at=now,
+    )
+    session = AsyncMock()
+    session.scalar.return_value = source
+    session.get.return_value = instance
+    session.add = MagicMock()
+
+    class Transaction:
+        async def __aenter__(self) -> None:
+            return None
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    session.begin_nested = MagicMock(return_value=Transaction())
+    monkeypatch.setattr(operations_module, "now_utc", lambda: now)
+    monkeypatch.setattr(
+        operations_module,
+        "run_rollback_prechecks",
+        AsyncMock(
+            return_value=(
+                {"passed": True, "rollback_target_frozen": True},
+                agent,
+                service,
+                observation,
+                candidate,
+            )
+        ),
+    )
+
+    async def return_model(_session: object, operation: Operation) -> Operation:
+        return operation
+
+    monkeypatch.setattr(operations_module, "operation_view", return_model)
+    rollback = asyncio.run(
+        create_rollback_operation(
+            source.id,
+            OperationRollbackCreate(),
+            session,
+            Settings(),
+        )
+    )
+
+    assert rollback.status == "awaiting_confirmation"
+    assert rollback.rollback_of == source.id
+    assert rollback.plan_snapshot["plan_version"] == "m4.2c-rollback-v1"
+    assert rollback.current_digest == source.target_digest
+    assert rollback.target_digest == source.current_digest
+    assert rollback.idempotency_key.startswith("rollback_")
+    assert source.current_digest == f"ghcr.io/org/app@{DIGEST_A}"
+
+
+@pytest.mark.parametrize("invalid_kind", ["not_started", "rollback_chain"])
+def test_create_rollback_rejects_ineligible_source(invalid_kind: str) -> None:
+    source = failed_executable_deploy_operation()
+    if invalid_kind == "not_started":
+        source.started_at = None
+    else:
+        source.plan_snapshot["plan_version"] = "m4.2c-rollback-v1"
+        source.rollback_of = "older-deploy"
+    session = AsyncMock()
+    session.scalar.return_value = source
+
+    with pytest.raises(HTTPException, match="executed, failed, original") as error:
+        asyncio.run(
+            create_rollback_operation(
+                source.id,
+                OperationRollbackCreate(),
+                session,
+                Settings(),
+            )
+        )
+
+    assert error.value.status_code == 409
+    session.commit.assert_not_awaited()
+
+
+def test_rollback_confirmation_rechecks_failed_target_digest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = failed_executable_deploy_operation()
+    rollback = executable_deploy_operation()
+    rollback.plan_snapshot["plan_version"] = "m4.2c-rollback-v1"
+    rollback.rollback_of = source.id
+    rollback.current_digest, rollback.target_digest = source.target_digest, source.current_digest
+    instance = ServiceInstance(
+        id="instance-1",
+        service_kind="docker",
+        service_key="compose:demo:api:1",
+    )
+    session = AsyncMock()
+    session.scalar.return_value = rollback
+    session.get.side_effect = [instance, source]
+    session.add = MagicMock()
+    monkeypatch.setattr(
+        operations_module,
+        "run_rollback_prechecks",
+        AsyncMock(
+            return_value=(
+                {"passed": False, "current_digest_unchanged": False},
+                None,
+                None,
+                None,
+                None,
+            )
+        ),
+    )
+
+    async def return_model(_session: object, current: Operation) -> Operation:
+        return current
+
+    monkeypatch.setattr(operations_module, "operation_view", return_model)
+    result = asyncio.run(
+        confirm_operation(rollback.id, OperationConfirm(), session, Settings())
+    )
+
+    assert result.status == "failed"
+    assert result.error_code == "precheck_failed"
 
 
 def test_deploy_verification_requires_digest_and_health_in_same_report() -> None:

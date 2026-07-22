@@ -442,6 +442,9 @@ class Operation(Base):
     task_signature: Mapped[str | None] = mapped_column(String(256), nullable=True)
     current_digest: Mapped[str | None] = mapped_column(String(512), nullable=True)
     target_digest: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    rollback_of: Mapped[str | None] = mapped_column(
+        ForeignKey("operations.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     lease_expires_at: Mapped[datetime | None] = mapped_column(

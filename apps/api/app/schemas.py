@@ -366,6 +366,11 @@ class OperationConfirm(BaseModel):
     confirmed_by: str = Field(default="local-admin", min_length=1, max_length=128)
 
 
+class OperationRollbackCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expires_in_seconds: int = Field(default=300, ge=60, le=900)
+
+
 class OperationExecutionResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: Literal["completed", "failed"]
@@ -460,6 +465,7 @@ class OperationView(BaseModel):
     error_detail: str | None
     current_digest: str | None
     target_digest: str | None
+    rollback_of: str | None
     transitions: list[OperationTransitionView]
 
 

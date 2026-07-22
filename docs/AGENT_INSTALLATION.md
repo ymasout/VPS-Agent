@@ -127,7 +127,7 @@ M4 写操作同样默认关闭。新机器在 Web 明确选择“允许经确认
 
 旧 Agent 升级会保留已有 `AGENT_OPERATION_POLICY`；缺失时写入 `disabled`，不会因升级自动获得写权限。不要把 `OPERATION_SIGNING_PRIVATE_KEY_BASE64` 写入 Agent 配置或安装命令。
 
-M4.2a 的 `AGENT_DEPLOY_POLICY=plan_only` 与重启写策略完全分离，只读取容器和镜像 inspect 元数据，不读取或上传 Compose 路径、容器 ID、Docker target 或 Registry 凭据。M4.2b 代码加入后 `plan_only` 仍保持只读，必须人工改成 `docker_compose_deploy`、配置签名公钥与本地允许目录，并在控制台对具体非关键服务另行启用 `deploy_enabled`，才会获得部署能力。控制平面仍不会收到 Compose 路径、容器 target 或 Registry 凭据。
+M4.2a 的 `AGENT_DEPLOY_POLICY=plan_only` 与重启写策略完全分离，只读取容器和镜像 inspect 元数据，不读取或上传 Compose 路径、容器 ID、Docker target 或 Registry 凭据。M4.2b 代码加入后 `plan_only` 仍保持只读，必须人工改成 `docker_compose_deploy`、配置签名公钥与本地允许目录，并在控制台对具体非关键服务另行启用 `deploy_enabled`，才会获得部署能力。M4.2c 回滚不增加新的 Agent 命令或权限：它是控制面生成、再次人工确认的独立协议 v2 B->A 任务，Agent 仍执行同一组严格 digest、路径、Compose 漂移和签名检查。控制平面仍不会收到 Compose 路径、容器 target 或 Registry 凭据。
 
 注册成功后，一次性令牌会从配置文件删除，后续重启和升级使用已保存的独立 Agent 身份。
 

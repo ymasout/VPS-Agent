@@ -34,6 +34,7 @@ from .schemas import (
     OperationExecutionResult,
     OperationPlanCreate,
     OperationReceipt,
+    OperationRollbackCreate,
     OperationTask,
     OperationTransitionView,
     OperationView,
@@ -43,6 +44,8 @@ from .security import sign_operation
 router = APIRouter(prefix="/api/v1")
 RESTART_ACTION = "docker_restart"
 DEPLOY_ACTION = "docker_compose_deploy"
+DEPLOY_PLAN_VERSION = "m4.2b-executable-v1"
+ROLLBACK_PLAN_VERSION = "m4.2c-rollback-v1"
 
 ACTIVE_STATUSES = {
     "planned",
@@ -228,14 +231,17 @@ async def operation_view(session: AsyncSession, operation: Operation) -> Operati
 def require_executable_action(operation: Operation) -> None:
     if operation.action_type == RESTART_ACTION:
         return
-    if (
-        operation.action_type == DEPLOY_ACTION
-        and operation.plan_snapshot.get("plan_version") == "m4.2b-executable-v1"
-        and operation.plan_snapshot.get("permanently_non_executable") is not True
-        and operation.current_digest
-        and operation.target_digest
-    ):
-        return
+    if operation.action_type == DEPLOY_ACTION:
+        plan_version = operation.plan_snapshot.get("plan_version")
+        is_original_deploy = plan_version == DEPLOY_PLAN_VERSION and operation.rollback_of is None
+        is_rollback = plan_version == ROLLBACK_PLAN_VERSION and operation.rollback_of is not None
+        if (
+            (is_original_deploy or is_rollback)
+            and operation.plan_snapshot.get("permanently_non_executable") is not True
+            and operation.current_digest
+            and operation.target_digest
+        ):
+            return
     raise HTTPException(
         status_code=409,
         detail="plan-only deployment is permanently non-executable or has an unsupported version",
@@ -338,6 +344,7 @@ async def run_deploy_prechecks(
     *,
     expected_current_digest: str | None = None,
     target_digest: str,
+    require_current_healthy: bool = True,
 ) -> tuple[dict, Agent, ManagedService, ServiceStatus | None, AgentDeploymentCandidate]:
     agent = await session.get(Agent, instance.agent_id)
     managed = await session.get(ManagedService, instance.service_id)
@@ -366,7 +373,7 @@ async def run_deploy_prechecks(
     if agent is None or managed is None or candidate is None:
         raise HTTPException(status_code=409, detail="deployment mapping is incomplete")
     target_repository, canonical_target = parse_digest_reference(target_digest)
-    checks = {
+    checks: dict[str, bool] = {
         "agent_online": agent_is_online(
             agent.last_seen_at, current_time, settings.agent_offline_after_seconds
         ),
@@ -375,8 +382,6 @@ async def run_deploy_prechecks(
         "agent_write_capability": capability is not None,
         "control_plane_permission": instance.deploy_enabled,
         "non_critical_service": managed.criticality == "non_critical",
-        "service_running": bool(observed and observed.state == "running"),
-        "service_healthy": bool(observed and observed.healthy is True),
         "candidate_eligible": bool(
             candidate.eligible and candidate.repository and candidate.current_digest
         ),
@@ -392,7 +397,68 @@ async def run_deploy_prechecks(
             expected_current_digest is None or candidate.current_digest == expected_current_digest
         ),
     }
+    if require_current_healthy:
+        checks["service_running"] = bool(observed and observed.state == "running")
+        checks["service_healthy"] = bool(observed and observed.healthy is True)
+    else:
+        checks["recovery_source_observed"] = observed is not None
     checks["passed"] = all(checks.values())
+    return checks, agent, managed, observed, candidate
+
+
+def is_rollback_source(operation: Operation | None) -> bool:
+    return bool(
+        operation
+        and operation.action_type == DEPLOY_ACTION
+        and operation.plan_snapshot.get("plan_version") == DEPLOY_PLAN_VERSION
+        and operation.rollback_of is None
+        and operation.status == "failed"
+        and operation.started_at is not None
+        and operation.current_digest
+        and operation.target_digest
+    )
+
+
+async def run_rollback_prechecks(
+    session: AsyncSession,
+    source: Operation | None,
+    instance: ServiceInstance,
+    settings: Settings,
+    current_time: datetime,
+) -> tuple[
+    dict,
+    Agent | None,
+    ManagedService | None,
+    ServiceStatus | None,
+    AgentDeploymentCandidate | None,
+]:
+    if not is_rollback_source(source):
+        return (
+            {"rollback_source_valid": False, "passed": False},
+            None,
+            None,
+            None,
+            None,
+        )
+    assert source is not None and source.current_digest and source.target_digest
+    checks, agent, managed, observed, candidate = await run_deploy_prechecks(
+        session,
+        instance,
+        settings,
+        current_time,
+        expected_current_digest=source.target_digest,
+        target_digest=source.current_digest,
+        require_current_healthy=False,
+    )
+    checks.update(
+        {
+            "rollback_source_valid": True,
+            "rollback_source_failed": source.status == "failed",
+            "rollback_source_execution_started": source.started_at is not None,
+            "rollback_target_frozen": candidate.current_digest == source.target_digest,
+        }
+    )
+    checks["passed"] = all(value for name, value in checks.items() if name != "passed")
     return checks, agent, managed, observed, candidate
 
 
@@ -695,7 +761,7 @@ async def create_deployment_operation(
         current_digest=candidate.current_digest,
         target_digest=payload.target_digest,
         plan_snapshot={
-            "plan_version": "m4.2b-executable-v1",
+            "plan_version": DEPLOY_PLAN_VERSION,
             "execution_policy": DEPLOY_ACTION,
             "permanently_non_executable": False,
             "machine": {"id": agent.id, "name": agent.name, "hostname": agent.hostname},
@@ -738,7 +804,113 @@ async def create_deployment_operation(
                     actor_type="admin",
                     actor_id="local-admin",
                     reason="controlled deployment requested",
-                    details={"plan_version": "m4.2b-executable-v1"},
+                    details={"plan_version": DEPLOY_PLAN_VERSION},
+                )
+            )
+            await transition(session, operation, "prechecking", "control_plane")
+            await transition(session, operation, "awaiting_confirmation", "control_plane")
+        await session.commit()
+    except IntegrityError as error:
+        await session.rollback()
+        raise HTTPException(
+            status_code=409, detail="another write operation is active for this service"
+        ) from error
+    return await operation_view(session, operation)
+
+
+@router.post(
+    "/deployment-operations/{operation_id}/rollback",
+    response_model=OperationView,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin)],
+)
+async def create_rollback_operation(
+    operation_id: str,
+    payload: OperationRollbackCreate,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> OperationView:
+    source = await session.scalar(
+        select(Operation).where(Operation.id == operation_id).with_for_update()
+    )
+    if source is None:
+        raise HTTPException(status_code=404, detail="deployment operation not found")
+    if not is_rollback_source(source):
+        raise HTTPException(
+            status_code=409,
+            detail="rollback requires an executed, failed, original M4.2b deployment",
+        )
+    instance = await session.get(ServiceInstance, source.instance_id)
+    if instance is None:
+        raise HTTPException(status_code=409, detail="service instance no longer exists")
+    current_time = now_utc()
+    checks, agent, managed, observed, candidate = await run_rollback_prechecks(
+        session, source, instance, settings, current_time
+    )
+    if not checks["passed"] or agent is None or managed is None or candidate is None:
+        failed = [name for name, passed in checks.items() if name != "passed" and not passed]
+        raise HTTPException(
+            status_code=409, detail="rollback operation rejected: " + ", ".join(failed)
+        )
+    assert source.current_digest and source.target_digest
+    operation = Operation(
+        instance_id=instance.id,
+        agent_id=agent.id,
+        action_type=DEPLOY_ACTION,
+        status="planned",
+        active_key=f"{instance.id}:write",
+        requested_by="local-admin",
+        risk_level="high",
+        impact_summary="显式回滚失败的 Compose 部署，恢复原计划冻结的旧镜像摘要。",
+        current_digest=source.target_digest,
+        target_digest=source.current_digest,
+        rollback_of=source.id,
+        plan_snapshot={
+            "plan_version": ROLLBACK_PLAN_VERSION,
+            "execution_policy": DEPLOY_ACTION,
+            "permanently_non_executable": False,
+            "rollback_of": source.id,
+            "machine": {"id": agent.id, "name": agent.name, "hostname": agent.hostname},
+            "service": {
+                "id": managed.id,
+                "name": managed.name,
+                "environment": managed.environment,
+                "instance_id": instance.id,
+                "service_kind": instance.service_kind,
+                "service_key": instance.service_key,
+            },
+            "repository": candidate.repository,
+            "current_digest": source.target_digest,
+            "target_digest": source.current_digest,
+            "candidate_observed_at": candidate.observed_at.isoformat(),
+            "observed_state": observed.state if observed else None,
+            "observed_healthy": observed.healthy if observed else None,
+        },
+        precheck_result=checks,
+        verification_policy={
+            "kind": "same_report_digest_and_health",
+            "required_state": "running",
+            "requires_healthy": True,
+            "target_digest": source.current_digest,
+            "stability_seconds": settings.operation_verification_window_seconds,
+            "timeout_seconds": settings.operation_verification_timeout_seconds,
+        },
+        idempotency_key="rollback_" + secrets.token_urlsafe(24),
+        expires_at=current_time + timedelta(seconds=payload.expires_in_seconds),
+    )
+    try:
+        async with session.begin_nested():
+            session.add(operation)
+            await session.flush()
+            session.add(
+                OperationTransition(
+                    operation_id=operation.id,
+                    from_status=None,
+                    to_status="planned",
+                    actor_type="admin",
+                    actor_id="local-admin",
+                    reason="explicit rollback requested",
+                    details={"plan_version": ROLLBACK_PLAN_VERSION, "rollback_of": source.id},
                 )
             )
             await transition(session, operation, "prechecking", "control_plane")
@@ -787,6 +959,11 @@ async def confirm_operation(
         raise HTTPException(status_code=409, detail="service instance no longer exists")
     if operation.action_type == RESTART_ACTION:
         checks, _, _, _ = await run_prechecks(session, instance, settings, current_time)
+    elif operation.rollback_of:
+        source = await session.get(Operation, operation.rollback_of)
+        checks, _, _, _, _ = await run_rollback_prechecks(
+            session, source, instance, settings, current_time
+        )
     else:
         if not operation.current_digest or not operation.target_digest:
             raise HTTPException(status_code=409, detail="deployment digest fields are incomplete")
