@@ -15,6 +15,7 @@ from app.image_refs import normalize_repository, parse_digest_reference
 from app.models import (
     Agent,
     AgentDeploymentCandidate,
+    AgentOperationCapability,
     ManagedService,
     Operation,
     ServiceInstance,
@@ -25,7 +26,10 @@ from app.operations import (
     claim_operation,
     complete_operation,
     confirm_operation,
+    create_deployment_operation,
     create_deployment_plan,
+    deployment_signing_fields,
+    reconcile_operation_verification,
     start_operation,
 )
 from app.schemas import (
@@ -319,10 +323,301 @@ def test_all_existing_execution_endpoints_reject_deploy_action() -> None:
         session.commit.assert_not_awaited()
 
 
-def test_agent_claim_query_explicitly_filters_restart_action() -> None:
+def test_agent_claim_query_explicitly_filters_supported_actions() -> None:
     session = AsyncMock()
     session.scalar.return_value = None
     claim = asyncio.run(claim_operation(Agent(id="agent-1"), session, Settings()))
     assert claim.task is None
     sql = str(session.scalar.call_args.args[0].compile(dialect=postgresql.dialect()))
     assert "operations.action_type" in sql
+
+
+def executable_deploy_operation(status: str = "awaiting_confirmation") -> Operation:
+    operation = deploy_operation(status)
+    operation.plan_snapshot = {
+        "plan_version": "m4.2b-executable-v1",
+        "permanently_non_executable": False,
+    }
+    operation.active_key = "instance-1:write"
+    operation.current_digest = f"ghcr.io/org/app@{DIGEST_A}"
+    operation.target_digest = f"ghcr.io/org/app@{DIGEST_B}"
+    return operation
+
+
+def signed_executable_deploy_operation(status: str = "queued") -> Operation:
+    operation = executable_deploy_operation(status)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    operation.issued_at = now
+    operation.task_nonce = "nonce-v2"
+    operation.signing_key_id = "key-1"
+    operation.task_signature = "signed-v2"
+    operation.attempt = 1
+    return operation
+
+
+def test_v2_signature_binds_both_digests() -> None:
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    operation = executable_deploy_operation()
+    operation.issued_at = now
+    operation.task_nonce = "nonce"
+    operation.signing_key_id = "key-1"
+    fields = deployment_signing_fields(
+        operation,
+        ServiceInstance(service_kind="docker", service_key="compose:demo:api:1"),
+    )
+    assert fields[:8] == [
+        "v2",
+        operation.id,
+        "docker_compose_deploy",
+        "agent-1",
+        "docker",
+        "compose:demo:api:1",
+        operation.current_digest,
+        operation.target_digest,
+    ]
+
+
+def test_agent_claim_returns_strict_v2_deployment_task() -> None:
+    operation = signed_executable_deploy_operation()
+    session = AsyncMock()
+    session.scalar.side_effect = [
+        operation,
+        AgentOperationCapability(
+            agent_id="agent-1",
+            action_type="docker_compose_deploy",
+            service_kind="docker",
+            service_key="compose:demo:api:1",
+        ),
+    ]
+    session.get.return_value = ServiceInstance(
+        id="instance-1",
+        service_kind="docker",
+        service_key="compose:demo:api:1",
+    )
+    session.add = MagicMock()
+
+    claim = asyncio.run(claim_operation(Agent(id="agent-1"), session, Settings()))
+
+    assert claim.task is not None
+    assert claim.task.version == "v2"
+    assert claim.task.current_digest == operation.current_digest
+    assert claim.task.target_digest == operation.target_digest
+    assert operation.status == "claimed"
+
+
+def test_agent_claim_fails_closed_for_queued_historical_plan() -> None:
+    operation = deploy_operation("queued")
+    session = AsyncMock()
+    session.scalar.return_value = operation
+    session.get.return_value = ServiceInstance(
+        id="instance-1",
+        service_kind="docker",
+        service_key="compose:demo:api:1",
+    )
+    session.add = MagicMock()
+
+    claim = asyncio.run(claim_operation(Agent(id="agent-1"), session, Settings()))
+
+    assert claim.task is None
+    assert operation.status == "failed"
+    assert operation.error_code == "invalid_plan"
+
+
+def test_deployment_confirmation_rejects_changed_current_digest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    operation = executable_deploy_operation()
+    instance = ServiceInstance(
+        id="instance-1",
+        service_kind="docker",
+        service_key="compose:demo:api:1",
+    )
+    session = AsyncMock()
+    session.scalar.return_value = operation
+    session.get.return_value = instance
+    session.add = MagicMock()
+    monkeypatch.setattr(
+        operations_module,
+        "run_deploy_prechecks",
+        AsyncMock(
+            return_value=(
+                {"passed": False, "current_digest_unchanged": False},
+                Agent(id="agent-1"),
+                ManagedService(id="service-1"),
+                None,
+                AgentDeploymentCandidate(
+                    current_digest=f"ghcr.io/org/app@{DIGEST_B}",
+                    eligible=True,
+                ),
+            )
+        ),
+    )
+
+    async def return_model(_session: object, current: Operation) -> Operation:
+        return current
+
+    monkeypatch.setattr(operations_module, "operation_view", return_model)
+
+    result = asyncio.run(
+        confirm_operation(
+            operation.id,
+            OperationConfirm(),
+            session,
+            Settings(),
+        )
+    )
+
+    assert result.status == "failed"
+    assert result.error_code == "precheck_failed"
+
+
+def test_create_executable_deployment_is_new_locked_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(timezone.utc)
+    instance = ServiceInstance(
+        id="instance-1",
+        service_id="service-1",
+        agent_id="agent-1",
+        service_kind="docker",
+        service_key="compose:demo:api:1",
+        deploy_enabled=True,
+    )
+    agent = Agent(id="agent-1", name="canary", hostname="host", last_seen_at=now)
+    service = ManagedService(id="service-1", name="api", criticality="non_critical")
+    candidate = AgentDeploymentCandidate(
+        agent_id="agent-1",
+        service_kind="docker",
+        service_key=instance.service_key,
+        repository="ghcr.io/org/app",
+        current_digest=f"ghcr.io/org/app@{DIGEST_A}",
+        eligible=True,
+        observed_at=now,
+    )
+    observation = ServiceStatus(
+        agent_id="agent-1",
+        kind="docker",
+        service_key=instance.service_key,
+        name="demo-api-1",
+        state="running",
+        healthy=True,
+        observed_at=now,
+    )
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.get.return_value = instance
+
+    class Transaction:
+        async def __aenter__(self) -> None:
+            return None
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    session.begin_nested = MagicMock(return_value=Transaction())
+    monkeypatch.setattr(operations_module, "now_utc", lambda: now)
+    monkeypatch.setattr(
+        operations_module,
+        "run_deploy_prechecks",
+        AsyncMock(
+            return_value=(
+                {"passed": True},
+                agent,
+                service,
+                observation,
+                candidate,
+            )
+        ),
+    )
+
+    async def return_model(_session: object, operation: Operation) -> Operation:
+        return operation
+
+    monkeypatch.setattr(operations_module, "operation_view", return_model)
+    result = asyncio.run(
+        create_deployment_operation(
+            DeploymentPlanCreate(
+                instance_id=instance.id,
+                target_digest=f"ghcr.io/org/app@{DIGEST_B}",
+            ),
+            session,
+            Settings(),
+        )
+    )
+    assert result.status == "awaiting_confirmation"
+    assert result.active_key == "instance-1:write"
+    assert result.plan_snapshot["plan_version"] == "m4.2b-executable-v1"
+    assert result.current_digest == f"ghcr.io/org/app@{DIGEST_A}"
+    assert result.target_digest == f"ghcr.io/org/app@{DIGEST_B}"
+
+
+def test_deploy_verification_requires_digest_and_health_in_same_report() -> None:
+    now = datetime.now(timezone.utc)
+    operation = executable_deploy_operation("verifying")
+    operation.execution_completed_at = now - timedelta(seconds=1)
+    operation.verification_result = {"status": "waiting_for_fresh_observation"}
+    rows = MagicMock()
+    rows.all.return_value = [operation]
+    session = AsyncMock()
+    session.scalars.return_value = rows
+    session.get.return_value = ServiceInstance(
+        id="instance-1",
+        service_kind="docker",
+        service_key="compose:demo:api:1",
+    )
+    session.add = MagicMock()
+    report = AgentReport(
+        hostname="host",
+        version="0.4.2-dev",
+        collected_at=now,
+        metrics=Metrics(
+            cpu_percent=1,
+            memory_percent=1,
+            memory_used_bytes=1,
+            memory_total_bytes=2,
+        ),
+        services=[
+            ServiceReport(
+                kind="docker",
+                key="compose:demo:api:1",
+                name="api",
+                state="running",
+                healthy=True,
+            )
+        ],
+        deployment_candidates=[
+            DeploymentCandidateReport(
+                service_kind="docker",
+                service_key="compose:demo:api:1",
+                repository="ghcr.io/org/app",
+                current_digest=f"ghcr.io/org/app@{DIGEST_B}",
+                eligible=True,
+            )
+        ],
+    )
+    asyncio.run(
+        reconcile_operation_verification(
+            session,
+            Agent(id="agent-1"),
+            report,
+            now,
+            Settings(operation_verification_window_seconds=0),
+        )
+    )
+    assert operation.status == "succeeded"
+    assert operation.verification_result["observed_digest"] == operation.target_digest
+
+    operation.status = "verifying"
+    operation.verification_result = {"status": "waiting_for_fresh_observation"}
+    report.deployment_candidates[0].current_digest = f"ghcr.io/org/app@{DIGEST_A}"
+    asyncio.run(
+        reconcile_operation_verification(
+            session,
+            Agent(id="agent-1"),
+            report,
+            now + timedelta(seconds=1),
+            Settings(operation_verification_window_seconds=0),
+        )
+    )
+    assert operation.status == "verifying"
+    assert operation.verification_result["observed_digest"] == f"ghcr.io/org/app@{DIGEST_A}"

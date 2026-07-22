@@ -149,10 +149,26 @@ func (ledger *Ledger) save() error {
 }
 
 func Verify(task client.OperationTask, agentID string, cfg config.Config, now time.Time) error {
-	if !config.OperationPolicyAllows(cfg.OperationPolicy, config.OperationPolicyDockerRestart) {
-		return errors.New("Docker restart policy is disabled")
-	}
-	if task.Version != "v1" || task.ActionType != "docker_restart" || task.ServiceKind != "docker" {
+	var fields []string
+	switch task.Version {
+	case "v1":
+		if !config.OperationPolicyAllows(cfg.OperationPolicy, config.OperationPolicyDockerRestart) {
+			return errors.New("Docker restart policy is disabled")
+		}
+		if task.ActionType != "docker_restart" || task.ServiceKind != "docker" || task.CurrentDigest != "" || task.TargetDigest != "" {
+			return errors.New("unsupported operation task")
+		}
+	case "v2":
+		if !config.DeployPolicyAllows(cfg.DeployPolicy, config.DeployPolicyDockerComposeDeploy) || len(cfg.DeployAllowedRoots) == 0 {
+			return errors.New("Docker Compose deployment policy is disabled")
+		}
+		if task.ActionType != "docker_compose_deploy" || task.ServiceKind != "docker" {
+			return errors.New("unsupported operation task")
+		}
+		if err := validateDeploymentDigestPair(task.CurrentDigest, task.TargetDigest); err != nil {
+			return errors.New("deployment digest pair is invalid")
+		}
+	default:
 		return errors.New("unsupported operation task")
 	}
 	if task.AgentID != agentID || task.KeyID == "" || task.KeyID != cfg.OperationKeyID {
@@ -172,14 +188,33 @@ func Verify(task client.OperationTask, agentID string, cfg config.Config, now ti
 	if err != nil || len(signature) != ed25519.SignatureSize {
 		return errors.New("operation signature is invalid")
 	}
-	fields := []string{
-		"v1", task.OperationID, task.ActionType, task.AgentID, task.ServiceKind,
-		task.ServiceKey, task.IssuedAt.UTC().Format("2006-01-02T15:04:05Z"),
-		task.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z"), task.IdempotencyKey,
-		strconv.Itoa(task.Attempt), task.Nonce, task.KeyID,
+	if task.Version == "v1" {
+		fields = []string{
+			"v1", task.OperationID, task.ActionType, task.AgentID, task.ServiceKind,
+			task.ServiceKey, task.IssuedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			task.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z"), task.IdempotencyKey,
+			strconv.Itoa(task.Attempt), task.Nonce, task.KeyID,
+		}
+	} else {
+		fields = []string{
+			"v2", task.OperationID, task.ActionType, task.AgentID, task.ServiceKind,
+			task.ServiceKey, task.CurrentDigest, task.TargetDigest,
+			task.IssuedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			task.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z"), task.IdempotencyKey,
+			strconv.Itoa(task.Attempt), task.Nonce, task.KeyID,
+		}
 	}
 	if !ed25519.Verify(ed25519.PublicKey(publicKey), []byte(strings.Join(fields, "\n")), signature) {
 		return errors.New("operation signature verification failed")
+	}
+	return nil
+}
+
+func validateDeploymentDigestPair(currentDigest, targetDigest string) error {
+	currentRepository, currentCanonical, currentErr := collector.ParseDigestReference(currentDigest)
+	targetRepository, targetCanonical, targetErr := collector.ParseDigestReference(targetDigest)
+	if currentErr != nil || targetErr != nil || currentCanonical != currentDigest || targetCanonical != targetDigest || currentRepository != targetRepository || currentDigest == targetDigest {
+		return errors.New("deployment digest pair is invalid")
 	}
 	return nil
 }

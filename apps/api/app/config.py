@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     operation_observation_max_age_seconds: int = Field(default=120, ge=30, le=600)
     operation_claim_lease_seconds: int = Field(default=60, ge=30, le=300)
     operation_execution_timeout_seconds: int = Field(default=30, ge=5, le=120)
+    operation_deploy_execution_timeout_seconds: int = Field(default=300, ge=30, le=900)
     operation_execution_result_grace_seconds: int = Field(default=15, ge=5, le=60)
     operation_verification_window_seconds: int = Field(default=30, ge=0, le=300)
     operation_verification_timeout_seconds: int = Field(default=180, ge=30, le=900)

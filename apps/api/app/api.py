@@ -440,6 +440,17 @@ async def list_deployment_candidates(
         ).all()
     )
     by_key = {(item.service_kind, item.service_key): item for item in instances}
+    deploy_capabilities = {
+        (item.service_kind, item.service_key)
+        for item in (
+            await session.scalars(
+                select(AgentOperationCapability).where(
+                    AgentOperationCapability.agent_id == agent_id,
+                    AgentOperationCapability.action_type == "docker_compose_deploy",
+                )
+            )
+        ).all()
+    }
     observations = {
         (item.kind, item.service_key): item
         for item in (
@@ -480,6 +491,9 @@ async def list_deployment_candidates(
                 criticality=service.criticality if service else "critical",
                 state=observation.state if observation else None,
                 healthy=observation.healthy if observation else None,
+                deploy_capable=(candidate.service_kind, candidate.service_key)
+                in deploy_capabilities,
+                deploy_enabled=bool(instance and instance.deploy_enabled),
             )
         )
     return result

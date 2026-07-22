@@ -84,7 +84,7 @@ class EvidenceSourceReport(BaseModel):
 
 class OperationCapabilityReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action_type: Literal["docker_restart"]
+    action_type: Literal["docker_restart", "docker_compose_deploy"]
     service_kind: Literal["docker"]
     service_key: str = Field(min_length=1, max_length=255)
 
@@ -96,6 +96,10 @@ DeploymentCandidateReason = Literal[
     "digest_ambiguous",
     "repository_unresolved",
     "inspect_failed",
+    "compose_metadata_invalid",
+    "compose_path_untrusted",
+    "compose_config_drift",
+    "drift_rejected",
 ]
 
 
@@ -317,6 +321,8 @@ class DeploymentCandidateView(BaseModel):
     criticality: str
     state: str | None
     healthy: bool | None
+    deploy_capable: bool = False
+    deploy_enabled: bool = False
 
 
 class DeploymentPlanCreate(BaseModel):
@@ -332,6 +338,18 @@ class DeploymentPlanCreate(BaseModel):
         if canonical != value:
             raise ValueError("target digest must use its canonical repository form")
         return value
+
+
+class DeployPolicyUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+    criticality: Literal["critical", "non_critical"]
+
+
+class DeployPolicyView(BaseModel):
+    instance_id: str
+    deploy_enabled: bool
+    criticality: str
 
 
 class OperationPlanCreate(BaseModel):
@@ -376,9 +394,30 @@ class OperationTask(BaseModel):
     signature: str
 
 
+class DeploymentOperationTask(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: Literal["v2"] = "v2"
+    operation_id: str
+    action_type: Literal["docker_compose_deploy"]
+    agent_id: str
+    service_kind: Literal["docker"]
+    service_key: str
+    current_digest: str
+    target_digest: str
+    issued_at: datetime
+    expires_at: datetime
+    idempotency_key: str
+    attempt: int
+    nonce: str
+    key_id: str
+    signature: str
+
+
 class OperationClaim(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    task: OperationTask | None = None
+    task: OperationTask | DeploymentOperationTask | None = Field(
+        default=None, discriminator="version"
+    )
 
 
 class OperationTransitionView(BaseModel):
@@ -419,6 +458,8 @@ class OperationView(BaseModel):
     output_truncated: bool
     error_code: str | None
     error_detail: str | None
+    current_digest: str | None
+    target_digest: str | None
     transitions: list[OperationTransitionView]
 
 

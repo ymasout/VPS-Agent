@@ -71,6 +71,16 @@ func TestParseDockerServicesHonorsContainerHealthStatus(t *testing.T) {
 	}
 }
 
+func TestParseDockerServicesDeduplicatesComposeReplacement(t *testing.T) {
+	services := parseDockerServices(
+		"old|old_demo-api-1|created|Created|demo|api|1\n" +
+			"new|demo-api-1|running|Up 1 second (healthy)|demo|api|1\n",
+	)
+	if len(services) != 1 || services[0].State != "running" || services[0].Name != "demo-api-1" {
+		t.Fatalf("Compose replacement was not reduced to the running container: %#v", services)
+	}
+}
+
 func TestAutomaticDockerEvidenceSourcesUseStableServiceAssociation(t *testing.T) {
 	healthy := true
 	services := []client.Service{

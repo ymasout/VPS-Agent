@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/example/vps-agent-console/apps/agent/internal/client"
 )
 
 const testDigestA = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -116,5 +118,15 @@ func TestDeploymentCandidateCountsReplicasBeforeReportLimit(t *testing.T) {
 	}
 	if groups["demo\x00api"] != maxDeploymentCandidates+1 {
 		t.Fatalf("replica count was truncated: %d", groups["demo\x00api"])
+	}
+}
+
+func TestDeploymentCandidatesDeduplicateComposeReplacement(t *testing.T) {
+	items := uniqueDeploymentCandidates([]client.DeploymentCandidate{
+		{ServiceKind: "docker", ServiceKey: "compose:demo:api:1", Eligible: true},
+		{ServiceKind: "docker", ServiceKey: "compose:demo:api:1", Eligible: true},
+	})
+	if len(items) != 1 || items[0].Eligible || items[0].ReasonCode != "multiple_replicas" {
+		t.Fatalf("replacement candidates were not safely deduplicated: %#v", items)
 	}
 }

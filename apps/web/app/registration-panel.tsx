@@ -13,7 +13,8 @@ export function RegistrationPanel({ operationKeyId = "", operationPublicKey = ""
   const [copied, setCopied] = useState("");
   const [evidencePolicy, setEvidencePolicy] = useState<"disabled" | "docker-logs" | "systemd-journal" | "docker-systemd">("docker-systemd");
   const [operationPolicy, setOperationPolicy] = useState<"disabled" | "docker-restart">("disabled");
-  const [deployPolicy, setDeployPolicy] = useState<"disabled" | "plan-only">("disabled");
+  const [deployPolicy, setDeployPolicy] = useState<"disabled" | "plan-only" | "docker-compose-deploy">("disabled");
+  const [deployAllowedRoot, setDeployAllowedRoot] = useState("/opt/vps-agent-deploy");
 
   const controlPlaneURL = typeof window === "undefined" ? "" : window.location.origin;
   const installCommand = buildInstallCommand(
@@ -22,6 +23,7 @@ export function RegistrationPanel({ operationKeyId = "", operationPublicKey = ""
     evidencePolicy,
     { policy: operationPolicy, keyId: operationKeyId, publicKey: operationPublicKey },
     deployPolicy,
+    deployAllowedRoot,
   );
 
   async function createToken(event: FormEvent) {
@@ -83,11 +85,13 @@ export function RegistrationPanel({ operationKeyId = "", operationPublicKey = ""
         </select>
         <small className="field-help">写能力需本机策略、控制台服务授权和签名任务同时成立；不会开放 Shell、容器参数、部署或回滚。</small>
         <label htmlFor="deploy-policy">部署候选发现</label>
-        <select id="deploy-policy" value={deployPolicy} onChange={(event) => setDeployPolicy(event.target.value as "disabled" | "plan-only")}>
+        <select id="deploy-policy" value={deployPolicy} onChange={(event) => setDeployPolicy(event.target.value as "disabled" | "plan-only" | "docker-compose-deploy")}>
           <option value="disabled">不发现部署候选（默认）</option>
           <option value="plan-only">只读发现与计划展示</option>
+          <option value="docker-compose-deploy" disabled={!operationKeyId || !operationPublicKey}>允许经确认的单服务 Compose 部署</option>
         </select>
-        <small className="field-help">plan-only 只读取 Docker 镜像元数据，不授予部署写权限，也不会在后续升级时自动变成可执行部署。</small>
+        {deployPolicy === "docker-compose-deploy" && <><label htmlFor="deploy-root">Compose 本地允许目录</label><input id="deploy-root" value={deployAllowedRoot} onChange={(event) => setDeployAllowedRoot(event.target.value)} required /></>}
+        <small className="field-help">plan-only 不授予写权限。可执行部署必须显式选择，并且 Compose 文件必须位于已存在的本地允许目录内。</small>
       </form>
       {error && <div className="registration-error" role="alert">{error}</div>}
       {created && (

@@ -160,6 +160,7 @@ func dockerServices(ctx context.Context) []client.Service {
 
 func parseDockerServices(output string) []client.Service {
 	var result []client.Service
+	byKey := map[string]int{}
 	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
 		parts := strings.SplitN(line, "|", 7)
 		if len(parts) >= 4 {
@@ -179,13 +180,31 @@ func parseDockerServices(output string) []client.Service {
 				value := false
 				healthy = &value
 			}
-			result = append(result, client.Service{
+			item := client.Service{
 				Kind: "docker", Key: stableDockerServiceKey(parts[1], project, composeService, replica),
 				Name: parts[1], State: parts[2], Detail: parts[3], Healthy: healthy,
-			})
+			}
+			if index, exists := byKey[item.Key]; exists {
+				if dockerServicePriority(item) > dockerServicePriority(result[index]) {
+					result[index] = item
+				}
+				continue
+			}
+			byKey[item.Key] = len(result)
+			result = append(result, item)
 		}
 	}
 	return result
+}
+
+func dockerServicePriority(service client.Service) int {
+	if service.State == "running" {
+		return 2
+	}
+	if service.State == "created" || service.State == "restarting" {
+		return 1
+	}
+	return 0
 }
 
 func stableDockerServiceKey(name, project, service, replica string) string {

@@ -32,7 +32,9 @@ export function OperationPanel({ operation }: { operation: Operation }) {
   const plan = operation.plan_snapshot;
   const machine = typeof plan.machine === "object" && plan.machine ? plan.machine as Record<string, unknown> : {};
   const service = typeof plan.service === "object" && plan.service ? plan.service as Record<string, unknown> : {};
-  if (operation.action_type === "docker_compose_deploy") return <>
+  const isDeploy = operation.action_type === "docker_compose_deploy";
+  const isPlanOnly = isDeploy && plan.permanently_non_executable === true;
+  if (isPlanOnly) return <>
     <section className="hero compact detail-head event-head">
       <div className="status"><span /> PLAN ONLY</div>
       <h1>只读部署计划 · {String(service.name ?? "服务")}</h1>
@@ -47,9 +49,9 @@ export function OperationPanel({ operation }: { operation: Operation }) {
   return <>
     <section className="hero compact detail-head event-head">
       <div className={`status ${operation.status === "succeeded" ? "" : "offline"}`}><span /> {operation.status}</div>
-      <h1>安全重启 · {String(service.name ?? "服务")}</h1>
+      <h1>{isDeploy ? "受控部署" : "安全重启"} · {String(service.name ?? "服务")}</h1>
       <p>{String(machine.name ?? machine.hostname ?? "机器")} · {String(service.environment ?? "环境未知")} · {operation.risk_level} risk</p>
-      {operation.status === "awaiting_confirmation" && <button type="button" onClick={confirm} disabled={loading}>{loading ? "确认中…" : "确认并签发重启任务"}</button>}
+      {operation.status === "awaiting_confirmation" && <button type="button" onClick={confirm} disabled={loading}>{loading ? "确认中…" : isDeploy ? "确认并签发部署任务" : "确认并签发重启任务"}</button>}
       {error && <p className="mapping-error" role="alert">{error}</p>}
     </section>
     <section className="diagnostic"><h2>计划与影响</h2><p>{operation.impact_summary}</p><pre>{JSON.stringify(plan, null, 2)}</pre></section>

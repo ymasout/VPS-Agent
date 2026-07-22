@@ -49,6 +49,48 @@ func TestVerifyAcceptsBoundSignedTask(t *testing.T) {
 	}
 }
 
+func TestVerifyAcceptsV2AndBindsBothDigests(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	task := client.OperationTask{
+		Version: "v2", OperationID: "deploy-1", ActionType: "docker_compose_deploy",
+		AgentID: "agent-1", ServiceKind: "docker", ServiceKey: "compose:demo:api:1",
+		CurrentDigest: "ghcr.io/org/app@" + testDigestA,
+		TargetDigest:  "ghcr.io/org/app@" + testDigestB,
+		IssuedAt:      now.Add(-time.Second), ExpiresAt: now.Add(time.Minute),
+		IdempotencyKey: "deploy-key", Attempt: 1, Nonce: "nonce-v2", KeyID: "m4-test",
+	}
+	fields := []string{
+		"v2", task.OperationID, task.ActionType, task.AgentID, task.ServiceKind,
+		task.ServiceKey, task.CurrentDigest, task.TargetDigest,
+		task.IssuedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		task.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z"), task.IdempotencyKey,
+		"1", task.Nonce, task.KeyID,
+	}
+	task.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(privateKey, []byte(strings.Join(fields, "\n"))))
+	cfg := config.Config{
+		DeployPolicy:       config.DeployPolicyDockerComposeDeploy,
+		DeployAllowedRoots: []string{t.TempDir()},
+		OperationKeyID:     task.KeyID,
+		OperationPublicKey: base64.StdEncoding.EncodeToString(publicKey),
+	}
+	if err = Verify(task, "agent-1", cfg, now); err != nil {
+		t.Fatalf("Verify(v2) error = %v", err)
+	}
+	tampered := task
+	tampered.TargetDigest = "ghcr.io/org/app@" + testDigestA
+	if err = Verify(tampered, "agent-1", cfg, now); err == nil {
+		t.Fatal("Verify(v2) accepted a tampered target digest")
+	}
+	cfg.DeployPolicy = config.DeployPolicyPlanOnly
+	if err = Verify(task, "agent-1", cfg, now); err == nil {
+		t.Fatal("plan-only policy accepted a v2 deployment task")
+	}
+}
+
 func TestVerifyRejectsTamperExpiryReplayAndDisabledPolicy(t *testing.T) {
 	task, cfg := signedTask(t)
 	tampered := task

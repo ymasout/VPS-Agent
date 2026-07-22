@@ -22,12 +22,18 @@ export function buildInstallCommand(
   agentName: string,
   evidencePolicy: "disabled" | "docker-logs" | "systemd-journal" | "docker-systemd" = "disabled",
   operation?: { policy: "disabled" | "docker-restart"; keyId?: string; publicKey?: string },
-  deployPolicy: "disabled" | "plan-only" = "disabled",
+  deployPolicy: "disabled" | "plan-only" | "docker-compose-deploy" = "disabled",
+  deployAllowedRoot = "",
 ) {
   const baseURL = controlPlaneURL.replace(/\/$/, "");
   const downloadBaseURL = `${baseURL}/agent-downloads`;
-  const operationArgs = operation?.policy === "docker-restart" && operation.keyId && operation.publicKey
-    ? ` --operation-policy docker-restart --operation-key-id ${shellQuote(operation.keyId)} --operation-public-key ${shellQuote(operation.publicKey)}`
-    : " --operation-policy disabled";
-  return `curl -fsSL --proto '=https' --tlsv1.2 ${downloadBaseURL}/latest/install-agent.sh | bash -s -- --url ${baseURL} --download-base-url ${downloadBaseURL} --name ${shellQuote(agentName)} --evidence-policy ${evidencePolicy}${operationArgs} --deploy-policy ${deployPolicy}`;
+  const needsSigningKey = operation?.policy === "docker-restart" || deployPolicy === "docker-compose-deploy";
+  const operationArgs = operation?.policy === "docker-restart" ? " --operation-policy docker-restart" : " --operation-policy disabled";
+  const signingArgs = needsSigningKey && operation?.keyId && operation.publicKey
+    ? ` --operation-key-id ${shellQuote(operation.keyId)} --operation-public-key ${shellQuote(operation.publicKey)}`
+    : "";
+  const deployRootArg = deployPolicy === "docker-compose-deploy" && deployAllowedRoot
+    ? ` --deploy-allowed-root ${shellQuote(deployAllowedRoot)}`
+    : "";
+  return `curl -fsSL --proto '=https' --tlsv1.2 ${downloadBaseURL}/latest/install-agent.sh | bash -s -- --url ${baseURL} --download-base-url ${downloadBaseURL} --name ${shellQuote(agentName)} --evidence-policy ${evidencePolicy}${operationArgs}${signingArgs} --deploy-policy ${deployPolicy}${deployRootArg}`;
 }

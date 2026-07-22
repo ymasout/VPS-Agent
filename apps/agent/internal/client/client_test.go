@@ -66,6 +66,17 @@ func TestClaimOperationRejectsUnknownTaskFields(t *testing.T) {
 	}
 }
 
+func TestClaimOperationStrictlyDecodesV2WithoutWeakeningV1(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"task":{"version":"v2","operation_id":"op-2","action_type":"docker_compose_deploy","agent_id":"agent-1","service_kind":"docker","service_key":"compose:demo:api:1","current_digest":"ghcr.io/org/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","target_digest":"ghcr.io/org/app@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","issued_at":"2026-01-01T00:00:00Z","expires_at":"2026-01-01T00:05:00Z","idempotency_key":"key-2","attempt":1,"nonce":"nonce","key_id":"key","signature":"signature"}}`))
+	}))
+	defer server.Close()
+	claim, err := New(server.URL).ClaimOperation(context.Background(), "agt_secret")
+	if err != nil || claim.Task == nil || claim.Task.Version != "v2" || claim.Task.TargetDigest == "" {
+		t.Fatalf("valid v2 task was not decoded: %#v, %v", claim, err)
+	}
+}
+
 func TestRequestReturnsBoundedServerError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)

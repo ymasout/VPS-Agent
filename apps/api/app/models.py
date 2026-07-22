@@ -176,6 +176,7 @@ class ServiceInstance(Base):
     service_key: Mapped[str] = mapped_column(String(255))
     deployment_directory: Mapped[str | None] = mapped_column(String(512), nullable=True)
     restart_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    deploy_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -439,6 +440,8 @@ class Operation(Base):
     task_nonce: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
     signing_key_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     task_signature: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    current_digest: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    target_digest: Mapped[str | None] = mapped_column(String(512), nullable=True)
     issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     lease_expires_at: Mapped[datetime | None] = mapped_column(

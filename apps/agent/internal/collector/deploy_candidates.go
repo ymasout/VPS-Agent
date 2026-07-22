@@ -166,7 +166,7 @@ func collectDeploymentCandidates(ctx context.Context, command dockerCommand) []c
 		candidate.Eligible = true
 		result = append(result, candidate)
 	}
-	return result
+	return uniqueDeploymentCandidates(result)
 }
 
 func parseComposeContainers(output string) []composeContainer {
@@ -190,6 +190,21 @@ func candidatesWithReason(containers []composeContainer, reason string) []client
 	result := make([]client.DeploymentCandidate, 0, len(containers))
 	for _, item := range containers {
 		result = append(result, client.DeploymentCandidate{ServiceKind: "docker", ServiceKey: StableDockerServiceKey(item.Name, item.Project, item.Service, item.Replica), ReasonCode: reason})
+	}
+	return uniqueDeploymentCandidates(result)
+}
+
+func uniqueDeploymentCandidates(items []client.DeploymentCandidate) []client.DeploymentCandidate {
+	result := make([]client.DeploymentCandidate, 0, len(items))
+	byKey := map[string]int{}
+	for _, item := range items {
+		if index, exists := byKey[item.ServiceKey]; exists {
+			result[index].Eligible = false
+			result[index].ReasonCode = "multiple_replicas"
+			continue
+		}
+		byKey[item.ServiceKey] = len(result)
+		result = append(result, item)
 	}
 	return result
 }
@@ -267,4 +282,9 @@ func parseDigestReference(reference string) (string, string, error) {
 		return "", "", err
 	}
 	return repository, repository + "@" + parts[1], nil
+}
+
+// ParseDigestReference exposes the shared strict repository/digest rules to the executor.
+func ParseDigestReference(reference string) (string, string, error) {
+	return parseDigestReference(reference)
 }

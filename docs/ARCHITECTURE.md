@@ -40,15 +40,15 @@ compose.yaml        本地完整开发环境
 ### FastAPI 控制平面
 
 - 系统可信核心，负责 Agent 身份、资源拓扑、数据持久化和 API。
-- 当前负责 Agent 身份、资源/服务报告、M2 告警与通知、M3 服务映射/有限取证/GitHub App 只读仓库快照/结构化诊断，以及 M4 首批 Docker 安全重启计划、确认、签名、验证和审计。
-- GitHub App 首版只读取安装授权仓库及精确白名单文件；仓库写入仍属于后续 M5。M4 第一轮不实现 Pull、部署或回滚。
+- 当前负责 Agent 身份、资源/服务报告、M2 告警与通知、M3 服务映射/有限取证/GitHub App 只读仓库快照/结构化诊断，以及 M4 Docker 安全重启（已生产验证）和 M4.2b 单服务 Compose digest 部署（本地验证、生产尚未启用）的计划、确认、签名、验证和审计。
+- GitHub App 首版只读取安装授权仓库及精确白名单文件；仓库写入仍属于后续 M5。M4.2b 不拉源码、不构建镜像，也不自动回滚。
 
 ### Go Agent
 
 - 作为 Linux VPS 上的轻量守护进程运行，主动连接控制平面。
 - 当前负责注册、心跳、基础资源和 Docker/systemd/HTTP 状态采集。
 - M3 已支持 Docker logs 和 systemd journal 的有限取证。Agent 只有在本地策略明确启用后，才根据已发现服务生成稳定能力目录；控制平面仍只能引用 Agent 已声明的能力，不能自行构造容器目标、Unit、路径或命令。
-- M4 只有在本地 `docker_restart` 策略明确启用时才声明服务级写能力；Agent 验证独立 Ed25519 签名并从 stable service_key 本地唯一解析 target，只执行固定 Docker restart。旧 Agent 默认没有写能力。
+- M4 只有在本地 `docker_restart` 策略明确启用时才声明重启能力。M4.2b 的部署能力另由 `docker_compose_deploy`、签名公钥和本地 Compose 允许目录共同开启；Agent 验证独立 v2 Ed25519 签名、同仓库 current/target digest、stable key、单副本和配置 hash，只执行固定 pull + 单服务 Compose 重建。旧 Agent 与 `plan_only` Agent 默认没有部署写能力。
 
 ### PostgreSQL
 
@@ -188,6 +188,7 @@ flowchart LR
 - Agent 本地持久幂等账本处理响应丢失和进程重启；已进入 Running 但结果未知的任务不会自动重放。
 - 执行成功不等于操作成功。控制平面仅在新鲜 Docker 观测持续满足 running/healthy 稳定窗口后标记 Succeeded。
 - 详细状态机、签名字段、恢复语义和配置见 [M4_OPERATIONS.md](./M4_OPERATIONS.md)。
+- M4.2b 复用同一状态机和 `active_key`，但使用独立严格解码的 v2 任务并把 current/target digest 纳入签名；成功必须由同一份执行后报告同时证明目标 digest、running 和 healthy。完整边界见 [M4.2_DEPLOY.md](./M4.2_DEPLOY.md)。
 
 ## 7. 安全基线
 
@@ -195,7 +196,7 @@ flowchart LR
 - Agent 身份凭证可吊销、可轮换，日志不得输出凭据。
 - 所有 Agent 上报必须验证身份、限制请求体大小并进行字段校验。
 - 服务器记录固定携带 `organization_id = local`。
-- M3 仍为只读。M4 只新增经确认、签名且双重授权的非关键 Docker 单服务重启，不提供自由 Shell、部署、回滚或其他写操作。
+- M3 仍为只读。M4 新增经确认、签名且双重授权的非关键 Docker 单服务重启和 M4.2b 受控 Compose digest 部署（同仓库不可变 digest、不自动回滚），不提供自由 Shell 或其他写操作。
 - 证据请求限制来源键、时间窗口、行数、字节数和超时，并在 Agent 上传前及控制平面存储前分别脱敏。
 - M4 首批写操作已具备独立任务签名、过期时间、幂等键、确认信息、双重能力策略、健康验证和逐状态审计。
 - “白名单”是 Agent 与控制平面的内部能力边界，不应要求用户长期手工维护技术标识；自动发现和模板生成只能改善配置体验，不能放宽服务端与 Agent 的最终校验。
@@ -226,6 +227,6 @@ flowchart LR
 ## 10. 明确延后能力
 
 - M3 后续：文件日志、真实模型生产验收和同步任务可靠性增强；Docker 自动发现、Web 单服务确认、Agent 可用性、GitHub/systemd 隔离闭环以及两条生产金丝雀（GitHub App 同步/Webhook/撤权、外部 systemd journal 取证）已进入当前实现。
-- M4：安全重启、部署、回滚和完整审计。
+- M4.2c：部署失败后的显式回滚（独立确认操作，未开始）。
 - M5：全局/上下文对话、仓库知识和诊断历史增强。
 - M6：Web SSH、PWA/移动审批、团队协作和自托管产品化。

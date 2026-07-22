@@ -117,6 +117,8 @@ type OperationTask struct {
 	AgentID        string    `json:"agent_id"`
 	ServiceKind    string    `json:"service_kind"`
 	ServiceKey     string    `json:"service_key"`
+	CurrentDigest  string    `json:"current_digest,omitempty"`
+	TargetDigest   string    `json:"target_digest,omitempty"`
 	IssuedAt       time.Time `json:"issued_at"`
 	ExpiresAt      time.Time `json:"expires_at"`
 	IdempotencyKey string    `json:"idempotency_key"`
@@ -124,6 +126,71 @@ type OperationTask struct {
 	Nonce          string    `json:"nonce"`
 	KeyID          string    `json:"key_id"`
 	Signature      string    `json:"signature"`
+}
+
+type operationTaskV1 struct {
+	Version        string    `json:"version"`
+	OperationID    string    `json:"operation_id"`
+	ActionType     string    `json:"action_type"`
+	AgentID        string    `json:"agent_id"`
+	ServiceKind    string    `json:"service_kind"`
+	ServiceKey     string    `json:"service_key"`
+	IssuedAt       time.Time `json:"issued_at"`
+	ExpiresAt      time.Time `json:"expires_at"`
+	IdempotencyKey string    `json:"idempotency_key"`
+	Attempt        int       `json:"attempt"`
+	Nonce          string    `json:"nonce"`
+	KeyID          string    `json:"key_id"`
+	Signature      string    `json:"signature"`
+}
+
+type operationTaskV2 struct {
+	Version        string    `json:"version"`
+	OperationID    string    `json:"operation_id"`
+	ActionType     string    `json:"action_type"`
+	AgentID        string    `json:"agent_id"`
+	ServiceKind    string    `json:"service_kind"`
+	ServiceKey     string    `json:"service_key"`
+	CurrentDigest  string    `json:"current_digest"`
+	TargetDigest   string    `json:"target_digest"`
+	IssuedAt       time.Time `json:"issued_at"`
+	ExpiresAt      time.Time `json:"expires_at"`
+	IdempotencyKey string    `json:"idempotency_key"`
+	Attempt        int       `json:"attempt"`
+	Nonce          string    `json:"nonce"`
+	KeyID          string    `json:"key_id"`
+	Signature      string    `json:"signature"`
+}
+
+func (task *OperationTask) UnmarshalJSON(data []byte) error {
+	var header struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		return err
+	}
+	decodeStrict := func(target any) error {
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		return decoder.Decode(target)
+	}
+	switch header.Version {
+	case "v1":
+		var value operationTaskV1
+		if err := decodeStrict(&value); err != nil {
+			return err
+		}
+		*task = OperationTask{Version: value.Version, OperationID: value.OperationID, ActionType: value.ActionType, AgentID: value.AgentID, ServiceKind: value.ServiceKind, ServiceKey: value.ServiceKey, IssuedAt: value.IssuedAt, ExpiresAt: value.ExpiresAt, IdempotencyKey: value.IdempotencyKey, Attempt: value.Attempt, Nonce: value.Nonce, KeyID: value.KeyID, Signature: value.Signature}
+	case "v2":
+		var value operationTaskV2
+		if err := decodeStrict(&value); err != nil {
+			return err
+		}
+		*task = OperationTask{Version: value.Version, OperationID: value.OperationID, ActionType: value.ActionType, AgentID: value.AgentID, ServiceKind: value.ServiceKind, ServiceKey: value.ServiceKey, CurrentDigest: value.CurrentDigest, TargetDigest: value.TargetDigest, IssuedAt: value.IssuedAt, ExpiresAt: value.ExpiresAt, IdempotencyKey: value.IdempotencyKey, Attempt: value.Attempt, Nonce: value.Nonce, KeyID: value.KeyID, Signature: value.Signature}
+	default:
+		return fmt.Errorf("unsupported operation task version %q", header.Version)
+	}
+	return nil
 }
 
 type OperationClaim struct {

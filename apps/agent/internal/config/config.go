@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ type Config struct {
 	OperationStateFile    string
 	OperationPollInterval time.Duration
 	DeployPolicy          string
+	DeployAllowedRoots    []string
 }
 
 type EvidenceSource struct {
@@ -59,11 +61,13 @@ func Load() Config {
 		OperationStateFile:    valueOrDefault("AGENT_OPERATION_STATE_FILE", "/var/lib/vps-agent/operations.json"),
 		OperationPollInterval: durationOrDefault("AGENT_OPERATION_POLL_INTERVAL", 5*time.Second),
 		DeployPolicy:          deployPolicy(os.Getenv("AGENT_DEPLOY_POLICY")),
+		DeployAllowedRoots:    parseAllowedRoots(os.Getenv("AGENT_DEPLOY_ALLOWED_ROOTS")),
 	}
 }
 
 const OperationPolicyDockerRestart = "docker_restart"
 const DeployPolicyPlanOnly = "plan_only"
+const DeployPolicyDockerComposeDeploy = "docker_compose_deploy"
 
 func operationPolicy(value string) string {
 	if strings.TrimSpace(value) == OperationPolicyDockerRestart {
@@ -77,14 +81,36 @@ func OperationPolicyAllows(policy, capability string) bool {
 }
 
 func deployPolicy(value string) string {
-	if strings.TrimSpace(value) == DeployPolicyPlanOnly {
-		return DeployPolicyPlanOnly
+	value = strings.TrimSpace(value)
+	if value == DeployPolicyPlanOnly || value == DeployPolicyDockerComposeDeploy {
+		return value
 	}
 	return "disabled"
 }
 
 func DeployPolicyAllows(policy, capability string) bool {
 	return policy == capability
+}
+
+func DeployPolicyDiscovers(policy string) bool {
+	return policy == DeployPolicyPlanOnly || policy == DeployPolicyDockerComposeDeploy
+}
+
+func parseAllowedRoots(value string) []string {
+	seen := map[string]bool{}
+	var roots []string
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" || !filepath.IsAbs(item) {
+			continue
+		}
+		item = filepath.Clean(item)
+		if !seen[item] {
+			seen[item] = true
+			roots = append(roots, item)
+		}
+	}
+	return roots
 }
 
 func evidencePolicy(value string) string {

@@ -33,6 +33,8 @@ export type DeploymentCandidate = {
   criticality: string;
   state: string | null;
   healthy: boolean | null;
+  deploy_capable: boolean;
+  deploy_enabled: boolean;
 };
 export type GitHubRepository = {
   id: string;
@@ -116,6 +118,7 @@ export type Operation = {
   expires_at: string; requested_at: string; confirmed_at: string | null; claimed_at: string | null; started_at: string | null;
   execution_completed_at: string | null; completed_at: string | null; exit_code: number | null; output: string | null; output_truncated: boolean;
   error_code: string | null; error_detail: string | null; transitions: OperationTransition[];
+  current_digest: string | null; target_digest: string | null;
 };
 
 const apiURL = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";

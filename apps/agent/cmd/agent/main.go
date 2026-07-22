@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -17,9 +18,9 @@ import (
 	operationexecutor "github.com/example/vps-agent-console/apps/agent/internal/operation"
 )
 
-var version = "0.4.0-dev"
+var version = "0.4.2-dev"
 
-var capabilities = []string{"host.metrics", "docker.status", "systemd.status", "http.healthcheck", "evidence.docker_logs.v1", "evidence.systemd_journal.v1"}
+var capabilities = []string{"host.metrics", "docker.status", "systemd.status", "http.healthcheck", "evidence.docker_logs.v1", "evidence.systemd_journal.v1", "operation.compose_deploy.v2"}
 
 func main() {
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
@@ -54,6 +55,7 @@ func main() {
 		logger.Error("agent identity initialization failed", "error", err)
 		os.Exit(1)
 	}
+	var operationClaimsReady atomic.Bool
 	send := func() {
 		metrics, services, err := collector.Collect(ctx)
 		if err != nil {
@@ -85,13 +87,21 @@ func main() {
 			}
 		}
 		deploymentCandidates := make([]client.DeploymentCandidate, 0)
-		if config.DeployPolicyAllows(cfg.DeployPolicy, config.DeployPolicyPlanOnly) {
+		if config.DeployPolicyDiscovers(cfg.DeployPolicy) {
 			serviceKeys := make(map[string]bool, len(services))
 			for _, service := range services {
 				serviceKeys[service.Kind+"\x00"+service.Key] = true
 			}
 			for _, candidate := range collector.DeploymentCandidates(ctx) {
 				if serviceKeys[candidate.ServiceKind+"\x00"+candidate.ServiceKey] {
+					if config.DeployPolicyAllows(cfg.DeployPolicy, config.DeployPolicyDockerComposeDeploy) && candidate.Eligible {
+						if code := operationexecutor.CanDeploy(ctx, candidate.ServiceKey, candidate.CurrentDigest, cfg); code != "" {
+							candidate.Eligible = false
+							candidate.ReasonCode = code
+						} else if cfg.OperationKeyID != "" && cfg.OperationPublicKey != "" {
+							operationCapabilities = append(operationCapabilities, client.OperationCapability{ActionType: "docker_compose_deploy", ServiceKind: "docker", ServiceKey: candidate.ServiceKey})
+						}
+					}
 					deploymentCandidates = append(deploymentCandidates, candidate)
 				}
 			}
@@ -101,6 +111,7 @@ func main() {
 			logger.Error("report failed", "error", err)
 			return
 		}
+		operationClaimsReady.Store(true)
 		logger.Info("report accepted", "agent_id", identity.AgentID, "services", len(services))
 		claim, claimErr := api.ClaimEvidence(ctx, identity.Credential)
 		if claimErr != nil {
@@ -127,11 +138,17 @@ func main() {
 		}
 		logger.Info("evidence request completed", "request_id", claim.Request.ID, "status", result.Status, "truncated", result.Truncated)
 	}
+	// Refresh server-side version and capability state before the first operation claim.
+	// This prevents a downgraded Agent from receiving a queued v2 task using stale capability rows.
+	send()
 	ledger, ledgerErr := operationexecutor.OpenLedger(cfg.OperationStateFile)
 	if ledgerErr != nil {
 		logger.Error("operation ledger initialization failed; write operations disabled", "error", ledgerErr)
 	} else {
 		pollOperations := func() {
+			if !operationClaimsReady.Load() {
+				return
+			}
 			for key, pending := range ledger.Pending() {
 				if err := api.CompleteOperation(ctx, identity.Credential, pending.OperationID, pending.Result); err != nil {
 					logger.Error("operation result retry failed", "operation_id", pending.OperationID, "error", err)
@@ -175,7 +192,11 @@ func main() {
 			}
 			result := cached
 			if execute {
-				result = operationexecutor.ExecuteDockerRestart(ctx, task)
+				if task.Version == "v2" {
+					result = operationexecutor.ExecuteDockerComposeDeploy(ctx, task, cfg)
+				} else {
+					result = operationexecutor.ExecuteDockerRestart(ctx, task)
+				}
 				if err = ledger.Complete(task.IdempotencyKey, result); err != nil {
 					logger.Error("operation ledger completion failed", "operation_id", task.OperationID, "error", err)
 					return
@@ -205,7 +226,6 @@ func main() {
 			}
 		}()
 	}
-	send()
 	ticker := time.NewTicker(cfg.ReportInterval)
 	defer ticker.Stop()
 	for {

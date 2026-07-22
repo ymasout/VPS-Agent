@@ -91,6 +91,8 @@ sudo bash install-agent.sh \
 - `--operation-key-id m4-2026-01`：控制平面 Ed25519 签名 key ID。
 - `--operation-public-key BASE64`：对应 32 字节 Ed25519 公钥的 Base64。公钥可以进入安装命令；私钥只能留在控制平面。
 - `--deploy-policy plan-only`：M4.2a 只读发现 Compose 部署候选并允许控制平面生成永久不可执行的冻结计划；默认 `disabled`。它不授予部署写权限，不需要签名密钥。
+- `--deploy-policy docker-compose-deploy`：显式允许经确认的单服务 Compose digest 部署；必须同时提供签名 key ID、公钥和 `--deploy-allowed-root`，且宿主机已有 `docker compose`。它不会自动启用重启权限。
+- `--deploy-allowed-root /opt/vps-agent-deploy`：Compose 原文件和 working directory 的本地允许根目录；只在可执行部署策略下使用，安装时必须已存在并解析为绝对路径。
 - `--version 0.3.0`：安装指定版本；默认安装最新 Release。
 
 安装器会创建：
@@ -125,7 +127,7 @@ M4 写操作同样默认关闭。新机器在 Web 明确选择“允许经确认
 
 旧 Agent 升级会保留已有 `AGENT_OPERATION_POLICY`；缺失时写入 `disabled`，不会因升级自动获得写权限。不要把 `OPERATION_SIGNING_PRIVATE_KEY_BASE64` 写入 Agent 配置或安装命令。
 
-M4.2a 的 `AGENT_DEPLOY_POLICY=plan_only` 与重启写策略完全分离，只读取容器和镜像 inspect 元数据，不读取或上传 Compose 路径、容器 ID、Docker target 或 Registry 凭据。将来升级到 M4.2b 后 `plan_only` 仍保持只读，必须人工改成新的执行策略才可能获得部署能力。
+M4.2a 的 `AGENT_DEPLOY_POLICY=plan_only` 与重启写策略完全分离，只读取容器和镜像 inspect 元数据，不读取或上传 Compose 路径、容器 ID、Docker target 或 Registry 凭据。M4.2b 代码加入后 `plan_only` 仍保持只读，必须人工改成 `docker_compose_deploy`、配置签名公钥与本地允许目录，并在控制台对具体非关键服务另行启用 `deploy_enabled`，才会获得部署能力。控制平面仍不会收到 Compose 路径、容器 target 或 Registry 凭据。
 
 注册成功后，一次性令牌会从配置文件删除，后续重启和升级使用已保存的独立 Agent 身份。
 

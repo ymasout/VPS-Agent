@@ -1,0 +1,23 @@
+services:
+  api:
+    environment:
+      OPERATION_VERIFICATION_WINDOW_SECONDS: 5
+      OPERATION_VERIFICATION_TIMEOUT_SECONDS: 30
+
+  deploy-canary:
+    image: alpine:3.21
+    command: ["sh", "-c", "touch /tmp/healthy; while true; do sleep 60; done"]
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/healthy"]
+      interval: 1s
+      timeout: 1s
+      retries: 10
+
+  deploy-canary-unhealthy:
+    image: python:3.12-alpine
+    command: ["sh", "-c", "while true; do sleep 60; done"]
+    healthcheck:
+      test: ["CMD-SHELL", "python --version 2>&1 | grep -q 'Python 3.12'"]
+      interval: 1s
+      timeout: 1s
+      retries: 3

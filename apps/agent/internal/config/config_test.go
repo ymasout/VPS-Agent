@@ -116,7 +116,7 @@ func TestEvidencePolicySupportsExplicitCombinedReadOnlySources(t *testing.T) {
 	}
 }
 
-func TestDeployPolicyRequiresExplicitPlanOnlyOptIn(t *testing.T) {
+func TestDeployPolicyRequiresExplicitOptIn(t *testing.T) {
 	t.Setenv("AGENT_DEPLOY_POLICY", "plan_only")
 	if policy := Load().DeployPolicy; policy != DeployPolicyPlanOnly {
 		t.Fatalf("unexpected deploy policy: %q", policy)
@@ -125,7 +125,12 @@ func TestDeployPolicyRequiresExplicitPlanOnlyOptIn(t *testing.T) {
 		t.Fatal("plan-only discovery was not enabled")
 	}
 	t.Setenv("AGENT_DEPLOY_POLICY", "docker_compose_deploy")
-	if policy := Load().DeployPolicy; policy != "disabled" {
-		t.Fatalf("M4.2a must reject executable deploy policy, got %q", policy)
+	t.Setenv("AGENT_DEPLOY_ALLOWED_ROOTS", t.TempDir())
+	cfg := Load()
+	if cfg.DeployPolicy != DeployPolicyDockerComposeDeploy || len(cfg.DeployAllowedRoots) != 1 {
+		t.Fatalf("explicit executable deploy policy was not loaded: %#v", cfg)
+	}
+	if DeployPolicyAllows(DeployPolicyPlanOnly, DeployPolicyDockerComposeDeploy) {
+		t.Fatal("plan-only must not grant executable deployment")
 	}
 }

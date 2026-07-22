@@ -36,4 +36,20 @@ describe("registration token request protection", () => {
     expect(command).toContain("--deploy-policy plan-only");
     expect(command).toContain("--operation-policy disabled");
   });
+
+  it("requires explicit signing material and an allowed root for Compose execution", () => {
+    const command = buildInstallCommand(
+      "https://ops.example.com",
+      "deploy-canary",
+      "disabled",
+      { policy: "disabled", keyId: "key-1", publicKey: "public-key" },
+      "docker-compose-deploy",
+      "/opt/vps-agent-deploy",
+    );
+    expect(command).toContain("--operation-policy disabled");
+    expect(command).toContain("--operation-key-id 'key-1'");
+    expect(command).toContain("--operation-public-key 'public-key'");
+    expect(command).toContain("--deploy-policy docker-compose-deploy");
+    expect(command).toContain("--deploy-allowed-root '/opt/vps-agent-deploy'");
+  });
 });
