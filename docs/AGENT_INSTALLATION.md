@@ -121,7 +121,7 @@ AGENT_EVIDENCE_SOURCES_JSON='[{"key":"payment-api-logs","kind":"docker_logs","ta
 
 M4 写操作同样默认关闭。新机器在 Web 明确选择“允许经确认的 Docker 单服务重启”后，安装命令才会包含本地写策略与控制平面公钥。Agent 自动为当前 Docker 服务声明 `docker_restart + stable service_key`，不上传容器 target。控制台仍需把具体服务映射标记为非关键并显式启用重启；任务还必须经过管理员确认和 Ed25519 验签。完整协议见 [M4_OPERATIONS.md](./M4_OPERATIONS.md)。
 
-升级到 `0.4.0-dev` 时需注意 Docker health 行为修正：`running (unhealthy)` 不再被误报为健康，因此可能首次触发 M2 告警；`health: starting` 作为未知状态，不触发异常也不满足 M4 健康验证。部署前应先检查现有容器的 healthcheck 状态，并确保控制平面与 Agent 均使用 NTP/chrony 同步时间。
+升级到 `v0.4.0` 时需注意 Docker health 行为修正：`running (unhealthy)` 不再被误报为健康，因此可能首次触发 M2 告警；`health: starting` 作为未知状态，不触发异常也不满足 M4 健康验证。部署前应先检查现有容器的 healthcheck 状态，并确保控制平面与 Agent 均使用 NTP/chrony 同步时间。
 
 旧 Agent 升级会保留已有 `AGENT_OPERATION_POLICY`；缺失时写入 `disabled`，不会因升级自动获得写权限。不要把 `OPERATION_SIGNING_PRIVATE_KEY_BASE64` 写入 Agent 配置或安装命令。
 
