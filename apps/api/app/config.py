@@ -39,6 +39,18 @@ class Settings(BaseSettings):
     conversation_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
     conversation_turn_stale_seconds: int = Field(default=300, ge=60, le=3600)
     conversation_max_context_bytes: int = Field(default=131072, ge=16384, le=262144)
+    conversation_repository_knowledge_enabled: bool = False
+    conversation_repository_max_context_bytes: int = Field(
+        default=24576, ge=4096, le=65536
+    )
+    conversation_repository_max_results: int = Field(default=8, ge=1, le=16)
+    conversation_repository_max_terms: int = Field(default=8, ge=1, le=16)
+    conversation_repository_max_excerpt_bytes: int = Field(
+        default=2048, ge=256, le=4096
+    )
+    conversation_repository_stale_seconds: int = Field(
+        default=86400, ge=300, le=2592000
+    )
     operation_signing_key_id: str = ""
     operation_signing_private_key_base64: str = ""
     operation_observation_max_age_seconds: int = Field(default=120, ge=30, le=600)
@@ -90,6 +102,13 @@ class Settings(BaseSettings):
             raise ValueError("diagnostic run stale threshold must exceed provider timeout")
         if self.conversation_turn_stale_seconds <= self.conversation_timeout_seconds:
             raise ValueError("conversation turn stale threshold must exceed provider timeout")
+        if (
+            self.conversation_repository_max_context_bytes
+            > self.conversation_max_context_bytes
+        ):
+            raise ValueError(
+                "conversation repository context budget must not exceed total context budget"
+            )
         if self.agent_availability_scan_interval_seconds > self.agent_offline_after_seconds:
             raise ValueError("agent availability scan interval must not exceed offline threshold")
         if bool(self.operation_signing_key_id) != bool(self.operation_signing_private_key_base64):

@@ -130,10 +130,21 @@ export type ConversationAnswer = {
 export type ConversationCitation = {
   id: string;
   source_type: string;
-  source_id: string;
+  source_id: string | null;
   source_label: string;
   source_collected_at: string;
-  href: string;
+  href: string | null;
+  repository: {
+    full_name: string;
+    path: string;
+    commit_sha: string;
+    deployment_commit_sha: string | null;
+    deployment_relation: "aligned" | "mismatch" | "unknown";
+    synchronized_at: string | null;
+    truncated: boolean;
+    stale: boolean;
+    available: boolean;
+  } | null;
 };
 export type ConversationTurn = {
   id: string;

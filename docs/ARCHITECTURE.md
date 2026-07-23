@@ -4,6 +4,7 @@
 
 Web 控制台的信息架构、运维总览和 Agent 上下文对话方向见 [WEB_UI_PLAN.md](./WEB_UI_PLAN.md)。
 M5 会话的当前设计、威胁模型和分阶段边界见 [M5_CONVERSATION.md](./M5_CONVERSATION.md)；M5.1 已提交推送并以 deterministic Provider 通过生产只读金丝雀，真实 HTTP Provider 金丝雀亦通过 2026-07-23（DeepSeek 经临时适配器；已还原 deterministic）。
+M5.2.1 事件作用域 GitHub 白名单仓库知识检索已完成本地实现、默认关闭且尚未生产部署；设计与验收见 [M5.2_REPOSITORY_KNOWLEDGE.md](./M5.2_REPOSITORY_KNOWLEDGE.md)。
 
 ## 1. 产品与部署边界
 
@@ -176,6 +177,15 @@ flowchart LR
 - 所有根查询必须显式使用管理上下文中的 `organization_id`；子资源通过当前事件连接验证。Provider 只能引用服务端本轮生成的引用清单。
 - 用户问题、历史、证据、诊断结果、操作输出和 Provider 响应均是不可信输入；上下文有统一总预算并在进入 Provider 前再次脱敏。
 - M5.1 Provider 没有工具接口；会话模块不创建或改变 Operation。未来写意图仍必须生成独立结构化计划并复用现有 M4 闭环。
+
+### M5.2 事件作用域仓库知识（本地完成）
+
+- 首版只读取控制平面已同步的 GitHub 白名单脱敏快照；会话请求不实时访问 GitHub，也不扩大 App 权限。
+- 仓库范围从当前事件的服务实例、最新部署版本和组织仓库服务端派生，用户问题不能选择其他仓库、Commit 或路径。
+- 每个来源固定标注快照 Commit 及其与已记录部署 Commit 的 `aligned/mismatch/unknown` 关系；不一致或未知内容不能支持“已部署事实”。
+- 仓库快照仍是不可信输入，服从 M5.1 严格 Provider、真实引用、二次校验和总上下文预算。
+- GitHub 同步或撤权必须能删除快照；历史会话只保留无正文引用墓碑，不能阻止撤权，也不能在撤权后继续读取正文。
+- M5.2 不包含全局仓库聊天、向量数据库、GitHub 写操作、Agent 变化或 M4 操作入口。
 
 ### M4 首批安全重启数据流
 

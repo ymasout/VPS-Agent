@@ -4,7 +4,9 @@
 
 M5 不替代 M3 的诊断事实，也不新建一条绕过 M4 的执行路径。M3 继续负责有边界的只读取证和结构化诊断；M4 继续唯一负责写操作的计划、确认、Ed25519 签名、Agent 领取、执行、验证和审计。
 
-当前实现增加独立的事件会话、轮次和关系型引用模型，三个控制平面端点、严格的确定性/HTTP JSON Provider、事件页非流式会话区以及陈旧轮次回收。实现只读取当前事件既有控制平面记录，不创建 Operation、不领取 Agent 任务、不访问 VPS，也没有 Provider 工具接口。生产金丝雀仍须另行明确授权。
+当前实现增加独立的事件会话、轮次和关系型引用模型，三个控制平面端点、严格的确定性/HTTP JSON Provider、事件页非流式会话区以及陈旧轮次回收。实现只读取当前事件既有控制平面记录，不创建 Operation、不领取 Agent 任务、不访问 VPS，也没有 Provider 工具接口。两轮生产金丝雀均已通过，生产已恢复并保持 deterministic 已知良好状态。
+
+M5.2.1 GitHub 白名单仓库知识检索已经本地完成、默认关闭且尚未生产部署，见 [M5.2_REPOSITORY_KNOWLEDGE.md](./M5.2_REPOSITORY_KNOWLEDGE.md)。
 
 ## 1. 当前审计结论
 
@@ -18,7 +20,7 @@ M5 不替代 M3 的诊断事实，也不新建一条绕过 M4 的执行路径。
 - `Operation` 已保存来源事件/诊断、状态、计划、有限结果、验证结果和审计时间线，可生成只读摘要。
 - M3 已有确定性 Provider、HTTP JSON Provider、双端脱敏和未知证据引用拒绝，可复用设计和部分基础设施。
 - Web 事件页已有诊断历史、证据展示、加载/错误状态和服务端管理令牌代理，可在同一页面增加会话区域。
-- Alembic 当前为单一 head `0009_m4_2_rollback`，适合增加独立的 M5.1 增量迁移。
+- M5.1 审计开始时 Alembic 为单一 head `0009_m4_2_rollback`；当前实现 head 已随 M5.2.1 前进至 `0011_m5_repository_citations`。
 
 M5.1 不应直接扩展现有 `DiagnosticRun` 为聊天记录。诊断任务表示一次取证与诊断生命周期；会话需要用户问题、连续历史、Provider 调用状态、上下文快照和每轮引用。把两者混在同一表会模糊状态机、保留策略和引用语义。
 
@@ -355,9 +357,9 @@ Web 会话提交与轮询请求都通过 `/console/...` 服务端代理并执行
 3. [x] **M5.1c API**：实现读取会话、提交轮次、读取轮次；幂等、活动轮次锁、后台 Provider 和受控失败。
 4. [x] **M5.1d Web**：事件页会话区、服务端代理、历史、引用、加载和错误状态。
 5. [x] **M5.1e 本地验收**：自动测试、真实 PostgreSQL 闭环、M2/M3/M4 零回归和文档同步。
-6. [ ] **M5.1f 生产金丝雀**：必须另获明确授权；只在一个既有非关键事件上使用只读会话，不改变任何 Agent 策略或 M4 写权限。
+6. [x] **M5.1f 生产金丝雀**：deterministic 与真实 HTTP/DeepSeek 两轮只读金丝雀通过，均未改变 Agent 策略或 M4 写权限；生产恢复 deterministic。
 
-GitHub 白名单关键词检索、服务过滤和 Commit 追踪属于后续 M5.2；M4 计划接入会话属于更晚的 M5.3，且必须在 M5.1 只读边界稳定后单独设计和确认。
+GitHub 白名单关键词检索、服务过滤和 Commit 追踪已由 M5.2.1 的事件作用域首片实现；M4 计划接入会话属于更晚的 M5.3，仍须单独设计和确认。
 
 ## 14. 第一个已实现的垂直切片
 
@@ -400,13 +402,13 @@ M5.1 只有同时满足以下条件才可标记本地实现完成：
 
 2026-07-23 本地验收结果：
 
-- Alembic 单一 head 为 `0010_m5_event_conversation`；模拟既有 `0009` 架构后升级、`0010 -> 0009 -> 0010` 和 `app.schema check` 均通过。
+- M5.1 完成时 Alembic 单一 head 为 `0010_m5_event_conversation`；当前 M5.2.1 本地 head 为 `0011_m5_repository_citations`，`0010 -> 0011 -> 0010 -> 0011` 和 `app.schema check` 均通过。
 - 真实 PostgreSQL 集成验证覆盖事件存在但无会话的 200 空结果、跨组织 404、复合外键隔离、单活动轮次约束、已有诊断/恶意证据进入有界脱敏上下文、引用落库和 Operation 计数前后为 0。
 - API 146 项通过、1 项 PostgreSQL 门控测试在常规无数据库运行中跳过；该门控测试在独立 PostgreSQL 中单独通过。Web 41 项、全部 Go 包、Ruff、ESLint、Compose 配置和 Next.js 生产构建通过。
 - 提交前加固补齐轮询代理同源校验、上下文优先于历史的预算顺序、HTTP Provider 超时/非 2xx/超大响应/非法 JSON 测试、启动期 Provider 配置校验和后台生命周期组织参数传递。
 - 已提交 `f53eeee` 并推送 `main`；没有修改 Go Agent 或 M4 v1/v2 协议与状态机。
 
-## 16. 后续生产金丝雀边界
+## 16. 生产金丝雀记录与后续边界
 
 deterministic 只读金丝雀已于 2026-07-23 在用户授权下通过（控制平面 `df01ec1 -> f53eeee`、迁移 `0009 -> 0010`、postflight 通过；事件 `f4ca0d89` 提问 -> 轮次 `completed`，2 事实 + 1 建议(`requires_confirmation=true`) + 2 真实引用；`operations=7`/`operation_transitions=45` 不变；日志无泄露；Fleet 未变）。真实 HTTP Provider 金丝雀亦已于 2026-07-23 通过：经临时适配器接 DeepSeek，事件 `f4ca0d89` 提问 -> 轮次 `completed`(`provider=http_json`)，DeepSeek 返回结构化答案并正确引用本轮真实 `ctx_`；控制平面 `extra="forbid"` + 引用集合校验 + 作用域二次校验 + 再脱敏全部通过；`operations=7`/`operation_transitions=45` 不变（零写副作用）；日志无正文/凭据泄露。金丝雀后已还原 deterministic 并移除临时适配器。以下边界同样适用：
 
@@ -415,5 +417,5 @@ deterministic 只读金丝雀已于 2026-07-23 在用户授权下通过（控制
 - 记录会话/轮次/引用 ID、上下文字节、裁剪、Provider 状态和数据库约束结果。
 - 金丝雀前后核对 `operations`/`operation_transitions` 无新增或状态变化。
 - 不升级 Agent、不更改 Agent evidence/operation/deploy policy、不访问 VPS。
-- 若以后验证真实 HTTP Provider，使用受信任网关和测试数据，单独核对超时、非法引用、脱敏和日志泄露。
+- 以后重新启用真实 HTTP Provider 时仍须使用受信任、生产网络可达的网关和非敏感测试数据，并重新核对超时、非法引用、脱敏和日志泄露；临时适配器不属于仓库或长期生产组件。
 - 任何写操作会话、GitHub 写入或 M4 计划生成必须另立切片、重新威胁建模并再次获得授权。

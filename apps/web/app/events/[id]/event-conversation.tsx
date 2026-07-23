@@ -7,6 +7,7 @@ import type {
   ConversationTurn,
   EventConversation,
 } from "@/lib/api";
+import { conversationCitationLabel } from "@/lib/conversation";
 
 const terminalStatuses = new Set(["completed", "failed"]);
 
@@ -22,12 +23,16 @@ function CitationLinks({
     <small className="conversation-citations">
       {ids.map((id) => {
         const citation = byId.get(id);
-        return citation ? (
+        if (!citation) {
+          return <span key={id}>引用不可用</span>;
+        }
+        const label = conversationCitationLabel(citation);
+        return citation.href ? (
           <Link href={citation.href} key={id}>
-            {citation.source_label}
+            {label}
           </Link>
         ) : (
-          <span key={id}>引用不可用</span>
+          <span key={id}>{label}</span>
         );
       })}
     </small>
@@ -194,7 +199,7 @@ export function EventConversationPanel({
     <section className="conversation-panel">
       <header>
         <div>
-          <span className="eyebrow">M5.1 · READ ONLY</span>
+          <span className="eyebrow">M5.2 · READ ONLY</span>
           <h2>事件会话</h2>
         </div>
         <p>只使用当前事件已有记录；不会访问 VPS、领取 Agent 任务或创建 Operation。</p>

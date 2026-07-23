@@ -655,13 +655,26 @@ class ConversationAnswer(BaseModel):
         return [value.strip() for value in values]
 
 
+class ConversationRepositoryCitationView(BaseModel):
+    full_name: str
+    path: str
+    commit_sha: str
+    deployment_commit_sha: str | None
+    deployment_relation: Literal["aligned", "mismatch", "unknown"]
+    synchronized_at: datetime | None
+    truncated: bool
+    stale: bool
+    available: bool
+
+
 class ConversationCitationView(BaseModel):
     id: str
     source_type: str
-    source_id: str
+    source_id: str | None
     source_label: str
     source_collected_at: datetime
-    href: str
+    href: str | None
+    repository: ConversationRepositoryCitationView | None = None
 
 
 class ConversationTurnView(BaseModel):

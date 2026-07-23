@@ -581,31 +581,50 @@ class ConversationCitation(Base):
         CheckConstraint(
             "source_type IN ("
             "'alert_event', 'diagnostic_run', 'evidence_item', "
-            "'agent_summary', 'service_instance_summary', 'operation')",
+            "'agent_summary', 'service_instance_summary', 'operation', "
+            "'repository_file')",
             name="ck_conversation_citations_source_type",
         ),
         CheckConstraint(
             "("
             "(source_type = 'alert_event' AND event_id IS NOT NULL "
             "AND diagnostic_id IS NULL AND evidence_id IS NULL AND agent_id IS NULL "
-            "AND instance_id IS NULL AND operation_id IS NULL) OR "
+            "AND instance_id IS NULL AND operation_id IS NULL "
+            "AND repository_file_id IS NULL) OR "
             "(source_type = 'diagnostic_run' AND event_id IS NULL "
             "AND diagnostic_id IS NOT NULL AND evidence_id IS NULL AND agent_id IS NULL "
-            "AND instance_id IS NULL AND operation_id IS NULL) OR "
+            "AND instance_id IS NULL AND operation_id IS NULL "
+            "AND repository_file_id IS NULL) OR "
             "(source_type = 'evidence_item' AND event_id IS NULL "
             "AND diagnostic_id IS NULL AND evidence_id IS NOT NULL AND agent_id IS NULL "
-            "AND instance_id IS NULL AND operation_id IS NULL) OR "
+            "AND instance_id IS NULL AND operation_id IS NULL "
+            "AND repository_file_id IS NULL) OR "
             "(source_type = 'agent_summary' AND event_id IS NULL "
             "AND diagnostic_id IS NULL AND evidence_id IS NULL AND agent_id IS NOT NULL "
-            "AND instance_id IS NULL AND operation_id IS NULL) OR "
+            "AND instance_id IS NULL AND operation_id IS NULL "
+            "AND repository_file_id IS NULL) OR "
             "(source_type = 'service_instance_summary' AND event_id IS NULL "
             "AND diagnostic_id IS NULL AND evidence_id IS NULL AND agent_id IS NULL "
-            "AND instance_id IS NOT NULL AND operation_id IS NULL) OR "
+            "AND instance_id IS NOT NULL AND operation_id IS NULL "
+            "AND repository_file_id IS NULL) OR "
             "(source_type = 'operation' AND event_id IS NULL "
             "AND diagnostic_id IS NULL AND evidence_id IS NULL AND agent_id IS NULL "
-            "AND instance_id IS NULL AND operation_id IS NOT NULL)"
+            "AND instance_id IS NULL AND operation_id IS NOT NULL "
+            "AND repository_file_id IS NULL) OR "
+            "(source_type = 'repository_file' AND event_id IS NULL "
+            "AND diagnostic_id IS NULL AND evidence_id IS NULL AND agent_id IS NULL "
+            "AND instance_id IS NULL AND operation_id IS NULL "
+            "AND repository_full_name IS NOT NULL AND repository_path IS NOT NULL "
+            "AND repository_commit_sha IS NOT NULL "
+            "AND repository_deployment_relation IS NOT NULL "
+            "AND repository_truncated IS NOT NULL AND repository_stale IS NOT NULL)"
             ")",
             name="ck_conversation_citations_source_target",
+        ),
+        CheckConstraint(
+            "repository_deployment_relation IS NULL OR "
+            "repository_deployment_relation IN ('aligned', 'mismatch', 'unknown')",
+            name="ck_conversation_citations_repository_relation",
         ),
         UniqueConstraint(
             "turn_id",
@@ -651,3 +670,22 @@ class ConversationCitation(Base):
     operation_id: Mapped[str | None] = mapped_column(
         ForeignKey("operations.id", ondelete="RESTRICT"), nullable=True, index=True
     )
+    repository_file_id: Mapped[str | None] = mapped_column(
+        ForeignKey("github_repository_files.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    repository_full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    repository_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    repository_commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    repository_deployment_commit_sha: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    repository_deployment_relation: Mapped[str | None] = mapped_column(
+        String(16), nullable=True
+    )
+    repository_synchronized_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    repository_truncated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    repository_stale: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
