@@ -3,7 +3,7 @@
 本文档记录 AI VPS 运维控制台当前有效的架构基线。产品愿景以根目录项目计划书为准，实际进度见 [PROJECT_STATUS.md](./PROJECT_STATUS.md)，里程碑范围见 [ROADMAP.md](./ROADMAP.md)。
 
 Web 控制台的信息架构、运维总览和 Agent 上下文对话方向见 [WEB_UI_PLAN.md](./WEB_UI_PLAN.md)。
-M5 会话的当前设计、威胁模型和分阶段边界见 [M5_CONVERSATION.md](./M5_CONVERSATION.md)；M5.1 已完成本地实现，尚未生产部署。
+M5 会话的当前设计、威胁模型和分阶段边界见 [M5_CONVERSATION.md](./M5_CONVERSATION.md)；M5.1 已提交推送并以 deterministic Provider 通过生产只读金丝雀，真实 HTTP Provider 验证待授权。
 
 ## 1. 产品与部署边界
 
@@ -169,7 +169,7 @@ flowchart LR
 - 后期非模板化命令采用临时高风险会话：绑定用户、机器、范围和过期时间，必要时二次确认并自动撤销，不向模型授予长期无限 Root 权限。
 - GitHub App 与仓库凭据只存在于控制平面。代码修改或推送通过受控分支/提交/PR 流程完成；Agent 只接收部署明确 Commit 或镜像的签名任务。
 
-### M5.1 事件只读会话（本地已实现，生产未部署）
+### M5.1 事件只读会话（生产只读金丝雀通过，deterministic）
 
 - 首个会话切片只从当前事件服务端派生已有事件、诊断、证据、Agent/服务摘要和 Operation 只读摘要，不新增 Agent 请求或 VPS 访问。
 - 会话与诊断使用独立生命周期；事件会话、原子轮次和持久引用关系避免把聊天历史混入 `DiagnosticRun`。
