@@ -1,6 +1,6 @@
 # M5 诊断与操作会话
 
-本文记录 M5 的会话体验设计、威胁模型、实现边界和分阶段验收。M5.1 已提交推送（`f53eeee`）并以 deterministic Provider 通过生产只读金丝雀（2026-07-23）；真实 HTTP Provider 验证待授权。
+本文记录 M5 的会话体验设计、威胁模型、实现边界和分阶段验收。M5.1 已提交推送（`f53eeee`）并以 deterministic Provider 通过生产只读金丝雀（2026-07-23）；真实 HTTP Provider 金丝雀亦通过 2026-07-23（DeepSeek 经临时适配器；已还原 deterministic）。
 
 M5 不替代 M3 的诊断事实，也不新建一条绕过 M4 的执行路径。M3 继续负责有边界的只读取证和结构化诊断；M4 继续唯一负责写操作的计划、确认、Ed25519 签名、Agent 领取、执行、验证和审计。
 
@@ -408,7 +408,7 @@ M5.1 只有同时满足以下条件才可标记本地实现完成：
 
 ## 16. 后续生产金丝雀边界
 
-deterministic 只读金丝雀已于 2026-07-23 在用户授权下通过（控制平面 `df01ec1 -> f53eeee`、迁移 `0009 -> 0010`、postflight 通过；事件 `f4ca0d89` 提问 -> 轮次 `completed`，2 事实 + 1 建议(`requires_confirmation=true`) + 2 真实引用；`operations=7`/`operation_transitions=45` 不变；日志无泄露；Fleet 未变）。真实 HTTP Provider 金丝雀仍需单独授权，以下边界同样适用：
+deterministic 只读金丝雀已于 2026-07-23 在用户授权下通过（控制平面 `df01ec1 -> f53eeee`、迁移 `0009 -> 0010`、postflight 通过；事件 `f4ca0d89` 提问 -> 轮次 `completed`，2 事实 + 1 建议(`requires_confirmation=true`) + 2 真实引用；`operations=7`/`operation_transitions=45` 不变；日志无泄露；Fleet 未变）。真实 HTTP Provider 金丝雀亦已于 2026-07-23 通过：经临时适配器接 DeepSeek，事件 `f4ca0d89` 提问 -> 轮次 `completed`(`provider=http_json`)，DeepSeek 返回结构化答案并正确引用本轮真实 `ctx_`；控制平面 `extra="forbid"` + 引用集合校验 + 作用域二次校验 + 再脱敏全部通过；`operations=7`/`operation_transitions=45` 不变（零写副作用）；日志无正文/凭据泄露。金丝雀后已还原 deterministic 并移除临时适配器。以下边界同样适用：
 
 - 控制平面先按 M4.1 标准流程备份、迁移、部署和 postflight。
 - 只选择一个已有、非敏感、可人工核对的事件；Provider 首次金丝雀优先 deterministic。
