@@ -1,6 +1,6 @@
 # Agent 发布、安装与升级
 
-VPS Agent 通过 GitHub Release 发布 Linux 静态二进制。当前生产版本：control-plane 自监控、两台腾讯云为 `v0.4.0`，aliyun-VPS 为 `v0.4.1`（M4.2a `plan-only` + `docker-restart`），DMIT 为 `v0.3.3`；所有机器保留原身份。aliyun-VPS 的 `m4-canary` 继续运行并承担 M4.2 测试候选；其余机器没有首轮 M4 写权限。DMIT 无需为了首轮 M4 单独升级，`v0.3.3` 与 v0.4.0 控制平面兼容。Release 支持 `amd64` 和 `arm64`，同时包含安装脚本和 `SHA256SUMS`，安装器会在替换程序前自动校验二进制。
+VPS Agent 通过 GitHub Release 发布 Linux 静态二进制。当前生产版本：control-plane 自监控、两台腾讯云为 `v0.4.0`，aliyun-VPS 为 `v0.4.2`（M4.2b/c `docker-compose-deploy` + `docker-restart`），DMIT 为 `v0.3.3`；所有机器保留原身份。aliyun-VPS 的 `m4-deploy-canary`/`m4-deploy-bad` 承担 M4.2 部署金丝雀；其余机器没有 M4 写权限。DMIT 无需为了首轮 M4 单独升级，`v0.3.3` 与 v0.4.0 控制平面兼容。Release 支持 `amd64` 和 `arm64`，同时包含安装脚本和 `SHA256SUMS`，安装器会在替换程序前自动校验二进制。
 
 ## 1. 发布新版本
 
