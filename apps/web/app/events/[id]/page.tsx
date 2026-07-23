@@ -1,20 +1,48 @@
 import Link from "next/link";
-import { getEvent, getEventDiagnostics } from "@/lib/api";
+import {
+  ControlPlaneApiError,
+  getEvent,
+  getEventConversation,
+  getEventDiagnostics,
+  type AlertEvent,
+  type EventConversation,
+} from "@/lib/api";
 import { notFound } from "next/navigation";
 import { DiagnosticTrigger } from "./diagnostic-trigger";
 import { OperationCreate } from "./operation-create";
+import { EventConversationPanel } from "./event-conversation";
 
 export const dynamic = "force-dynamic";
 
 export default async function EventPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  let event;
-  let diagnostics;
+  let event: AlertEvent | null = null;
   try {
-    [event, diagnostics] = await Promise.all([getEvent(id), getEventDiagnostics(id)]);
-  } catch {
-    notFound();
+    event = await getEvent(id);
+  } catch (reason) {
+    if (reason instanceof ControlPlaneApiError && reason.status === 404) notFound();
   }
+  if (event === null) {
+    return (
+      <main>
+        <Link className="back" href="/">← 总览</Link>
+        <div className="empty error">
+          <strong>控制平面暂时不可用</strong>
+          <span>事件是否存在尚未确认，请稍后刷新；本状态不会显示为事件不存在。</span>
+        </div>
+      </main>
+    );
+  }
+  const [diagnosticsResult, conversationResult] = await Promise.allSettled([
+    getEventDiagnostics(id),
+    getEventConversation(id),
+  ]);
+  const diagnostics = diagnosticsResult.status === "fulfilled" ? diagnosticsResult.value : [];
+  const conversation: EventConversation =
+    conversationResult.status === "fulfilled"
+      ? conversationResult.value
+      : { event_id: event.id, session_id: null, turns: [] };
+  const conversationUnavailable = conversationResult.status === "rejected";
   const active = diagnostics.some((item) => item.status === "pending" || item.status === "running");
   const machineEvent = event.source === "agent";
 
@@ -44,5 +72,9 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
       </>}
       <details className="evidence-panel"><summary>证据（{diagnostic.evidence.length}）</summary>{diagnostic.evidence.map((item) => <article id={item.id} key={item.id}><header><strong>{item.source_label}</strong><span>{item.redacted ? "已脱敏" : "未脱敏"}{item.truncated ? " · 已截断" : ""}</span></header><pre>{item.content}</pre></article>)}</details>
     </section>)}
+    <EventConversationPanel
+      initial={conversation}
+      unavailable={conversationUnavailable}
+    />
   </main>;
 }

@@ -582,3 +582,106 @@ class DiagnosticView(BaseModel):
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None
+
+
+class ConversationQuestion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client_request_id: str = Field(min_length=36, max_length=36)
+    question: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("client_request_id")
+    @classmethod
+    def validate_client_request_id(cls, value: str) -> str:
+        import uuid
+
+        try:
+            parsed = uuid.UUID(value)
+        except ValueError as error:
+            raise ValueError("client_request_id must be a UUID") from error
+        return str(parsed)
+
+    @field_validator("question")
+    @classmethod
+    def validate_question(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("question must not be blank")
+        if len(normalized.encode("utf-8")) > 8192:
+            raise ValueError("question must not exceed 8192 UTF-8 bytes")
+        return normalized
+
+
+class ConversationFact(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    statement: str = Field(min_length=1, max_length=1000)
+    citation_ids: list[str] = Field(min_length=1, max_length=16)
+
+
+class ConversationInference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    statement: str = Field(min_length=1, max_length=1000)
+    confidence: Literal["low", "medium", "high"]
+    citation_ids: list[str] = Field(min_length=1, max_length=16)
+
+
+class ConversationRecommendation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: str = Field(min_length=1, max_length=1000)
+    risk: Literal["low", "medium", "high"]
+    requires_confirmation: bool = True
+    citation_ids: list[str] = Field(min_length=1, max_length=16)
+
+
+class ConversationAnswer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = Field(min_length=1, max_length=2000)
+    facts: list[ConversationFact] = Field(default_factory=list, max_length=64)
+    inferences: list[ConversationInference] = Field(default_factory=list, max_length=64)
+    recommendations: list[ConversationRecommendation] = Field(
+        default_factory=list, max_length=64
+    )
+    missing_evidence: list[str] = Field(default_factory=list, max_length=64)
+
+    @field_validator("missing_evidence")
+    @classmethod
+    def validate_missing_evidence(cls, values: list[str]) -> list[str]:
+        if any(not value.strip() or len(value) > 1000 for value in values):
+            raise ValueError("missing evidence items must contain 1-1000 characters")
+        return [value.strip() for value in values]
+
+
+class ConversationCitationView(BaseModel):
+    id: str
+    source_type: str
+    source_id: str
+    source_label: str
+    source_collected_at: datetime
+    href: str
+
+
+class ConversationTurnView(BaseModel):
+    id: str
+    session_id: str
+    client_request_id: str
+    question: str
+    status: str
+    provider: str
+    answer: ConversationAnswer | None
+    citations: list[ConversationCitationView] = Field(default_factory=list)
+    context_manifest: dict
+    error_code: str | None
+    error_detail: str | None
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
+class EventConversationView(BaseModel):
+    event_id: str
+    session_id: str | None
+    turns: list[ConversationTurnView] = Field(default_factory=list)

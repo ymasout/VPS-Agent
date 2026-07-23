@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatBytes, getAgent, getAgents } from "./api";
+import { ControlPlaneApiError, formatBytes, getAgent, getAgents } from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -21,7 +21,10 @@ describe("control plane API client", () => {
   it("rejects non-success responses", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("missing", { status: 404 })));
 
-    await expect(getAgent("missing-agent")).rejects.toThrow("API returned 404");
+    const request = getAgent("missing-agent");
+    await expect(request).rejects.toThrow("API returned 404");
+    await expect(request).rejects.toBeInstanceOf(ControlPlaneApiError);
+    await expect(request).rejects.toMatchObject({ status: 404 });
   });
 });
 

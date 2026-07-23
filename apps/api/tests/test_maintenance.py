@@ -72,16 +72,21 @@ def test_maintenance_still_delivers_notifications_when_scan_fails(
 ) -> None:
     scan = AsyncMock(side_effect=RuntimeError("database temporarily unavailable"))
     delivery = AsyncMock()
+    conversation_recovery = AsyncMock()
     log = MagicMock()
     log.aexception = AsyncMock()
     monkeypatch.setattr(maintenance, "reconcile_offline_agents", scan)
     monkeypatch.setattr(maintenance, "deliver_pending_notifications", delivery)
+    monkeypatch.setattr(
+        maintenance, "recover_stale_conversation_turns", conversation_recovery
+    )
     monkeypatch.setattr(maintenance, "logger", log)
     settings = Settings()
 
     asyncio.run(run_maintenance_once(settings))
 
     delivery.assert_awaited_once_with(settings)
+    conversation_recovery.assert_awaited_once_with(settings, maintenance.ORGANIZATION_ID)
     log.aexception.assert_awaited_once_with("agent.availability_scan_failed")
 
 

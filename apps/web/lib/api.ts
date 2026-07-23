@@ -110,6 +110,52 @@ export type Diagnostic = {
   started_at: string | null;
   completed_at: string | null;
 };
+export type ConversationFact = { statement: string; citation_ids: string[] };
+export type ConversationInference = ConversationFact & {
+  confidence: "low" | "medium" | "high";
+};
+export type ConversationRecommendation = {
+  action: string;
+  risk: "low" | "medium" | "high";
+  requires_confirmation: boolean;
+  citation_ids: string[];
+};
+export type ConversationAnswer = {
+  summary: string;
+  facts: ConversationFact[];
+  inferences: ConversationInference[];
+  recommendations: ConversationRecommendation[];
+  missing_evidence: string[];
+};
+export type ConversationCitation = {
+  id: string;
+  source_type: string;
+  source_id: string;
+  source_label: string;
+  source_collected_at: string;
+  href: string;
+};
+export type ConversationTurn = {
+  id: string;
+  session_id: string;
+  client_request_id: string;
+  question: string;
+  status: string;
+  provider: string;
+  answer: ConversationAnswer | null;
+  citations: ConversationCitation[];
+  context_manifest: Record<string, unknown>;
+  error_code: string | null;
+  error_detail: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+};
+export type EventConversation = {
+  event_id: string;
+  session_id: string | null;
+  turns: ConversationTurn[];
+};
 export type OperationTransition = { from_status: string | null; to_status: string; actor_type: string; actor_id: string | null; reason: string | null; details: Record<string, unknown>; created_at: string };
 export type Operation = {
   id: string; instance_id: string; agent_id: string; source_event_id: string | null; source_diagnostic_id: string | null;
@@ -123,9 +169,16 @@ export type Operation = {
 
 const apiURL = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+export class ControlPlaneApiError extends Error {
+  constructor(public readonly status: number) {
+    super(`API returned ${status}`);
+    this.name = "ControlPlaneApiError";
+  }
+}
+
 async function request<T>(path: string): Promise<T> {
   const response = await fetch(`${apiURL}${path}`, { cache: "no-store" });
-  if (!response.ok) throw new Error(`API returned ${response.status}`);
+  if (!response.ok) throw new ControlPlaneApiError(response.status);
   return response.json() as Promise<T>;
 }
 
@@ -141,6 +194,8 @@ export const getEvents = () => request<AlertEvent[]>("/api/v1/events");
 export const getEvent = (id: string) => request<AlertEvent>(`/api/v1/events/${id}`);
 export const getEventDiagnostics = (id: string) =>
   request<Diagnostic[]>(`/api/v1/events/${id}/diagnostics`);
+export const getEventConversation = (id: string) =>
+  request<EventConversation>(`/api/v1/events/${id}/conversation`);
 export const getOperation = (id: string) => request<Operation>(`/api/v1/operations/${id}`);
 export function formatBytes(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "0 B";

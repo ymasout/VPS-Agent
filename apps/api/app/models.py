@@ -5,13 +5,17 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -279,6 +283,13 @@ class InstanceLogSource(Base):
 
 class AlertEvent(Base):
     __tablename__ = "alert_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            name="uq_alert_events_id_organization_id",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id: Mapped[str] = mapped_column(String(64), default="local", index=True)
@@ -482,3 +493,161 @@ class OperationTransition(Base):
     reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
     details: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ConversationSession(Base):
+    __tablename__ = "conversation_sessions"
+    __table_args__ = (
+        CheckConstraint("scope_type = 'event'", name="ck_conversation_sessions_event_scope"),
+        UniqueConstraint(
+            "organization_id",
+            "event_id",
+            name="uq_conversation_sessions_organization_event",
+        ),
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            name="uq_conversation_sessions_id_organization_id",
+        ),
+        ForeignKeyConstraint(
+            ["event_id", "organization_id"],
+            ["alert_events.id", "alert_events.organization_id"],
+            name="fk_conversation_sessions_event_organization",
+            ondelete="CASCADE",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id: Mapped[str] = mapped_column(String(64), default="local", index=True)
+    scope_type: Mapped[str] = mapped_column(String(32), default="event")
+    event_id: Mapped[str] = mapped_column(String(36), index=True)
+    created_by: Mapped[str] = mapped_column(String(128), default="local-admin")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class ConversationTurn(Base):
+    __tablename__ = "conversation_turns"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'completed', 'failed')",
+            name="ck_conversation_turns_status",
+        ),
+        UniqueConstraint(
+            "session_id",
+            "client_request_id",
+            name="uq_conversation_turns_session_request",
+        ),
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            name="uq_conversation_turns_id_organization_id",
+        ),
+        ForeignKeyConstraint(
+            ["session_id", "organization_id"],
+            ["conversation_sessions.id", "conversation_sessions.organization_id"],
+            name="fk_conversation_turns_session_organization",
+            ondelete="CASCADE",
+        ),
+        Index(
+            "uq_conversation_turns_active_session",
+            "session_id",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'running')"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id: Mapped[str] = mapped_column(String(64), default="local", index=True)
+    session_id: Mapped[str] = mapped_column(String(36), index=True)
+    client_request_id: Mapped[str] = mapped_column(String(36))
+    question: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    provider: Mapped[str] = mapped_column(String(64), default="deterministic")
+    answer: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    context_manifest: Mapped[dict] = mapped_column(JSON, default=dict)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_detail: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ConversationCitation(Base):
+    __tablename__ = "conversation_citations"
+    __table_args__ = (
+        CheckConstraint(
+            "source_type IN ("
+            "'alert_event', 'diagnostic_run', 'evidence_item', "
+            "'agent_summary', 'service_instance_summary', 'operation')",
+            name="ck_conversation_citations_source_type",
+        ),
+        CheckConstraint(
+            "("
+            "(source_type = 'alert_event' AND event_id IS NOT NULL "
+            "AND diagnostic_id IS NULL AND evidence_id IS NULL AND agent_id IS NULL "
+            "AND instance_id IS NULL AND operation_id IS NULL) OR "
+            "(source_type = 'diagnostic_run' AND event_id IS NULL "
+            "AND diagnostic_id IS NOT NULL AND evidence_id IS NULL AND agent_id IS NULL "
+            "AND instance_id IS NULL AND operation_id IS NULL) OR "
+            "(source_type = 'evidence_item' AND event_id IS NULL "
+            "AND diagnostic_id IS NULL AND evidence_id IS NOT NULL AND agent_id IS NULL "
+            "AND instance_id IS NULL AND operation_id IS NULL) OR "
+            "(source_type = 'agent_summary' AND event_id IS NULL "
+            "AND diagnostic_id IS NULL AND evidence_id IS NULL AND agent_id IS NOT NULL "
+            "AND instance_id IS NULL AND operation_id IS NULL) OR "
+            "(source_type = 'service_instance_summary' AND event_id IS NULL "
+            "AND diagnostic_id IS NULL AND evidence_id IS NULL AND agent_id IS NULL "
+            "AND instance_id IS NOT NULL AND operation_id IS NULL) OR "
+            "(source_type = 'operation' AND event_id IS NULL "
+            "AND diagnostic_id IS NULL AND evidence_id IS NULL AND agent_id IS NULL "
+            "AND instance_id IS NULL AND operation_id IS NOT NULL)"
+            ")",
+            name="ck_conversation_citations_source_target",
+        ),
+        UniqueConstraint(
+            "turn_id",
+            "section",
+            "item_index",
+            "citation_index",
+            name="uq_conversation_citations_position",
+        ),
+        ForeignKeyConstraint(
+            ["turn_id", "organization_id"],
+            ["conversation_turns.id", "conversation_turns.organization_id"],
+            name="fk_conversation_citations_turn_organization",
+            ondelete="CASCADE",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id: Mapped[str] = mapped_column(String(64), default="local", index=True)
+    turn_id: Mapped[str] = mapped_column(String(36), index=True)
+    citation_id: Mapped[str] = mapped_column(String(64))
+    section: Mapped[str] = mapped_column(String(32))
+    item_index: Mapped[int] = mapped_column(Integer)
+    citation_index: Mapped[int] = mapped_column(Integer)
+    source_type: Mapped[str] = mapped_column(String(32))
+    source_label: Mapped[str] = mapped_column(String(255))
+    snapshot_sha256: Mapped[str] = mapped_column(String(64))
+    source_collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    event_id: Mapped[str | None] = mapped_column(
+        ForeignKey("alert_events.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    diagnostic_id: Mapped[str | None] = mapped_column(
+        ForeignKey("diagnostic_runs.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    evidence_id: Mapped[str | None] = mapped_column(
+        ForeignKey("evidence_items.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    agent_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agents.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    instance_id: Mapped[str | None] = mapped_column(
+        ForeignKey("service_instances.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    operation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("operations.id", ondelete="RESTRICT"), nullable=True, index=True
+    )

@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from .alerts import evaluate_agent_availability
 from .config import Settings
+from .conversation import ORGANIZATION_ID, recover_stale_conversation_turns
 from .database import session_factory
 from .models import Agent
 from .notifications import deliver_pending_notifications
@@ -56,6 +57,10 @@ async def run_maintenance_once(settings: Settings) -> None:
         await deliver_pending_notifications(settings)
     except Exception:
         await logger.aexception("notification.pending_delivery_scan_failed")
+    try:
+        await recover_stale_conversation_turns(settings, ORGANIZATION_ID)
+    except Exception:
+        await logger.aexception("conversation.recovery_scan_failed")
 
 
 async def control_plane_maintenance_loop(settings: Settings) -> None:

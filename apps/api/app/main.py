@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from .api import router
 from .config import get_settings
+from .conversation import router as conversation_router
 from .database import engine, get_session, session_factory
 from .github import router as github_router
 from .logging import configure_logging
@@ -75,6 +76,7 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(m3_router)
 app.include_router(operations_router)
+app.include_router(conversation_router)
 app.include_router(github_router)
 app.include_router(releases_router)
 

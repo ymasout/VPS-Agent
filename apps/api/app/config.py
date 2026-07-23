@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     diagnostic_collection_timeout_seconds: int = Field(default=10, ge=1, le=15)
     diagnostic_request_claim_seconds: int = Field(default=60, ge=30, le=600)
     diagnostic_run_stale_seconds: int = Field(default=300, ge=60, le=3600)
+    conversation_provider: str = "deterministic"
+    conversation_api_url: str | None = None
+    conversation_api_key: str | None = None
+    conversation_model: str = "ops-conversation"
+    conversation_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
+    conversation_turn_stale_seconds: int = Field(default=300, ge=60, le=3600)
+    conversation_max_context_bytes: int = Field(default=131072, ge=16384, le=262144)
     operation_signing_key_id: str = ""
     operation_signing_private_key_base64: str = ""
     operation_observation_max_age_seconds: int = Field(default=120, ge=30, le=600)
@@ -73,8 +80,16 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_diagnostic_timing(self) -> "Settings":
+        if self.conversation_provider not in {"deterministic", "http_json"}:
+            raise ValueError("unsupported conversation provider")
+        if self.conversation_provider == "http_json" and not self.conversation_api_url:
+            raise ValueError(
+                "conversation API URL is required for http_json provider"
+            )
         if self.diagnostic_run_stale_seconds <= self.diagnostic_timeout_seconds:
             raise ValueError("diagnostic run stale threshold must exceed provider timeout")
+        if self.conversation_turn_stale_seconds <= self.conversation_timeout_seconds:
+            raise ValueError("conversation turn stale threshold must exceed provider timeout")
         if self.agent_availability_scan_interval_seconds > self.agent_offline_after_seconds:
             raise ValueError("agent availability scan interval must not exceed offline threshold")
         if bool(self.operation_signing_key_id) != bool(self.operation_signing_private_key_base64):
