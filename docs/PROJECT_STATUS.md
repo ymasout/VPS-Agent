@@ -7,7 +7,7 @@
 
 项目已完成工程骨架、“机器可见”和“异常可通知”里程碑。生产控制平面通过 Caddy/HTTPS 运行，Agent 使用一次性令牌注册、独立凭证认证和主动出站 HTTPS 上报；服务异常、去重、钉钉通知和恢复通知已经过生产杀手路径验证。
 
-当前共有 5 条真实 VPS 机器记录。control-plane 自监控、两台腾讯云运行 Agent `v0.4.0`，aliyun-VPS 为 `v0.4.1`（M4.2a `plan-only` + `docker-restart`），DMIT 保持 `v0.3.3`；所有机器均保留原身份。aliyun-VPS 的 `m4-canary` 继续运行并承担 M4.2 测试候选；其余机器没有首轮 M4 写权限。M1 的“至少 3 台真实或测试 VPS 稳定接入”验收线已经满足。
+当前共有 5 条真实 VPS 机器记录。control-plane 自监控、两台腾讯云运行 Agent `v0.4.0`，aliyun-VPS 为 `v0.4.2`（`docker_compose_deploy` + `docker-restart`），DMIT 保持 `v0.3.3`；所有机器均保留原身份。aliyun-VPS 的 `m4-deploy-canary`/`m4-deploy-bad` 承担 M4.2 部署金丝雀；其余机器没有 M4 写权限。M1 的”至少 3 台真实或测试 VPS 稳定接入”验收线已经满足。
 
 ## 2. M0：项目骨架
 
