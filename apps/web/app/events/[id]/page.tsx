@@ -1,10 +1,12 @@
 import Link from "next/link";
 import {
   ControlPlaneApiError,
+  getConversationOperationCandidates,
   getEvent,
   getEventConversation,
   getEventDiagnostics,
   type AlertEvent,
+  type ConversationOperationCandidate,
   type EventConversation,
 } from "@/lib/api";
 import { notFound } from "next/navigation";
@@ -33,16 +35,22 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
       </main>
     );
   }
-  const [diagnosticsResult, conversationResult] = await Promise.allSettled([
-    getEventDiagnostics(id),
-    getEventConversation(id),
-  ]);
+  const [diagnosticsResult, conversationResult, operationCandidatesResult] =
+    await Promise.allSettled([
+      getEventDiagnostics(id),
+      getEventConversation(id),
+      getConversationOperationCandidates(id),
+    ]);
   const diagnostics = diagnosticsResult.status === "fulfilled" ? diagnosticsResult.value : [];
   const conversation: EventConversation =
     conversationResult.status === "fulfilled"
       ? conversationResult.value
       : { event_id: event.id, session_id: null, turns: [] };
   const conversationUnavailable = conversationResult.status === "rejected";
+  const operationCandidate: ConversationOperationCandidate | null =
+    operationCandidatesResult.status === "fulfilled"
+      ? operationCandidatesResult.value.candidates[0] ?? null
+      : null;
   const active = diagnostics.some((item) => item.status === "pending" || item.status === "running");
   const machineEvent = event.source === "agent";
 
@@ -75,6 +83,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
     <EventConversationPanel
       initial={conversation}
       unavailable={conversationUnavailable}
+      operationCandidate={operationCandidate}
     />
   </main>;
 }

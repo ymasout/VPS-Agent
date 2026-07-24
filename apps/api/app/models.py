@@ -422,6 +422,13 @@ class DiagnosticCitation(Base):
 
 class Operation(Base):
     __tablename__ = "operations"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "conversation_request_id",
+            name="uq_operations_organization_conversation_request",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id: Mapped[str] = mapped_column(String(64), default="local", index=True)
@@ -434,6 +441,14 @@ class Operation(Base):
     )
     source_diagnostic_id: Mapped[str | None] = mapped_column(
         ForeignKey("diagnostic_runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    source_conversation_turn_id: Mapped[str | None] = mapped_column(
+        ForeignKey("conversation_turns.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    conversation_request_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True
     )
     action_type: Mapped[str] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(32), default="planned", index=True)

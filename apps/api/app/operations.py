@@ -336,6 +336,101 @@ async def run_prechecks(
     return checks, agent, managed, observed
 
 
+async def build_restart_plan(
+    session: AsyncSession,
+    instance: ServiceInstance,
+    event: AlertEvent | None,
+    diagnostic: DiagnosticRun | None,
+    settings: Settings,
+    *,
+    expires_in_seconds: int,
+    source_metadata: dict | None = None,
+) -> Operation:
+    """Build one restart plan while preserving the M4 prechecks and state ceiling."""
+
+    current_time = now_utc()
+    checks, agent, managed, observed = await run_prechecks(
+        session, instance, settings, current_time
+    )
+    source_metadata = source_metadata or {}
+    conversation_source = source_metadata.get("conversation_source")
+    plan_snapshot = {
+        "machine": {"id": agent.id, "name": agent.name, "hostname": agent.hostname},
+        "service": {
+            "id": managed.id,
+            "name": managed.name,
+            "environment": managed.environment,
+            "instance_id": instance.id,
+            "service_kind": instance.service_kind,
+            "service_key": instance.service_key,
+        },
+        "action_type": "docker_restart",
+        "risk_level": "medium",
+        "impact": "单服务短暂不可用；不修改镜像、配置、路径或仓库。",
+        "observed_state": observed.state if observed else None,
+    }
+    if conversation_source is not None:
+        plan_snapshot["conversation_source"] = conversation_source
+    operation = Operation(
+        organization_id=source_metadata.get(
+            "organization_id",
+            "local",
+        ),
+        instance_id=instance.id,
+        agent_id=agent.id,
+        source_event_id=event.id if event else None,
+        source_diagnostic_id=diagnostic.id if diagnostic else None,
+        source_conversation_turn_id=source_metadata.get("turn_id"),
+        conversation_request_id=source_metadata.get("conversation_request_id"),
+        action_type=RESTART_ACTION,
+        status="planned",
+        active_key=f"{instance.id}:write",
+        requested_by="local-admin",
+        risk_level="medium",
+        impact_summary="单个非关键 Docker 服务会短暂中断并重新启动。",
+        plan_snapshot=plan_snapshot,
+        precheck_result=checks,
+        verification_policy={
+            "kind": "fresh_service_observation",
+            "requires_healthy": True,
+            "required_state": "running",
+            "stability_seconds": settings.operation_verification_window_seconds,
+            "timeout_seconds": settings.operation_verification_timeout_seconds,
+        },
+        idempotency_key="op_" + secrets.token_urlsafe(24),
+        expires_at=current_time + timedelta(seconds=expires_in_seconds),
+    )
+    async with session.begin_nested():
+        session.add(operation)
+        await session.flush()
+        session.add(
+            OperationTransition(
+                operation_id=operation.id,
+                from_status=None,
+                to_status="planned",
+                actor_type="admin",
+                actor_id="local-admin",
+                reason=source_metadata.get("reason", "restart plan requested"),
+                details=source_metadata.get("transition_details", {"source": "web"}),
+            )
+        )
+        await transition(session, operation, "prechecking", "control_plane")
+        if checks["passed"]:
+            await transition(session, operation, "awaiting_confirmation", "control_plane")
+        else:
+            operation.error_code = "precheck_failed"
+            operation.error_detail = "one or more safety prechecks failed"
+            await transition(
+                session,
+                operation,
+                "failed",
+                "control_plane",
+                reason=operation.error_detail,
+            )
+    await session.commit()
+    return operation
+
+
 async def run_deploy_prechecks(
     session: AsyncSession,
     instance: ServiceInstance,
@@ -475,78 +570,16 @@ async def create_operation(
 ) -> OperationView:
     if payload.action_type != RESTART_ACTION:
         raise HTTPException(status_code=422, detail="unsupported operation action")
-    current_time = now_utc()
     instance, event, diagnostic = await resolve_instance(session, payload)
-    checks, agent, managed, observed = await run_prechecks(
-        session, instance, settings, current_time
-    )
-    active_key = f"{instance.id}:write"
-    operation = Operation(
-        instance_id=instance.id,
-        agent_id=agent.id,
-        source_event_id=event.id if event else None,
-        source_diagnostic_id=diagnostic.id if diagnostic else None,
-        action_type="docker_restart",
-        status="planned",
-        active_key=active_key,
-        requested_by="local-admin",
-        risk_level="medium",
-        impact_summary="单个非关键 Docker 服务会短暂中断并重新启动。",
-        plan_snapshot={
-            "machine": {"id": agent.id, "name": agent.name, "hostname": agent.hostname},
-            "service": {
-                "id": managed.id,
-                "name": managed.name,
-                "environment": managed.environment,
-                "instance_id": instance.id,
-                "service_kind": instance.service_kind,
-                "service_key": instance.service_key,
-            },
-            "action_type": "docker_restart",
-            "risk_level": "medium",
-            "impact": "单服务短暂不可用；不修改镜像、配置、路径或仓库。",
-            "observed_state": observed.state if observed else None,
-        },
-        precheck_result=checks,
-        verification_policy={
-            "kind": "fresh_service_observation",
-            "requires_healthy": True,
-            "required_state": "running",
-            "stability_seconds": settings.operation_verification_window_seconds,
-            "timeout_seconds": settings.operation_verification_timeout_seconds,
-        },
-        idempotency_key="op_" + secrets.token_urlsafe(24),
-        expires_at=current_time + timedelta(seconds=payload.expires_in_seconds),
-    )
     try:
-        async with session.begin_nested():
-            session.add(operation)
-            await session.flush()
-            session.add(
-                OperationTransition(
-                    operation_id=operation.id,
-                    from_status=None,
-                    to_status="planned",
-                    actor_type="admin",
-                    actor_id="local-admin",
-                    reason="restart plan requested",
-                    details={"source": "web"},
-                )
-            )
-            await transition(session, operation, "prechecking", "control_plane")
-            if checks["passed"]:
-                await transition(session, operation, "awaiting_confirmation", "control_plane")
-            else:
-                operation.error_code = "precheck_failed"
-                operation.error_detail = "one or more safety prechecks failed"
-                await transition(
-                    session,
-                    operation,
-                    "failed",
-                    "control_plane",
-                    reason=operation.error_detail,
-                )
-        await session.commit()
+        operation = await build_restart_plan(
+            session,
+            instance,
+            event,
+            diagnostic,
+            settings,
+            expires_in_seconds=payload.expires_in_seconds,
+        )
     except IntegrityError as error:
         await session.rollback()
         raise HTTPException(

@@ -15,6 +15,7 @@ import app.operations as operations_module
 from app.config import Settings
 from app.models import Agent, ManagedService, Operation, OperationTransition, ServiceInstance
 from app.operations import (
+    build_restart_plan,
     cancel_operation,
     claim_operation,
     complete_operation,
@@ -178,6 +179,104 @@ def test_concurrent_operation_conflict_returns_409(monkeypatch: pytest.MonkeyPat
 
     assert error.value.status_code == 409
     session.rollback.assert_awaited_once()
+
+
+def test_extracted_restart_plan_preserves_m4_snapshot_and_transition_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(timezone.utc)
+    instance = ServiceInstance(
+        id="instance-1",
+        service_id="service-1",
+        agent_id="agent-1",
+        service_kind="docker",
+        service_key="compose:demo:api:1",
+        restart_enabled=True,
+    )
+    agent = Agent(
+        id="agent-1",
+        name="agent",
+        hostname="host",
+        last_seen_at=now,
+    )
+    managed = ManagedService(
+        id="service-1",
+        name="api",
+        environment="production",
+        criticality="non_critical",
+    )
+    checks = {
+        "agent_online": True,
+        "docker_instance": True,
+        "mapping_valid": True,
+        "agent_write_capability": True,
+        "control_plane_permission": True,
+        "non_critical_service": True,
+        "observation_fresh": True,
+        "passed": True,
+    }
+
+    async def precheck(*_args: object) -> tuple[dict, Agent, ManagedService, None]:
+        return checks, agent, managed, None
+
+    class NestedTransaction:
+        async def __aenter__(self) -> None:
+            return None
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.begin_nested = MagicMock(return_value=NestedTransaction())
+    monkeypatch.setattr(operations_module, "run_prechecks", precheck)
+    monkeypatch.setattr(operations_module, "now_utc", lambda: now)
+
+    operation = asyncio.run(
+        build_restart_plan(
+            session,
+            instance,
+            None,
+            None,
+            Settings(),
+            expires_in_seconds=300,
+        )
+    )
+
+    assert operation.organization_id == "local"
+    assert operation.action_type == "docker_restart"
+    assert operation.status == "awaiting_confirmation"
+    assert operation.active_key == "instance-1:write"
+    assert operation.requested_by == "local-admin"
+    assert operation.risk_level == "medium"
+    assert operation.precheck_result == checks
+    assert operation.source_conversation_turn_id is None
+    assert operation.conversation_request_id is None
+    assert operation.plan_snapshot["service"]["instance_id"] == instance.id
+    assert "conversation_source" not in operation.plan_snapshot
+    assert operation.verification_policy == {
+        "kind": "fresh_service_observation",
+        "requires_healthy": True,
+        "required_state": "running",
+        "stability_seconds": Settings().operation_verification_window_seconds,
+        "timeout_seconds": Settings().operation_verification_timeout_seconds,
+    }
+    assert operation.expires_at == now + timedelta(seconds=300)
+    assert operation.task_signature is None
+    assert operation.task_nonce is None
+    transitions = [
+        call.args[0]
+        for call in session.add.call_args_list
+        if isinstance(call.args[0], OperationTransition)
+    ]
+    assert [(item.from_status, item.to_status) for item in transitions] == [
+        (None, "planned"),
+        ("planned", "prechecking"),
+        ("prechecking", "awaiting_confirmation"),
+    ]
+    assert transitions[0].reason == "restart plan requested"
+    assert transitions[0].details == {"source": "web"}
+    session.commit.assert_awaited_once()
 
 
 @pytest.mark.parametrize(

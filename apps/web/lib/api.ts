@@ -167,9 +167,21 @@ export type EventConversation = {
   session_id: string | null;
   turns: ConversationTurn[];
 };
+export type ConversationOperationCandidate = {
+  action_type: "docker_restart";
+  available: boolean;
+  reason_code: string | null;
+  impact_summary: string;
+  requires_plan_creation: boolean;
+  requires_confirmation: boolean;
+};
+export type ConversationOperationCandidates = {
+  event_id: string;
+  candidates: ConversationOperationCandidate[];
+};
 export type OperationTransition = { from_status: string | null; to_status: string; actor_type: string; actor_id: string | null; reason: string | null; details: Record<string, unknown>; created_at: string };
 export type Operation = {
-  id: string; instance_id: string; agent_id: string; source_event_id: string | null; source_diagnostic_id: string | null;
+  id: string; instance_id: string; agent_id: string; source_event_id: string | null; source_diagnostic_id: string | null; source_conversation_turn_id: string | null;
   action_type: string; status: string; requested_by: string; confirmed_by: string | null; risk_level: string; impact_summary: string;
   plan_snapshot: Record<string, unknown>; precheck_result: Record<string, boolean>; verification_policy: Record<string, unknown>; verification_result: Record<string, unknown> | null;
   expires_at: string; requested_at: string; confirmed_at: string | null; claimed_at: string | null; started_at: string | null;
@@ -207,6 +219,10 @@ export const getEventDiagnostics = (id: string) =>
   request<Diagnostic[]>(`/api/v1/events/${id}/diagnostics`);
 export const getEventConversation = (id: string) =>
   request<EventConversation>(`/api/v1/events/${id}/conversation`);
+export const getConversationOperationCandidates = (id: string) =>
+  request<ConversationOperationCandidates>(
+    `/api/v1/events/${id}/conversation/operation-candidates`,
+  );
 export const getOperation = (id: string) => request<Operation>(`/api/v1/operations/${id}`);
 export function formatBytes(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "0 B";

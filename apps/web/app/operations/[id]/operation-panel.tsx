@@ -47,6 +47,10 @@ export function OperationPanel({ operation }: { operation: Operation }) {
   const machine = typeof plan.machine === "object" && plan.machine ? plan.machine as Record<string, unknown> : {};
   const service = typeof plan.service === "object" && plan.service ? plan.service as Record<string, unknown> : {};
   const isDeploy = operation.action_type === "docker_compose_deploy";
+  const conversationSource =
+    typeof plan.conversation_source === "object" && plan.conversation_source
+      ? (plan.conversation_source as Record<string, unknown>)
+      : null;
   const isPlanOnly = isDeploy && plan.permanently_non_executable === true;
   const isRollback = isDeploy && Boolean(operation.rollback_of);
   const canCreateRollback = isDeploy && !isRollback && plan.plan_version === "m4.2b-executable-v1" && operation.status === "failed" && operation.started_at !== null;
@@ -67,6 +71,17 @@ export function OperationPanel({ operation }: { operation: Operation }) {
       <div className={`status ${operation.status === "succeeded" ? "" : "offline"}`}><span /> {operation.status}</div>
       <h1>{isRollback ? "显式回滚" : isDeploy ? "受控部署" : "安全重启"} · {String(service.name ?? "服务")}</h1>
       <p>{String(machine.name ?? machine.hostname ?? "机器")} · {String(service.environment ?? "环境未知")} · {operation.risk_level} risk</p>
+      {conversationSource && (
+        <p className="section-copy">
+          来源：事件会话显式交接 · 轮次{" "}
+          {String(
+            conversationSource.turn_id ??
+              operation.source_conversation_turn_id ??
+              "已删除",
+          )}
+          。创建计划不等于确认执行。
+        </p>
+      )}
       {isRollback && <p className="section-copy">独立回滚失败部署 {operation.rollback_of}；仍需本次人工确认并通过独立健康验证。</p>}
       {operation.status === "awaiting_confirmation" && <button type="button" onClick={confirm} disabled={loading}>{loading ? "确认中…" : isRollback ? "确认并签发回滚任务" : isDeploy ? "确认并签发部署任务" : "确认并签发重启任务"}</button>}
       {canCreateRollback && <button type="button" onClick={createRollback} disabled={loading}>{loading ? "创建中…" : "创建显式回滚计划"}</button>}

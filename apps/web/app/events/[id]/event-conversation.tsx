@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ConversationCitation,
+  ConversationOperationCandidate,
   ConversationTurn,
   EventConversation,
 } from "@/lib/api";
@@ -110,10 +112,13 @@ function TurnResult({ turn }: { turn: ConversationTurn }) {
 export function EventConversationPanel({
   initial,
   unavailable = false,
+  operationCandidate = null,
 }: {
   initial: EventConversation;
   unavailable?: boolean;
+  operationCandidate?: ConversationOperationCandidate | null;
 }) {
+  const router = useRouter();
   const [turns, setTurns] = useState(initial.turns);
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(
@@ -122,6 +127,9 @@ export function EventConversationPanel({
   const [error, setError] = useState(
     unavailable ? "控制平面暂时不可用，无法加载事件会话。" : "",
   );
+  const [planBusy, setPlanBusy] = useState(false);
+  const [planError, setPlanError] = useState("");
+  const planRequestId = useRef<string | null>(null);
   const byteLength = new TextEncoder().encode(question.trim()).length;
   const valid = question.trim().length > 0 && question.length <= 2000 && byteLength <= 8192;
 
@@ -195,6 +203,37 @@ export function EventConversationPanel({
     }
   }
 
+  async function prepareRestartPlan(turnId: string) {
+    if (planBusy || !operationCandidate?.available) return;
+    setPlanBusy(true);
+    setPlanError("");
+    planRequestId.current ??= crypto.randomUUID();
+    try {
+      const response = await fetch(
+        `/console/events/${initial.event_id}/conversation/turns/${turnId}/restart-plan`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            client_request_id: planRequestId.current,
+            expires_in_seconds: 300,
+          }),
+        },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail ?? "创建安全重启计划失败");
+      router.push(`/operations/${payload.id}`);
+    } catch (reason) {
+      setPlanError(reason instanceof Error ? reason.message : "创建安全重启计划失败");
+    } finally {
+      setPlanBusy(false);
+    }
+  }
+
+  const latestCompletedTurn = [...turns]
+    .reverse()
+    .find((item) => item.status === "completed" && item.answer);
+
   return (
     <section className="conversation-panel">
       <header>
@@ -202,7 +241,12 @@ export function EventConversationPanel({
           <span className="eyebrow">M5.2 · READ ONLY</span>
           <h2>事件会话</h2>
         </div>
-        <p>只使用当前事件已有记录；不会访问 VPS、领取 Agent 任务或创建 Operation。</p>
+        <p>
+          发送问题只使用当前事件已有记录，不会访问 VPS、领取 Agent 任务或创建 Operation。
+          {operationCandidate?.available
+            ? " 下方独立按钮只能准备待确认计划。"
+            : ""}
+        </p>
       </header>
 
       {turns.length === 0 && !unavailable && (
@@ -220,6 +264,24 @@ export function EventConversationPanel({
               <time>{new Date(turn.created_at).toLocaleString("zh-CN")}</time>
             </div>
             <TurnResult turn={turn} />
+            {operationCandidate?.available && latestCompletedTurn?.id === turn.id && (
+              <div className="conversation-operation-handoff">
+                <div>
+                  <strong>需要进一步处置？</strong>
+                  <span>
+                    只创建待确认计划，不会立即访问 Agent 或重启服务。创建后仍需在操作页独立确认。
+                  </span>
+                </div>
+                <button
+                  disabled={planBusy}
+                  onClick={() => void prepareRestartPlan(turn.id)}
+                  type="button"
+                >
+                  {planBusy ? "正在准备计划…" : "准备安全重启计划"}
+                </button>
+                {planError && <p className="error-text">{planError}</p>}
+              </div>
+            )}
           </article>
         ))}
       </div>

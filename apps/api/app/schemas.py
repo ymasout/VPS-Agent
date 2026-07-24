@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -361,6 +362,26 @@ class OperationPlanCreate(BaseModel):
     expires_in_seconds: int = Field(default=300, ge=60, le=900)
 
 
+class ConversationRestartPlanCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    client_request_id: UUID
+    expires_in_seconds: int = Field(default=300, ge=60, le=900)
+
+
+class ConversationOperationCandidate(BaseModel):
+    action_type: Literal["docker_restart"] = "docker_restart"
+    available: bool
+    reason_code: str | None
+    impact_summary: str
+    requires_plan_creation: bool = True
+    requires_confirmation: bool = True
+
+
+class ConversationOperationCandidatesView(BaseModel):
+    event_id: str
+    candidates: list[ConversationOperationCandidate]
+
+
 class OperationConfirm(BaseModel):
     model_config = ConfigDict(extra="forbid")
     confirmed_by: str = Field(default="local-admin", min_length=1, max_length=128)
@@ -441,6 +462,7 @@ class OperationView(BaseModel):
     agent_id: str
     source_event_id: str | None
     source_diagnostic_id: str | None
+    source_conversation_turn_id: str | None
     action_type: str
     status: str
     requested_by: str
