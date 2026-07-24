@@ -1,6 +1,6 @@
 # AI VPS 运维控制台
 
-面向独立开发者和小团队的自托管运维控制台。项目采用 Next.js Web/PWA、FastAPI 控制平面、Go VPS Agent，以及 PostgreSQL、Redis 和 Docker Compose；M0、M1、M2 已完成，M3 上下文与 AI 诊断进行中，M4 安全处置核心完成（重启、部署、回滚均生产验证）。
+面向独立开发者和小团队的自托管运维控制台。项目采用 Next.js Web/PWA、FastAPI 控制平面、Go VPS Agent，以及 PostgreSQL、Redis 和 Docker Compose；M0、M1、M2 已完成，M3 上下文与 AI 诊断进行中，M4 安全处置核心完成（重启、部署、回滚均生产验证），M5 诊断与操作会话进行中（M5.1 事件只读会话 + M5.2.1 仓库知识检索均通过生产只读金丝雀）。
 
 ## 目录
 
