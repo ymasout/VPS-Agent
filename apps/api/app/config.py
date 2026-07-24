@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     conversation_turn_stale_seconds: int = Field(default=300, ge=60, le=3600)
     conversation_max_context_bytes: int = Field(default=131072, ge=16384, le=262144)
     conversation_repository_knowledge_enabled: bool = False
+    conversation_repository_chat_enabled: bool = False
     conversation_repository_max_context_bytes: int = Field(
         default=24576, ge=4096, le=65536
     )

@@ -12,6 +12,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import BackgroundTasks, HTTPException
+from sqlalchemy.dialects import postgresql
 from starlette.requests import Request
 
 from app.config import Settings
@@ -22,6 +23,7 @@ from app.github import (
     enforce_github_webhook_rate_limit,
     github_allowed_paths,
     github_webhook,
+    list_authorized_repositories,
     load_github_private_key,
     revoke_github_installation_bindings,
     snapshot_repositories,
@@ -196,6 +198,23 @@ def test_revoking_installation_cleans_repository_file_snapshots() -> None:
     assert binding.enabled is False
     session.execute.assert_awaited_once()
     assert "DELETE FROM github_repository_files" in str(session.execute.await_args.args[0])
+
+
+def test_authorized_repository_list_filters_organization_and_installation() -> None:
+    rows = MagicMock()
+    rows.all.return_value = []
+    session = AsyncMock()
+    session.execute.return_value = rows
+
+    result = asyncio.run(
+        list_authorized_repositories(session, github_settings(), "local")
+    )
+
+    assert result == []
+    query = session.execute.call_args.args[0]
+    sql = str(query.compile(dialect=postgresql.dialect()))
+    assert "repositories.organization_id" in sql
+    assert "github_repository_bindings.installation_id" in sql
 
 
 def test_webhook_rate_limit_is_shared_through_redis_counter() -> None:

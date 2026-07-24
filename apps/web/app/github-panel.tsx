@@ -1,6 +1,7 @@
 "use client";
 
 import { GitHubRepository, GitHubStatus } from "@/lib/api";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -29,9 +30,15 @@ export function GitHubPanel({ status, repositories }: { status: GitHubStatus; re
     <p className="section-copy">只读取 App 已授权仓库的 Commit 和白名单文件：{status.allowed_file_paths.join("、") || "未配置"}。安装令牌和私钥不会下发给 VPS Agent。</p>
     <div className="github-actions">
       <button type="button" onClick={synchronize} disabled={busy}>{busy ? "同步中…" : "同步已授权仓库"}</button>
+      {status.repository_chat_enabled && repositories.length > 0 && <Link href="/repositories">进入仓库会话</Link>}
       {status.installation_url && <a href={status.installation_url} target="_blank" rel="noreferrer">管理 GitHub App 安装范围</a>}
     </div>
     {error && <p className="mapping-error" role="alert">{error}</p>}
-    {repositories.length > 0 && <div className="rows">{repositories.map((repository) => <div className="row github-row" key={repository.id}><strong>{repository.full_name}</strong><span>{repository.default_branch} · {repository.head_sha?.slice(0, 12) ?? "未读取 Commit"}</span><b className={repository.last_error ? "bad" : "good"}>{repository.last_error ? "部分失败" : "已同步"}</b></div>)}</div>}
+    {repositories.length > 0 && <div className="rows">{repositories.map((repository) => {
+      const content = <><strong>{repository.full_name}</strong><span>{repository.default_branch} · {repository.head_sha?.slice(0, 12) ?? "未读取 Commit"}</span><b className={repository.last_error ? "bad" : "good"}>{repository.last_error ? "部分失败" : "已同步"}</b></>;
+      return status.repository_chat_enabled
+        ? <Link className="row github-row" href={`/repositories/${repository.id}`} key={repository.id}>{content}</Link>
+        : <div className="row github-row" key={repository.id}>{content}</div>;
+    })}</div>}
   </section>;
 }

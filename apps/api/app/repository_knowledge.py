@@ -58,6 +58,74 @@ class RepositoryKnowledgeItem:
     synchronized_at: datetime | None
     truncated: bool
     stale: bool
+    basis: str = "deployment"
+
+
+@dataclass(frozen=True)
+class RepositorySnapshotState:
+    repository: Repository
+    binding: GitHubRepositoryBinding | None
+    files: list[GitHubRepositoryFile]
+    available: bool
+    unavailable_reason: str | None
+
+
+async def repository_snapshot_state(
+    session: AsyncSession,
+    repository_id: str,
+    organization_id: str,
+    settings: Settings,
+) -> RepositorySnapshotState | None:
+    repository = await session.scalar(
+        select(Repository).where(
+            Repository.id == repository_id,
+            Repository.organization_id == organization_id,
+        )
+    )
+    if repository is None:
+        return None
+    binding = await session.scalar(
+        select(GitHubRepositoryBinding).where(
+            GitHubRepositoryBinding.repository_id == repository.id
+        )
+    )
+    reason: str | None = None
+    if settings.github_app_installation_id is None:
+        reason = "repository_unavailable"
+    elif (
+        binding is None
+        or binding.installation_id != settings.github_app_installation_id
+        or not binding.enabled
+    ):
+        reason = "repository_unavailable"
+    elif binding.last_error is not None:
+        reason = "repository_sync_failed"
+    elif binding.head_sha is None:
+        reason = "repository_snapshot_missing"
+    files: list[GitHubRepositoryFile] = []
+    if reason is None and binding is not None and binding.head_sha is not None:
+        files = list(
+            (
+                await session.scalars(
+                    select(GitHubRepositoryFile)
+                    .where(
+                        GitHubRepositoryFile.repository_id == repository.id,
+                        GitHubRepositoryFile.commit_sha == binding.head_sha,
+                    )
+                    .order_by(GitHubRepositoryFile.path, GitHubRepositoryFile.id)
+                    .limit(MAX_REPOSITORY_FILES)
+                )
+            ).all()
+        )
+        if not files:
+            reason = "repository_snapshot_missing"
+    return RepositorySnapshotState(
+        repository=repository,
+        binding=binding,
+        files=files,
+        available=reason is None,
+        unavailable_reason=reason,
+    )
 
 
 def normalize_text(value: str) -> str:
@@ -257,6 +325,85 @@ async def repository_knowledge_for_event(
     return [item for _, item in ranked[: settings.conversation_repository_max_results]]
 
 
+async def repository_knowledge_for_repository(
+    session: AsyncSession,
+    repository_id: str,
+    organization_id: str,
+    question: str,
+    settings: Settings,
+) -> tuple[RepositorySnapshotState | None, list[RepositoryKnowledgeItem]]:
+    state = await repository_snapshot_state(
+        session,
+        repository_id,
+        organization_id,
+        settings,
+    )
+    if (
+        state is None
+        or not state.available
+        or not settings.conversation_repository_chat_enabled
+        or state.binding is None
+        or state.binding.head_sha is None
+    ):
+        return state, []
+    terms = extract_query_terms(question, settings.conversation_repository_max_terms)
+    if not terms:
+        return state, []
+    now = datetime.now(timezone.utc)
+    stale = (
+        state.binding.synchronized_at is None
+        or (now - state.binding.synchronized_at).total_seconds()
+        > settings.conversation_repository_stale_seconds
+    )
+    ranked: list[tuple[tuple[int, int, str, str], RepositoryKnowledgeItem]] = []
+    for file in state.files:
+        normalized_path = normalize_text(file.path)
+        normalized_content = normalize_text(file.content)
+        distinct_hits = sum(
+            1 for term in terms if term in normalized_path or term in normalized_content
+        )
+        if not distinct_hits:
+            continue
+        excerpt, content_hits = excerpt_for_terms(
+            file.content,
+            terms,
+            settings.conversation_repository_max_excerpt_bytes,
+        )
+        path_hits = sum(normalized_path.count(term) for term in terms)
+        if not excerpt and path_hits:
+            excerpt = f"匹配白名单路径：{file.path}"
+        if not excerpt:
+            continue
+        item = RepositoryKnowledgeItem(
+            repository_file_id=file.id,
+            repository_id=state.repository.id,
+            full_name=state.repository.full_name,
+            path=file.path,
+            repository_commit_sha=file.commit_sha,
+            deployment_commit_sha=None,
+            deployment_relation="unknown",
+            content_sha256=file.content_sha256,
+            excerpt=excerpt,
+            fetched_at=file.fetched_at,
+            synchronized_at=state.binding.synchronized_at,
+            truncated=file.truncated,
+            stale=stale,
+            basis="snapshot",
+        )
+        rank = (
+            -path_hits,
+            -(distinct_hits * 1000 + content_hits),
+            file.path,
+            file.id,
+        )
+        ranked.append((rank, item))
+    ranked.sort(key=lambda item: item[0])
+    return (
+        state,
+        [item for _, item in ranked[: settings.conversation_repository_max_results]],
+    )
+
+
 async def repository_knowledge_item_is_current(
     session: AsyncSession,
     event: AlertEvent,
@@ -267,6 +414,7 @@ async def repository_knowledge_item_is_current(
     if (
         not settings.conversation_repository_knowledge_enabled
         or settings.github_app_installation_id is None
+        or item.basis != "deployment"
         or event.source != "service"
         or not event.service_kind
         or not event.service_key
@@ -325,6 +473,50 @@ async def repository_knowledge_item_is_current(
             GitHubRepositoryBinding.enabled.is_(True),
             GitHubRepositoryBinding.last_error.is_(None),
             GitHubRepositoryBinding.head_sha == item.repository_commit_sha,
+        )
+    )
+    return current_file is not None
+
+
+async def repository_snapshot_item_is_current(
+    session: AsyncSession,
+    repository_id: str,
+    organization_id: str,
+    item: RepositoryKnowledgeItem,
+    settings: Settings,
+) -> bool:
+    if (
+        not settings.conversation_repository_chat_enabled
+        or item.basis != "snapshot"
+        or item.repository_id != repository_id
+        or item.deployment_commit_sha is not None
+        or item.deployment_relation != "unknown"
+    ):
+        return False
+    state = await repository_snapshot_state(
+        session,
+        repository_id,
+        organization_id,
+        settings,
+    )
+    if (
+        state is None
+        or not state.available
+        or state.binding is None
+        or state.binding.head_sha != item.repository_commit_sha
+    ):
+        return False
+    current_file = await session.scalar(
+        select(GitHubRepositoryFile)
+        .join(Repository, Repository.id == GitHubRepositoryFile.repository_id)
+        .where(
+            GitHubRepositoryFile.id == item.repository_file_id,
+            GitHubRepositoryFile.repository_id == repository_id,
+            GitHubRepositoryFile.commit_sha == item.repository_commit_sha,
+            GitHubRepositoryFile.path == item.path,
+            GitHubRepositoryFile.content_sha256 == item.content_sha256,
+            Repository.organization_id == organization_id,
+            Repository.full_name == item.full_name,
         )
     )
     return current_file is not None

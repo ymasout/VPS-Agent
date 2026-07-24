@@ -161,6 +161,7 @@ async def _scoped_completed_turn(
         select(ConversationSession).where(
             ConversationSession.event_id == event_id,
             ConversationSession.organization_id == organization_id,
+            ConversationSession.scope_type == "event",
         )
     )
     if conversation is None:

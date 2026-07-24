@@ -18,6 +18,7 @@ function repositoryCitation(
       commit_sha: "abc1234",
       deployment_commit_sha: "abc1234",
       deployment_relation: "aligned",
+      basis: "deployment",
       synchronized_at: "2026-07-24T00:00:00Z",
       truncated: false,
       stale: false,
@@ -51,5 +52,16 @@ describe("conversation repository citations", () => {
     expect(conversationCitationLabel(citation)).toContain("历史来源已不可用");
     expect(conversationCitationLabel(citation)).toContain("快照较旧");
     expect(conversationCitationLabel(citation)).toContain("已截断");
+  });
+
+  it("labels repository-scope citations as snapshots rather than deployments", () => {
+    const citation = repositoryCitation({
+      basis: "snapshot",
+      deployment_commit_sha: null,
+      deployment_relation: "unknown",
+    });
+
+    expect(conversationCitationLabel(citation)).toContain("仓库快照，非部署证明");
+    expect(conversationCitationLabel(citation)).not.toContain("部署 Commit 未知");
   });
 });

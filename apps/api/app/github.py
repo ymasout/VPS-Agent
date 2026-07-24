@@ -475,7 +475,13 @@ async def enforce_github_webhook_rate_limit(
         raise HTTPException(status_code=429, detail="GitHub webhook rate limit exceeded")
 
 
-async def list_authorized_repositories(session: AsyncSession) -> list[GitHubRepositoryView]:
+async def list_authorized_repositories(
+    session: AsyncSession,
+    settings: Settings,
+    organization_id: str = "local",
+) -> list[GitHubRepositoryView]:
+    if settings.github_app_installation_id is None:
+        return []
     rows = (
         await session.execute(
             select(Repository, GitHubRepositoryBinding)
@@ -483,7 +489,12 @@ async def list_authorized_repositories(session: AsyncSession) -> list[GitHubRepo
                 GitHubRepositoryBinding,
                 GitHubRepositoryBinding.repository_id == Repository.id,
             )
-            .where(GitHubRepositoryBinding.enabled.is_(True))
+            .where(
+                Repository.organization_id == organization_id,
+                GitHubRepositoryBinding.installation_id
+                == settings.github_app_installation_id,
+                GitHubRepositoryBinding.enabled.is_(True),
+            )
             .order_by(Repository.full_name)
         )
     ).all()
@@ -504,8 +515,9 @@ async def list_authorized_repositories(session: AsyncSession) -> list[GitHubRepo
 @router.get("/repositories", response_model=list[GitHubRepositoryView])
 async def get_github_repositories(
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> list[GitHubRepositoryView]:
-    return await list_authorized_repositories(session)
+    return await list_authorized_repositories(session, settings)
 
 
 @router.get("/status", response_model=GitHubStatusView)
@@ -515,8 +527,17 @@ async def get_github_status(
 ) -> GitHubStatusView:
     repository_count = await session.scalar(
         select(func.count())
-        .select_from(GitHubRepositoryBinding)
-        .where(GitHubRepositoryBinding.enabled.is_(True))
+        .select_from(Repository)
+        .join(
+            GitHubRepositoryBinding,
+            GitHubRepositoryBinding.repository_id == Repository.id,
+        )
+        .where(
+            Repository.organization_id == "local",
+            GitHubRepositoryBinding.installation_id
+            == settings.github_app_installation_id,
+            GitHubRepositoryBinding.enabled.is_(True),
+        )
     )
     slug = settings.github_app_slug if github_is_configured(settings) else None
     return GitHubStatusView(
@@ -525,6 +546,7 @@ async def get_github_status(
         installation_url=f"https://github.com/apps/{slug}/installations/new" if slug else None,
         allowed_file_paths=github_allowed_paths(settings),
         repository_count=repository_count or 0,
+        repository_chat_enabled=settings.conversation_repository_chat_enabled,
     )
 
 

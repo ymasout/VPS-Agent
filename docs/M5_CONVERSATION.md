@@ -10,6 +10,8 @@ M5.2.1 GitHub 白名单仓库知识检索已经本地完成、默认关闭且生
 
 M5.3.1 会话到 M4 安全操作计划的显式交接已完成本地实现与真实 PostgreSQL 验收；Provider 与自然语言仍无权创建或确认 Operation，生产计划级+执行级金丝雀通过 2026-07-24，见 [M5.3_OPERATION_HANDOFF.md](./M5.3_OPERATION_HANDOFF.md)。
 
+M5.2.2 已于 2026-07-25 完成本地实现与验收：单仓库上下文只读对话抽屉和只选择一个授权仓库的全局入口已落地，不做多仓库混合上下文；尚未提交或生产验证，见 [M5.2.2_REPOSITORY_CONVERSATION.md](./M5.2.2_REPOSITORY_CONVERSATION.md)。
+
 ## 1. 当前审计结论
 
 ### 1.1 兼容性判断
@@ -22,7 +24,7 @@ M5.3.1 会话到 M4 安全操作计划的显式交接已完成本地实现与真
 - `Operation` 已保存来源事件/诊断、状态、计划、有限结果、验证结果和审计时间线，可生成只读摘要。
 - M3 已有确定性 Provider、HTTP JSON Provider、双端脱敏和未知证据引用拒绝，可复用设计和部分基础设施。
 - Web 事件页已有诊断历史、证据展示、加载/错误状态和服务端管理令牌代理，可在同一页面增加会话区域。
-- M5.1 审计开始时 Alembic 为单一 head `0009_m4_2_rollback`；当前实现 head 已随 M5.2.1 前进至 `0011_m5_repository_citations`。
+- M5.1 审计开始时 Alembic 为单一 head `0009_m4_2_rollback`；当前实现 head 已随 M5.3.1 前进至 `0012_m5_operation_handoff`，M5.2.2 拟新增 `0013`。
 
 M5.1 不应直接扩展现有 `DiagnosticRun` 为聊天记录。诊断任务表示一次取证与诊断生命周期；会话需要用户问题、连续历史、Provider 调用状态、上下文快照和每轮引用。把两者混在同一表会模糊状态机、保留策略和引用语义。
 

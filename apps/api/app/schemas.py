@@ -517,6 +517,7 @@ class GitHubStatusView(BaseModel):
     installation_url: str | None
     allowed_file_paths: list[str]
     repository_count: int
+    repository_chat_enabled: bool
 
 
 class GitHubWebhookReceipt(BaseModel):
@@ -683,6 +684,7 @@ class ConversationRepositoryCitationView(BaseModel):
     commit_sha: str
     deployment_commit_sha: str | None
     deployment_relation: Literal["aligned", "mismatch", "unknown"]
+    basis: Literal["deployment", "snapshot"]
     synchronized_at: datetime | None
     truncated: bool
     stale: bool
@@ -719,4 +721,36 @@ class ConversationTurnView(BaseModel):
 class EventConversationView(BaseModel):
     event_id: str
     session_id: str | None
+    turns: list[ConversationTurnView] = Field(default_factory=list)
+
+
+class RepositoryFileMetadataView(BaseModel):
+    id: str
+    path: str
+    byte_size: int
+    content_sha256: str
+    redacted: bool
+    truncated: bool
+    fetched_at: datetime
+
+
+class RepositoryDetailView(BaseModel):
+    id: str
+    full_name: str
+    default_branch: str
+    private: bool | None
+    enabled: bool
+    head_sha: str | None
+    synchronized_at: datetime | None
+    last_error: str | None
+    conversation_available: bool
+    unavailable_reason: str | None
+    files: list[RepositoryFileMetadataView] = Field(default_factory=list)
+
+
+class RepositoryConversationView(BaseModel):
+    repository_id: str
+    session_id: str | None
+    available: bool
+    unavailable_reason: str | None
     turns: list[ConversationTurnView] = Field(default_factory=list)

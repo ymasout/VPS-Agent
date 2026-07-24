@@ -186,6 +186,13 @@ class ServiceInstance(Base):
 
 class Repository(Base):
     __tablename__ = "repositories"
+    __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            name="uq_repositories_id_organization_id",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id: Mapped[str] = mapped_column(String(64), default="local", index=True)
@@ -513,11 +520,22 @@ class OperationTransition(Base):
 class ConversationSession(Base):
     __tablename__ = "conversation_sessions"
     __table_args__ = (
-        CheckConstraint("scope_type = 'event'", name="ck_conversation_sessions_event_scope"),
+        CheckConstraint(
+            "("
+            "(scope_type = 'event' AND event_id IS NOT NULL AND repository_id IS NULL) OR "
+            "(scope_type = 'repository' AND event_id IS NULL AND repository_id IS NOT NULL)"
+            ")",
+            name="ck_conversation_sessions_scope_target",
+        ),
         UniqueConstraint(
             "organization_id",
             "event_id",
             name="uq_conversation_sessions_organization_event",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "repository_id",
+            name="uq_conversation_sessions_organization_repository",
         ),
         UniqueConstraint(
             "id",
@@ -530,12 +548,21 @@ class ConversationSession(Base):
             name="fk_conversation_sessions_event_organization",
             ondelete="CASCADE",
         ),
+        ForeignKeyConstraint(
+            ["repository_id", "organization_id"],
+            ["repositories.id", "repositories.organization_id"],
+            name="fk_conversation_sessions_repository_organization",
+            ondelete="RESTRICT",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id: Mapped[str] = mapped_column(String(64), default="local", index=True)
     scope_type: Mapped[str] = mapped_column(String(32), default="event")
-    event_id: Mapped[str] = mapped_column(String(36), index=True)
+    event_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    repository_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True
+    )
     created_by: Mapped[str] = mapped_column(String(128), default="local-admin")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -641,6 +668,18 @@ class ConversationCitation(Base):
             "repository_deployment_relation IN ('aligned', 'mismatch', 'unknown')",
             name="ck_conversation_citations_repository_relation",
         ),
+        CheckConstraint(
+            "(source_type = 'repository_file' "
+            "AND repository_basis IN ('deployment', 'snapshot')) OR "
+            "(source_type <> 'repository_file' AND repository_basis IS NULL)",
+            name="ck_conversation_citations_repository_basis",
+        ),
+        CheckConstraint(
+            "repository_basis <> 'snapshot' OR "
+            "(repository_deployment_commit_sha IS NULL "
+            "AND repository_deployment_relation = 'unknown')",
+            name="ck_conversation_citations_snapshot_semantics",
+        ),
         UniqueConstraint(
             "turn_id",
             "section",
@@ -699,6 +738,7 @@ class ConversationCitation(Base):
     repository_deployment_relation: Mapped[str | None] = mapped_column(
         String(16), nullable=True
     )
+    repository_basis: Mapped[str | None] = mapped_column(String(16), nullable=True)
     repository_synchronized_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

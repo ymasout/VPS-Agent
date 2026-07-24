@@ -51,6 +51,7 @@ export type GitHubStatus = {
   installation_url: string | null;
   allowed_file_paths: string[];
   repository_count: number;
+  repository_chat_enabled: boolean;
 };
 export type AlertEvent = {
   id: string;
@@ -140,6 +141,7 @@ export type ConversationCitation = {
     commit_sha: string;
     deployment_commit_sha: string | null;
     deployment_relation: "aligned" | "mismatch" | "unknown";
+    basis: "deployment" | "snapshot";
     synchronized_at: string | null;
     truncated: boolean;
     stale: boolean;
@@ -165,6 +167,35 @@ export type ConversationTurn = {
 export type EventConversation = {
   event_id: string;
   session_id: string | null;
+  turns: ConversationTurn[];
+};
+export type RepositoryFileMetadata = {
+  id: string;
+  path: string;
+  byte_size: number;
+  content_sha256: string;
+  redacted: boolean;
+  truncated: boolean;
+  fetched_at: string;
+};
+export type RepositoryDetail = {
+  id: string;
+  full_name: string;
+  default_branch: string;
+  private: boolean | null;
+  enabled: boolean;
+  head_sha: string | null;
+  synchronized_at: string | null;
+  last_error: string | null;
+  conversation_available: boolean;
+  unavailable_reason: string | null;
+  files: RepositoryFileMetadata[];
+};
+export type RepositoryConversation = {
+  repository_id: string;
+  session_id: string | null;
+  available: boolean;
+  unavailable_reason: string | null;
   turns: ConversationTurn[];
 };
 export type ConversationOperationCandidate = {
@@ -219,6 +250,10 @@ export const getEventDiagnostics = (id: string) =>
   request<Diagnostic[]>(`/api/v1/events/${id}/diagnostics`);
 export const getEventConversation = (id: string) =>
   request<EventConversation>(`/api/v1/events/${id}/conversation`);
+export const getRepositoryDetail = (id: string) =>
+  request<RepositoryDetail>(`/api/v1/repositories/${id}`);
+export const getRepositoryConversation = (id: string) =>
+  request<RepositoryConversation>(`/api/v1/repositories/${id}/conversation`);
 export const getConversationOperationCandidates = (id: string) =>
   request<ConversationOperationCandidates>(
     `/api/v1/events/${id}/conversation/operation-candidates`,
