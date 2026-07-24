@@ -8,7 +8,7 @@ M5 不替代 M3 的诊断事实，也不新建一条绕过 M4 的执行路径。
 
 M5.2.1 GitHub 白名单仓库知识检索已经本地完成、默认关闭且生产只读金丝雀通过 2026-07-24，见 [M5.2_REPOSITORY_KNOWLEDGE.md](./M5.2_REPOSITORY_KNOWLEDGE.md)。
 
-M5.3.1 会话到 M4 安全操作计划的显式交接已完成本地实现与真实 PostgreSQL 验收；Provider 与自然语言仍无权创建或确认 Operation，生产计划级金丝雀通过 2026-07-24，见 [M5.3_OPERATION_HANDOFF.md](./M5.3_OPERATION_HANDOFF.md)。
+M5.3.1 会话到 M4 安全操作计划的显式交接已完成本地实现与真实 PostgreSQL 验收；Provider 与自然语言仍无权创建或确认 Operation，生产计划级+执行级金丝雀通过 2026-07-24，见 [M5.3_OPERATION_HANDOFF.md](./M5.3_OPERATION_HANDOFF.md)。
 
 ## 1. 当前审计结论
 

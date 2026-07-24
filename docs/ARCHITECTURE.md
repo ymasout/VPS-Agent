@@ -5,7 +5,7 @@
 Web 控制台的信息架构、运维总览和 Agent 上下文对话方向见 [WEB_UI_PLAN.md](./WEB_UI_PLAN.md)。
 M5 会话的当前设计、威胁模型和分阶段边界见 [M5_CONVERSATION.md](./M5_CONVERSATION.md)；M5.1 已提交推送并以 deterministic Provider 通过生产只读金丝雀，真实 HTTP Provider 金丝雀亦通过 2026-07-23（DeepSeek 经临时适配器；已还原 deterministic）。
 M5.2.1 事件作用域 GitHub 白名单仓库知识检索已完成本地实现、默认关闭且生产只读金丝雀通过 2026-07-24；设计与验收见 [M5.2_REPOSITORY_KNOWLEDGE.md](./M5.2_REPOSITORY_KNOWLEDGE.md)。
-M5.3.1 会话到 M4 安全操作计划的显式交接已完成本地实现与真实 PostgreSQL 验收，生产计划级金丝雀通过 2026-07-24；边界见 [M5.3_OPERATION_HANDOFF.md](./M5.3_OPERATION_HANDOFF.md)。
+M5.3.1 会话到 M4 安全操作计划的显式交接已完成本地实现与真实 PostgreSQL 验收，生产计划级+执行级金丝雀通过 2026-07-24；边界见 [M5.3_OPERATION_HANDOFF.md](./M5.3_OPERATION_HANDOFF.md)。
 
 ## 1. 产品与部署边界
 
@@ -188,7 +188,7 @@ flowchart LR
 - GitHub 同步或撤权必须能删除快照；历史会话只保留无正文引用墓碑，不能阻止撤权，也不能在撤权后继续读取正文。
 - M5.2 不包含全局仓库聊天、向量数据库、GitHub 写操作、Agent 变化或 M4 操作入口。
 
-### M5.3 会话到操作计划交接（生产计划级金丝雀通过）
+### M5.3 会话到操作计划交接（生产计划级+执行级金丝雀通过）
 
 - Provider 和自然语言只生成不可信建议，不能调用操作工具、创建 Operation、确认计划或选择可执行字段。
 - 首片仅允许用户通过独立同源动作请求固定 `docker_restart` 计划；事件、已完成轮次、服务实例和组织作用域由服务端关联校验。
