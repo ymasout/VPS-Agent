@@ -11,6 +11,7 @@ from app.conversation import (
     ConversationContext,
     ConversationFailure,
     DeterministicConversationProvider,
+    repository_omission_counts,
     validate_answer_citations,
 )
 from app.repository_knowledge import (
@@ -138,3 +139,16 @@ def test_repository_knowledge_is_disabled_by_default_and_budget_is_bounded() -> 
             conversation_max_context_bytes=16384,
             conversation_repository_max_context_bytes=24576,
         )
+
+
+def test_repository_omission_manifest_separates_both_budget_stages() -> None:
+    assert repository_omission_counts(5, 3, 1) == {
+        "repository_omitted_items": 4,
+        "repository_subbudget_omitted_items": 2,
+        "repository_total_budget_omitted_items": 2,
+    }
+    assert repository_omission_counts(2, 2, 2) == {
+        "repository_omitted_items": 0,
+        "repository_subbudget_omitted_items": 0,
+        "repository_total_budget_omitted_items": 0,
+    }

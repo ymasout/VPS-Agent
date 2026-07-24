@@ -4,7 +4,7 @@
 
 Web 控制台的信息架构、运维总览和 Agent 上下文对话方向见 [WEB_UI_PLAN.md](./WEB_UI_PLAN.md)。
 M5 会话的当前设计、威胁模型和分阶段边界见 [M5_CONVERSATION.md](./M5_CONVERSATION.md)；M5.1 已提交推送并以 deterministic Provider 通过生产只读金丝雀，真实 HTTP Provider 金丝雀亦通过 2026-07-23（DeepSeek 经临时适配器；已还原 deterministic）。
-M5.2.1 事件作用域 GitHub 白名单仓库知识检索已完成本地实现、默认关闭且尚未生产部署；设计与验收见 [M5.2_REPOSITORY_KNOWLEDGE.md](./M5.2_REPOSITORY_KNOWLEDGE.md)。
+M5.2.1 事件作用域 GitHub 白名单仓库知识检索已完成本地实现、默认关闭且生产只读金丝雀通过 2026-07-24；设计与验收见 [M5.2_REPOSITORY_KNOWLEDGE.md](./M5.2_REPOSITORY_KNOWLEDGE.md)。
 
 ## 1. 产品与部署边界
 
@@ -178,7 +178,7 @@ flowchart LR
 - 用户问题、历史、证据、诊断结果、操作输出和 Provider 响应均是不可信输入；上下文有统一总预算并在进入 Provider 前再次脱敏。
 - M5.1 Provider 没有工具接口；会话模块不创建或改变 Operation。未来写意图仍必须生成独立结构化计划并复用现有 M4 闭环。
 
-### M5.2 事件作用域仓库知识（本地完成）
+### M5.2 事件作用域仓库知识（生产金丝雀通过）
 
 - 首版只读取控制平面已同步的 GitHub 白名单脱敏快照；会话请求不实时访问 GitHub，也不扩大 App 权限。
 - 仓库范围从当前事件的服务实例、最新部署版本和组织仓库服务端派生，用户问题不能选择其他仓库、Commit 或路径。

@@ -316,6 +316,24 @@ def fit_context_items(
     return selected, remaining, omitted
 
 
+def repository_omission_counts(
+    candidate_count: int,
+    subbudget_selected_count: int,
+    final_selected_count: int,
+) -> dict[str, int]:
+    return {
+        "repository_omitted_items": max(candidate_count - final_selected_count, 0),
+        "repository_subbudget_omitted_items": max(
+            candidate_count - subbudget_selected_count,
+            0,
+        ),
+        "repository_total_budget_omitted_items": max(
+            subbudget_selected_count - final_selected_count,
+            0,
+        ),
+    }
+
+
 async def scoped_event(
     session: AsyncSession,
     event_id: str,
@@ -570,7 +588,7 @@ async def build_context(
                 repository=item,
             )
         )
-    selected_repository, _, repository_omitted = fit_context_items(
+    selected_repository, _, _ = fit_context_items(
         repository_candidates,
         settings.conversation_repository_max_context_bytes,
     )
@@ -676,6 +694,9 @@ async def build_context(
             break
         history.append({"untrusted_turn": history_text})
         history_bytes += len(history_text.encode())
+    selected_repository_count = len(
+        [item for item in selected if item.source_type == "repository_file"]
+    )
     manifest = {
         "version": "m5.2-event-repository-context-v1",
         "event_id": event.id,
@@ -684,10 +705,12 @@ async def build_context(
         "context_bytes": sum(len(item.content.encode()) for item in selected) + history_bytes,
         "history_turns": len(history),
         "omitted_items": omitted,
-        "repository_items": len(
-            [item for item in selected if item.source_type == "repository_file"]
+        "repository_items": selected_repository_count,
+        **repository_omission_counts(
+            len(repository_candidates),
+            len(selected_repository),
+            selected_repository_count,
         ),
-        "repository_omitted_items": repository_omitted,
         "items": [
             {
                 "citation_id": item.citation_id,

@@ -6,7 +6,7 @@ M5 不替代 M3 的诊断事实，也不新建一条绕过 M4 的执行路径。
 
 当前实现增加独立的事件会话、轮次和关系型引用模型，三个控制平面端点、严格的确定性/HTTP JSON Provider、事件页非流式会话区以及陈旧轮次回收。实现只读取当前事件既有控制平面记录，不创建 Operation、不领取 Agent 任务、不访问 VPS，也没有 Provider 工具接口。两轮生产金丝雀均已通过，生产已恢复并保持 deterministic 已知良好状态。
 
-M5.2.1 GitHub 白名单仓库知识检索已经本地完成、默认关闭且尚未生产部署，见 [M5.2_REPOSITORY_KNOWLEDGE.md](./M5.2_REPOSITORY_KNOWLEDGE.md)。
+M5.2.1 GitHub 白名单仓库知识检索已经本地完成、默认关闭且生产只读金丝雀通过 2026-07-24，见 [M5.2_REPOSITORY_KNOWLEDGE.md](./M5.2_REPOSITORY_KNOWLEDGE.md)。
 
 ## 1. 当前审计结论
 
