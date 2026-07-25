@@ -723,6 +723,12 @@ class ConversationRepositoryCitationView(BaseModel):
     available: bool
 
 
+class ConversationFleetCitationView(BaseModel):
+    captured_at: datetime
+    content_sha256: str
+    available: bool
+
+
 class ConversationCitationView(BaseModel):
     id: str
     source_type: str
@@ -731,6 +737,7 @@ class ConversationCitationView(BaseModel):
     source_collected_at: datetime
     href: str | None
     repository: ConversationRepositoryCitationView | None = None
+    fleet: ConversationFleetCitationView | None = None
 
 
 class ConversationTurnView(BaseModel):
@@ -797,3 +804,133 @@ class ContextConversationView(BaseModel):
     available: bool
     unavailable_reason: str | None
     turns: list[ConversationTurnView] = Field(default_factory=list)
+
+
+class FleetConversationView(BaseModel):
+    session_id: str | None
+    available: bool
+    unavailable_reason: str | None
+    turns: list[ConversationTurnView] = Field(default_factory=list)
+
+
+class EventHistoryItemView(BaseModel):
+    id: str
+    item_type: Literal["event", "diagnostic", "conversation", "operation"]
+    status: str
+    summary: str
+    occurred_at: datetime
+    href: str
+
+
+class EventHistoryView(BaseModel):
+    event_id: str
+    items: list[EventHistoryItemView] = Field(default_factory=list, max_length=100)
+    next_cursor: str | None = None
+
+
+class SimilarEventView(BaseModel):
+    id: str
+    title: str
+    severity: str
+    status: str
+    score_band: Literal["high", "medium", "low"]
+    match_reasons: list[str] = Field(min_length=1, max_length=8)
+    same_agent: bool
+    same_service: bool
+    diagnostic_summary: str | None
+    last_observed_at: datetime
+    href: str
+
+
+class SimilarEventsView(BaseModel):
+    event_id: str
+    algorithm: Literal["m5.6-similarity-v1"] = "m5.6-similarity-v1"
+    items: list[SimilarEventView] = Field(default_factory=list, max_length=10)
+    next_cursor: str | None = None
+
+
+class ConversationFeedbackUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rating: Literal["helpful", "not_helpful"]
+    reason_code: Literal[
+        "incorrect", "missing_context", "unclear", "unsafe_suggestion", "other"
+    ] | None = None
+    comment: str | None = Field(default=None, max_length=500)
+
+    @field_validator("comment")
+    @classmethod
+    def validate_comment(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if len(normalized.encode("utf-8")) > 2048:
+            raise ValueError("comment must not exceed 2048 UTF-8 bytes")
+        return normalized
+
+
+class ConversationFeedbackView(BaseModel):
+    turn_id: str
+    rating: Literal["helpful", "not_helpful"]
+    reason_code: str | None
+    comment: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class EventReviewSourceView(BaseModel):
+    source_type: Literal["alert_event", "diagnostic_run", "conversation_turn", "operation"]
+    source_id: str
+    label: str
+    occurred_at: datetime
+    href: str
+
+
+class EventReviewView(BaseModel):
+    event_id: str
+    provisional: bool
+    summary: str
+    facts: list[str] = Field(default_factory=list, max_length=64)
+    inferences: list[str] = Field(default_factory=list, max_length=64)
+    operation_results: list[str] = Field(default_factory=list, max_length=64)
+    missing_evidence: list[str] = Field(default_factory=list, max_length=64)
+    sources: list[EventReviewSourceView] = Field(default_factory=list, max_length=100)
+
+
+class RunbookDraftCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client_request_id: str = Field(min_length=36, max_length=36)
+    recommendation_index: int = Field(ge=0, le=63)
+
+    @field_validator("client_request_id")
+    @classmethod
+    def validate_client_request_id(cls, value: str) -> str:
+        try:
+            return str(UUID(value))
+        except ValueError as error:
+            raise ValueError("client_request_id must be a UUID") from error
+
+
+class RunbookDraftCitationView(BaseModel):
+    id: str
+    source_type: str | None
+    source_label: str
+    href: str | None
+    available: bool
+
+
+class RunbookDraftView(BaseModel):
+    id: str
+    source_turn_id: str | None
+    source_event_id: str | None
+    service_id: str | None
+    title: str
+    content: dict
+    status: Literal["draft"]
+    source_available: bool
+    citations: list[RunbookDraftCitationView] = Field(default_factory=list, max_length=16)
+    created_at: datetime
+    updated_at: datetime

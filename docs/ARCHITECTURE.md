@@ -7,6 +7,7 @@ M5 会话的当前设计、威胁模型和分阶段边界见 [M5_CONVERSATION.md
 M5.2.1 事件作用域 GitHub 白名单仓库知识检索已完成本地实现、默认关闭且生产只读金丝雀通过 2026-07-24；设计与验收见 [M5.2_REPOSITORY_KNOWLEDGE.md](./M5.2_REPOSITORY_KNOWLEDGE.md)。
 M5.3.1 会话到 M4 安全重启计划的显式交接已完成生产计划级+执行级金丝雀；M5.3.2 会话到显式回滚计划交接已完成生产金丝雀；M5.3.3 操作只读时间线与可信部署页跳转已完成本地实现、真实 PostgreSQL 验收，并于 2026-07-25 通过生产金丝雀；边界见 [M5.3_OPERATION_HANDOFF.md](./M5.3_OPERATION_HANDOFF.md)。
 M5.4 单 Agent/单服务上下文只读会话已完成本地实现与真实 PostgreSQL 验收，生产金丝雀通过 2026-07-26；两个 scope 的可信根、威胁模型和验收边界见 [M5.4_CONTEXT_CONVERSATION.md](./M5.4_CONTEXT_CONVERSATION.md)。
+M5.5–M5.7 已完成本地实现与真实 PostgreSQL 验收：组织级 Fleet 只读会话使用先持久化的不可变聚合快照；事件洞察提供确定性历史/相似事件与显式反馈；Runbook 只保存不可执行草稿并对失效 citation 显示墓碑。三片共用既有 Provider、引用、脱敏和组织隔离框架，独立迁移与开关均默认关闭；Claude 审计通过，待生产金丝雀。详细边界见 [M5_COMPLETION_PLAN.md](./M5_COMPLETION_PLAN.md)。
 
 ## 1. 产品与部署边界
 

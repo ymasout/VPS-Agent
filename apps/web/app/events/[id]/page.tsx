@@ -6,15 +6,22 @@ import {
   getEvent,
   getEventConversation,
   getEventDiagnostics,
+  getEventHistory,
+  getEventReview,
+  getSimilarEvents,
   type AlertEvent,
   type ConversationOperationCandidate,
   type ConversationOperationTimeline,
   type EventConversation,
+  type EventHistory,
+  type EventReview,
+  type SimilarEvents,
 } from "@/lib/api";
 import { notFound } from "next/navigation";
 import { DiagnosticTrigger } from "./diagnostic-trigger";
 import { OperationCreate } from "./operation-create";
 import { EventConversationPanel } from "./event-conversation";
+import { EventInsights } from "./event-insights";
 
 export const dynamic = "force-dynamic";
 
@@ -42,12 +49,18 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
     conversationResult,
     operationCandidatesResult,
     operationTimelineResult,
+    historyResult,
+    similarResult,
+    reviewResult,
   ] =
     await Promise.allSettled([
       getEventDiagnostics(id),
       getEventConversation(id),
       getConversationOperationCandidates(id),
       getConversationOperationTimeline(id),
+      getEventHistory(id),
+      getSimilarEvents(id),
+      getEventReview(id),
     ]);
   const diagnostics = diagnosticsResult.status === "fulfilled" ? diagnosticsResult.value : [];
   const conversation: EventConversation =
@@ -68,6 +81,12 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
           unavailable_reason: "control_plane_unavailable",
           operations: [],
         };
+  const history: EventHistory | null =
+    historyResult.status === "fulfilled" ? historyResult.value : null;
+  const similar: SimilarEvents | null =
+    similarResult.status === "fulfilled" ? similarResult.value : null;
+  const review: EventReview | null =
+    reviewResult.status === "fulfilled" ? reviewResult.value : null;
   const deploymentHref =
     event.source === "service" && event.service_kind === "docker" && event.service_key
       ? `/servers/${encodeURIComponent(event.agent_id)}?service=${encodeURIComponent(event.service_key)}#deployment-plans`
@@ -107,6 +126,16 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
       operationCandidates={operationCandidates}
       operationTimeline={operationTimeline}
       deploymentHref={deploymentHref}
+    />
+    <EventInsights
+      history={history}
+      latestTurn={
+        [...conversation.turns]
+          .reverse()
+          .find((item) => item.status === "completed" && item.answer) ?? null
+      }
+      review={review}
+      similar={similar}
     />
   </main>;
 }

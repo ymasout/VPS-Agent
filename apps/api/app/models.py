@@ -543,7 +543,9 @@ class ConversationSession(Base):
             "(scope_type = 'agent' AND event_id IS NULL "
             "AND repository_id IS NULL AND agent_id IS NOT NULL AND service_id IS NULL) OR "
             "(scope_type = 'service' AND event_id IS NULL "
-            "AND repository_id IS NULL AND agent_id IS NULL AND service_id IS NOT NULL)"
+            "AND repository_id IS NULL AND agent_id IS NULL AND service_id IS NOT NULL) OR "
+            "(scope_type = 'fleet' AND event_id IS NULL "
+            "AND repository_id IS NULL AND agent_id IS NULL AND service_id IS NULL)"
             ")",
             name="ck_conversation_sessions_scope_target",
         ),
@@ -571,6 +573,12 @@ class ConversationSession(Base):
             "id",
             "organization_id",
             name="uq_conversation_sessions_id_organization_id",
+        ),
+        Index(
+            "uq_conversation_sessions_organization_fleet",
+            "organization_id",
+            unique=True,
+            postgresql_where=text("scope_type = 'fleet'"),
         ),
         ForeignKeyConstraint(
             ["event_id", "organization_id"],
@@ -661,6 +669,35 @@ class ConversationTurn(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class FleetConversationSnapshot(Base):
+    __tablename__ = "fleet_conversation_snapshots"
+    __table_args__ = (
+        UniqueConstraint("turn_id", name="uq_fleet_conversation_snapshots_turn"),
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            "turn_id",
+            name="uq_fleet_conversation_snapshots_identity_scope",
+        ),
+        ForeignKeyConstraint(
+            ["turn_id", "organization_id"],
+            ["conversation_turns.id", "conversation_turns.organization_id"],
+            name="fk_fleet_conversation_snapshots_turn_organization",
+            ondelete="CASCADE",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id: Mapped[str] = mapped_column(String(64), default="local", index=True)
+    turn_id: Mapped[str] = mapped_column(String(36), index=True)
+    schema_version: Mapped[str] = mapped_column(String(64))
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    counts: Mapped[dict] = mapped_column(JSON)
+    selected_source_ids: Mapped[dict] = mapped_column(JSON)
+    omitted_counts: Mapped[dict] = mapped_column(JSON)
+    content_sha256: Mapped[str] = mapped_column(String(64))
+
+
 class ConversationCitation(Base):
     __tablename__ = "conversation_citations"
     __table_args__ = (
@@ -668,7 +705,7 @@ class ConversationCitation(Base):
             "source_type IN ("
             "'alert_event', 'diagnostic_run', 'evidence_item', "
             "'agent_summary', 'service_instance_summary', 'operation', "
-            "'repository_file')",
+            "'repository_file', 'fleet_snapshot')",
             name="ck_conversation_citations_source_type",
         ),
         CheckConstraint(
@@ -676,34 +713,39 @@ class ConversationCitation(Base):
             "(source_type = 'alert_event' AND event_id IS NOT NULL "
             "AND diagnostic_id IS NULL AND evidence_id IS NULL AND agent_id IS NULL "
             "AND instance_id IS NULL AND operation_id IS NULL "
-            "AND repository_file_id IS NULL) OR "
+            "AND repository_file_id IS NULL AND fleet_snapshot_id IS NULL) OR "
             "(source_type = 'diagnostic_run' AND event_id IS NULL "
             "AND diagnostic_id IS NOT NULL AND evidence_id IS NULL AND agent_id IS NULL "
             "AND instance_id IS NULL AND operation_id IS NULL "
-            "AND repository_file_id IS NULL) OR "
+            "AND repository_file_id IS NULL AND fleet_snapshot_id IS NULL) OR "
             "(source_type = 'evidence_item' AND event_id IS NULL "
             "AND diagnostic_id IS NULL AND evidence_id IS NOT NULL AND agent_id IS NULL "
             "AND instance_id IS NULL AND operation_id IS NULL "
-            "AND repository_file_id IS NULL) OR "
+            "AND repository_file_id IS NULL AND fleet_snapshot_id IS NULL) OR "
             "(source_type = 'agent_summary' AND event_id IS NULL "
             "AND diagnostic_id IS NULL AND evidence_id IS NULL AND agent_id IS NOT NULL "
             "AND instance_id IS NULL AND operation_id IS NULL "
-            "AND repository_file_id IS NULL) OR "
+            "AND repository_file_id IS NULL AND fleet_snapshot_id IS NULL) OR "
             "(source_type = 'service_instance_summary' AND event_id IS NULL "
             "AND diagnostic_id IS NULL AND evidence_id IS NULL AND agent_id IS NULL "
             "AND instance_id IS NOT NULL AND operation_id IS NULL "
-            "AND repository_file_id IS NULL) OR "
+            "AND repository_file_id IS NULL AND fleet_snapshot_id IS NULL) OR "
             "(source_type = 'operation' AND event_id IS NULL "
             "AND diagnostic_id IS NULL AND evidence_id IS NULL AND agent_id IS NULL "
             "AND instance_id IS NULL AND operation_id IS NOT NULL "
-            "AND repository_file_id IS NULL) OR "
+            "AND repository_file_id IS NULL AND fleet_snapshot_id IS NULL) OR "
             "(source_type = 'repository_file' AND event_id IS NULL "
             "AND diagnostic_id IS NULL AND evidence_id IS NULL AND agent_id IS NULL "
             "AND instance_id IS NULL AND operation_id IS NULL "
+            "AND fleet_snapshot_id IS NULL "
             "AND repository_full_name IS NOT NULL AND repository_path IS NOT NULL "
             "AND repository_commit_sha IS NOT NULL "
             "AND repository_deployment_relation IS NOT NULL "
-            "AND repository_truncated IS NOT NULL AND repository_stale IS NOT NULL)"
+            "AND repository_truncated IS NOT NULL AND repository_stale IS NOT NULL) OR "
+            "(source_type = 'fleet_snapshot' AND event_id IS NULL "
+            "AND diagnostic_id IS NULL AND evidence_id IS NULL AND agent_id IS NULL "
+            "AND instance_id IS NULL AND operation_id IS NULL "
+            "AND repository_file_id IS NULL)"
             ")",
             name="ck_conversation_citations_source_target",
         ),
@@ -773,6 +815,11 @@ class ConversationCitation(Base):
         nullable=True,
         index=True,
     )
+    fleet_snapshot_id: Mapped[str | None] = mapped_column(
+        ForeignKey("fleet_conversation_snapshots.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     repository_full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     repository_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     repository_commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -788,3 +835,115 @@ class ConversationCitation(Base):
     )
     repository_truncated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     repository_stale: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+
+class ConversationTurnFeedback(Base):
+    __tablename__ = "conversation_turn_feedback"
+    __table_args__ = (
+        CheckConstraint(
+            "rating IN ('helpful', 'not_helpful')",
+            name="ck_conversation_turn_feedback_rating",
+        ),
+        CheckConstraint(
+            "reason_code IS NULL OR reason_code IN "
+            "('incorrect', 'missing_context', 'unclear', 'unsafe_suggestion', 'other')",
+            name="ck_conversation_turn_feedback_reason",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "turn_id",
+            "created_by",
+            name="uq_conversation_turn_feedback_actor",
+        ),
+        ForeignKeyConstraint(
+            ["turn_id", "organization_id"],
+            ["conversation_turns.id", "conversation_turns.organization_id"],
+            name="fk_conversation_turn_feedback_turn_organization",
+            ondelete="CASCADE",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id: Mapped[str] = mapped_column(String(64), default="local", index=True)
+    turn_id: Mapped[str] = mapped_column(String(36), index=True)
+    created_by: Mapped[str] = mapped_column(String(128), default="local-admin")
+    rating: Mapped[str] = mapped_column(String(32))
+    reason_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    comment: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class RunbookDraft(Base):
+    __tablename__ = "runbook_drafts"
+    __table_args__ = (
+        CheckConstraint("status = 'draft'", name="ck_runbook_drafts_status"),
+        CheckConstraint(
+            "(source_turn_id IS NULL AND source_turn_organization_id IS NULL) OR "
+            "(source_turn_id IS NOT NULL AND "
+            "source_turn_organization_id = organization_id)",
+            name="ck_runbook_drafts_turn_scope",
+        ),
+        CheckConstraint(
+            "(source_event_id IS NULL AND source_event_organization_id IS NULL) OR "
+            "(source_event_id IS NOT NULL AND "
+            "source_event_organization_id = organization_id)",
+            name="ck_runbook_drafts_event_scope",
+        ),
+        CheckConstraint(
+            "(service_id IS NULL AND service_organization_id IS NULL) OR "
+            "(service_id IS NOT NULL AND service_organization_id = organization_id)",
+            name="ck_runbook_drafts_service_scope",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "source_turn_id",
+            "client_request_id",
+            name="uq_runbook_drafts_source_request",
+        ),
+        ForeignKeyConstraint(
+            ["source_turn_id", "source_turn_organization_id"],
+            ["conversation_turns.id", "conversation_turns.organization_id"],
+            name="fk_runbook_drafts_turn_organization",
+            ondelete="SET NULL",
+        ),
+        ForeignKeyConstraint(
+            ["source_event_id", "source_event_organization_id"],
+            ["alert_events.id", "alert_events.organization_id"],
+            name="fk_runbook_drafts_event_organization",
+            ondelete="SET NULL",
+        ),
+        ForeignKeyConstraint(
+            ["service_id", "service_organization_id"],
+            ["managed_services.id", "managed_services.organization_id"],
+            name="fk_runbook_drafts_service_organization",
+            ondelete="SET NULL",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id: Mapped[str] = mapped_column(String(64), default="local", index=True)
+    source_turn_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    source_turn_organization_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    source_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    source_event_organization_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    service_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    service_organization_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    client_request_id: Mapped[str] = mapped_column(String(36))
+    title: Mapped[str] = mapped_column(String(255))
+    content: Mapped[dict] = mapped_column(JSON)
+    source_citation_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(32), default="draft")
+    created_by: Mapped[str] = mapped_column(String(128), default="local-admin")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )

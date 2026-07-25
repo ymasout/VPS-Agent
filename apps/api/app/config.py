@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     conversation_repository_knowledge_enabled: bool = False
     conversation_repository_chat_enabled: bool = False
     conversation_context_chat_enabled: bool = False
+    conversation_fleet_chat_enabled: bool = False
+    conversation_insights_enabled: bool = False
+    conversation_review_enabled: bool = False
     conversation_repository_max_context_bytes: int = Field(
         default=24576, ge=4096, le=65536
     )

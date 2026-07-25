@@ -47,6 +47,7 @@ export default async function Home() {
         <div className="eyebrow"><span /> M1 · FLEET</div>
         <h1>机器<span>可见</span></h1>
         <p>{fleet.total} 台 VPS · {fleet.online} 台在线 · organization: local</p>
+        <Link className="back" href="/agent">进入全局 Fleet 只读会话 →</Link>
       </section>
       <RegistrationPanel operationKeyId={process.env.AGENT_OPERATION_KEY_ID} operationPublicKey={process.env.AGENT_OPERATION_PUBLIC_KEY_BASE64} />
       {githubStatus?.configured && <GitHubPanel status={githubStatus} repositories={repositories} />}

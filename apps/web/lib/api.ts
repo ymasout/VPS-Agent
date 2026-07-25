@@ -147,6 +147,11 @@ export type ConversationCitation = {
     stale: boolean;
     available: boolean;
   } | null;
+  fleet?: {
+    captured_at: string;
+    content_sha256: string;
+    available: boolean;
+  } | null;
 };
 export type ConversationTurn = {
   id: string;
@@ -199,7 +204,7 @@ export type RepositoryConversation = {
   turns: ConversationTurn[];
 };
 export type ContextConversation = {
-  scope_type: "agent" | "service";
+  scope_type: "agent" | "service" | "fleet";
   target_id: string;
   parent_agent_id: string;
   title: string;
@@ -207,6 +212,83 @@ export type ContextConversation = {
   available: boolean;
   unavailable_reason: string | null;
   turns: ConversationTurn[];
+};
+export type FleetConversation = {
+  session_id: string | null;
+  available: boolean;
+  unavailable_reason: string | null;
+  turns: ConversationTurn[];
+};
+export type EventHistoryItem = {
+  id: string;
+  item_type: "event" | "diagnostic" | "conversation" | "operation";
+  status: string;
+  summary: string;
+  occurred_at: string;
+  href: string;
+};
+export type EventHistory = { event_id: string; items: EventHistoryItem[]; next_cursor?: string | null };
+export type SimilarEvent = {
+  id: string;
+  title: string;
+  severity: string;
+  status: string;
+  score_band: "high" | "medium" | "low";
+  match_reasons: string[];
+  same_agent: boolean;
+  same_service: boolean;
+  diagnostic_summary: string | null;
+  last_observed_at: string;
+  href: string;
+};
+export type SimilarEvents = {
+  event_id: string;
+  algorithm: "m5.6-similarity-v1";
+  items: SimilarEvent[];
+  next_cursor?: string | null;
+};
+export type EventReview = {
+  event_id: string;
+  provisional: boolean;
+  summary: string;
+  facts: string[];
+  inferences: string[];
+  operation_results: string[];
+  missing_evidence: string[];
+  sources: Array<{
+    source_type: string;
+    source_id: string;
+    label: string;
+    occurred_at: string;
+    href: string;
+  }>;
+};
+export type RunbookDraft = {
+  id: string;
+  source_turn_id: string | null;
+  source_event_id: string | null;
+  service_id: string | null;
+  title: string;
+  content: {
+    schema_version?: string;
+    objective?: string;
+    prerequisites?: string[];
+    display_steps?: string[];
+    risk?: string;
+    requires_confirmation?: boolean;
+    executable?: boolean;
+  };
+  status: "draft";
+  source_available: boolean;
+  citations: Array<{
+    id: string;
+    source_type: string | null;
+    source_label: string;
+    href: string | null;
+    available: boolean;
+  }>;
+  created_at: string;
+  updated_at: string;
 };
 export type ConversationOperationCandidate = {
   action_type: "docker_restart" | "docker_compose_rollback";
@@ -293,6 +375,16 @@ export const getAgentConversation = (id: string) =>
   request<ContextConversation>(`/api/v1/agents/${id}/conversation`);
 export const getServiceConversation = (id: string) =>
   request<ContextConversation>(`/api/v1/service-instances/${id}/conversation`);
+export const getFleetConversation = () =>
+  request<FleetConversation>("/api/v1/fleet/conversation");
+export const getEventHistory = (id: string) =>
+  request<EventHistory>(`/api/v1/events/${id}/history`);
+export const getSimilarEvents = (id: string) =>
+  request<SimilarEvents>(`/api/v1/events/${id}/similar-events`);
+export const getEventReview = (id: string) =>
+  request<EventReview>(`/api/v1/events/${id}/review`);
+export const getRunbookDraft = (id: string) =>
+  request<RunbookDraft>(`/api/v1/runbook-drafts/${id}`);
 export const getConversationOperationCandidates = (id: string) =>
   request<ConversationOperationCandidates>(
     `/api/v1/events/${id}/conversation/operation-candidates`,

@@ -45,6 +45,7 @@ from .schemas import (
     ContextConversationView,
     ConversationAnswer,
     ConversationCitationView,
+    ConversationFleetCitationView,
     ConversationQuestion,
     ConversationRepositoryCitationView,
     ConversationTurnView,
@@ -133,6 +134,7 @@ class DeterministicConversationProvider:
             "agent": "当前 Agent",
             "service": "当前服务",
             "repository": "当前仓库快照",
+            "fleet": "当前组织 Fleet",
         }.get(scope_type, "当前事件")
         return {
             "summary": (
@@ -191,7 +193,8 @@ class HTTPConversationProvider:
                 "的仓库摘录；repository_basis=deployment 且 deployment_relation 不是 "
                 "aligned 时不得用于 facts，也不得声称该 HEAD 已部署；"
                 "repository_basis=snapshot 时可以支持仓库快照事实，但不得支持生产部署"
-                "或运行状态事实。"
+                "或运行状态事实。fleet_snapshot 是服务端持久化的只读时间点聚合；"
+                "聚合数字只能引用它，具体资源事实仍须引用对应原子记录。"
             ),
             "untrusted_question": context.question,
             "untrusted_history": context.history,
@@ -1756,6 +1759,7 @@ def citation_target(
         "instance_id": None,
         "operation_id": None,
         "repository_file_id": None,
+        "fleet_snapshot_id": None,
         "repository_full_name": None,
         "repository_path": None,
         "repository_commit_sha": None,
@@ -1774,6 +1778,7 @@ def citation_target(
         "service_instance_summary": "instance_id",
         "operation": "operation_id",
         "repository_file": "repository_file_id",
+        "fleet_snapshot": "fleet_snapshot_id",
     }[source_type]
     targets[column] = target_id
     if source_type == "repository_file":
@@ -1816,6 +1821,8 @@ def repository_href(citation: ConversationCitation) -> str | None:
 
 
 def citation_href(citation: ConversationCitation, event_id: str | None) -> str | None:
+    if citation.source_type == "fleet_snapshot":
+        return "/agent" if citation.fleet_snapshot_id is not None else None
     if citation.source_type == "repository_file":
         return repository_href(citation)
     if citation.operation_id:
@@ -1838,10 +1845,11 @@ def citation_source_id(citation: ConversationCitation) -> str | None:
         citation.instance_id,
         citation.operation_id,
         citation.repository_file_id,
+        citation.fleet_snapshot_id,
     ):
         if value:
             return value
-    if citation.source_type == "repository_file":
+    if citation.source_type in {"repository_file", "fleet_snapshot"}:
         return None
     raise ValueError("conversation citation has no source")
 
@@ -1900,6 +1908,15 @@ async def turn_view(
                         available=item.repository_file_id is not None,
                     )
                     if item.source_type == "repository_file"
+                    else None
+                ),
+                fleet=(
+                    ConversationFleetCitationView(
+                        captured_at=item.source_collected_at,
+                        content_sha256=item.snapshot_sha256,
+                        available=item.fleet_snapshot_id is not None,
+                    )
+                    if item.source_type == "fleet_snapshot"
                     else None
                 ),
             )
@@ -1998,6 +2015,10 @@ async def run_conversation_turn(
                     conversation.service_id,
                     settings,
                 )
+            elif conversation.scope_type == "fleet":
+                from .conversation_completion import build_fleet_context
+
+                context = await build_fleet_context(session, turn, settings)
             else:
                 raise ConversationFailure(
                     "context_assembly_failed",
@@ -2075,6 +2096,15 @@ async def run_conversation_turn(
                     session,
                     "service",
                     conversation.service_id,
+                    turn.organization_id,
+                    context.items,
+                )
+            elif conversation.scope_type == "fleet":
+                from .conversation_completion import validate_fleet_context
+
+                await validate_fleet_context(
+                    session,
+                    turn,
                     turn.organization_id,
                     context.items,
                 )
@@ -2833,4 +2863,6 @@ async def get_conversation_turn(
             pass
         else:
             return await turn_view(session, turn, None)
+    if scope_type == "fleet":
+        return await turn_view(session, turn, None)
     raise HTTPException(status_code=404, detail="conversation turn not found")

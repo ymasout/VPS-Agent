@@ -27,7 +27,12 @@ export function ContextConversationPanel({
   const valid =
     question.trim().length > 0 && question.length <= 2000 && bytes <= 8192;
   const writable = initial.available && !unavailable;
-  const scopeLabel = initial.scope_type === "agent" ? "Agent" : "服务";
+  const scopeLabel =
+    initial.scope_type === "agent"
+      ? "Agent"
+      : initial.scope_type === "service"
+        ? "服务"
+        : "Fleet";
 
   const replaceTurn = useCallback((updated: ConversationTurn) => {
     setTurns((current) =>
@@ -150,7 +155,9 @@ export function ContextConversationPanel({
           placeholder={
             initial.scope_type === "agent"
               ? "例如：这台机器当前有哪些需要关注的异常？"
-              : "例如：这个服务最近的异常和诊断结论是什么？"
+              : initial.scope_type === "service"
+                ? "例如：这个服务最近的异常和诊断结论是什么？"
+                : "例如：当前 Fleet 中最需要优先关注哪些异常？"
           }
           rows={4}
           value={question}
