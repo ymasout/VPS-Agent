@@ -247,7 +247,7 @@ M5.3.1 已完成本地实现和生产闭环：`0012` 会话来源/请求幂等�
 
 M5.3.2 已完成本地实现与验收：候选 GET 增加固定 rollback 候选，严格 rollback-plan POST 从当前事件派生实例和时间重叠窗口唯一解析原始失败部署，现有 M4.2c 入口与会话入口共同调用唯一 `build_rollback_plan`。请求不接受失败部署 ID、digest、实例或确认字段；创建结果停在 `awaiting_confirmation`，重启/回滚继续由同一 `active_key` 互斥。无需新迁移或 Agent 协议。API 176 项、Web 54 项、Go 全包、Ruff/ESLint/build/Compose 通过；真实 PostgreSQL 16 完成空库升级、`0013 -> 0012 -> 0013`、两次 schema check 和五项 M5 门控。生产金丝雀已于 2026-07-25 通过。
 
-M5.3.3 已完成本地实现与验收：新增独立默认关闭的事件 Operation 只读时间线，只投影有限状态转换和白名单验证状态，不返回计划、digest、输出、签名、nonce 或 transition details；事件页可跳转既有操作详情及当前 Agent 的 M4.2 部署候选区，但不会创建会话部署端点或携带任何可执行参数。无需迁移或 Agent 协议。API 179 项、Web 57 项、Go/Ruff/ESLint/build/开发与生产 Compose 通过；真实 PostgreSQL 16 完成迁移往返、两次 schema check 和六项 M5 门控。Claude 审计通过，待生产金丝雀。
+M5.3.3 已完成本地实现与验收：新增独立默认关闭的事件 Operation 只读时间线，只投影有限状态转换和白名单验证状态，不返回计划、digest、输出、签名、nonce 或 transition details；事件页可跳转既有操作详情及当前 Agent 的 M4.2 部署候选区，但不会创建会话部署端点或携带任何可执行参数。无需迁移或 Agent 协议。API 179 项、Web 57 项、Go/Ruff/ESLint/build/开发与生产 Compose 通过；真实 PostgreSQL 16 完成迁移往返、两次 schema check 和六项 M5 门控。生产金丝雀通过 2026-07-25。
 
 M5.2.2 于 2026-07-25 进入设计阶段。第一垂直切片冻结为**单仓库上下文对话抽屉**：只读取一个当前组织已授权仓库的当前脱敏快照，复用 M5.1 的轮次、Provider、结构化回答和真实引用框架，不访问 VPS、不创建 Operation、不触发 GitHub 同步或写操作。全局仓库入口只负责从服务端返回的授权仓库中明确选择一个仓库并进入同一会话；真正的多仓库混合上下文后置。详细设计见 [M5.2.2_REPOSITORY_CONVERSATION.md](./M5.2.2_REPOSITORY_CONVERSATION.md)。
 
