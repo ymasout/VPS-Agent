@@ -47,10 +47,10 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
       ? conversationResult.value
       : { event_id: event.id, session_id: null, turns: [] };
   const conversationUnavailable = conversationResult.status === "rejected";
-  const operationCandidate: ConversationOperationCandidate | null =
+  const operationCandidates: ConversationOperationCandidate[] =
     operationCandidatesResult.status === "fulfilled"
-      ? operationCandidatesResult.value.candidates[0] ?? null
-      : null;
+      ? operationCandidatesResult.value.candidates
+      : [];
   const active = diagnostics.some((item) => item.status === "pending" || item.status === "running");
   const machineEvent = event.source === "agent";
 
@@ -83,7 +83,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
     <EventConversationPanel
       initial={conversation}
       unavailable={conversationUnavailable}
-      operationCandidate={operationCandidate}
+      operationCandidates={operationCandidates}
     />
   </main>;
 }

@@ -368,8 +368,12 @@ class ConversationRestartPlanCreate(BaseModel):
     expires_in_seconds: int = Field(default=300, ge=60, le=900)
 
 
+class ConversationRollbackPlanCreate(ConversationRestartPlanCreate):
+    pass
+
+
 class ConversationOperationCandidate(BaseModel):
-    action_type: Literal["docker_restart"] = "docker_restart"
+    action_type: Literal["docker_restart", "docker_compose_rollback"]
     available: bool
     reason_code: str | None
     impact_summary: str

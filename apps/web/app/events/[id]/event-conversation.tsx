@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ConversationOperationCandidate,
   ConversationTurn,
@@ -14,11 +14,11 @@ const terminalStatuses = new Set(["completed", "failed"]);
 export function EventConversationPanel({
   initial,
   unavailable = false,
-  operationCandidate = null,
+  operationCandidates = [],
 }: {
   initial: EventConversation;
   unavailable?: boolean;
-  operationCandidate?: ConversationOperationCandidate | null;
+  operationCandidates?: ConversationOperationCandidate[];
 }) {
   const router = useRouter();
   const [turns, setTurns] = useState(initial.turns);
@@ -29,9 +29,9 @@ export function EventConversationPanel({
   const [error, setError] = useState(
     unavailable ? "控制平面暂时不可用，无法加载事件会话。" : "",
   );
-  const [planBusy, setPlanBusy] = useState(false);
+  const [planBusy, setPlanBusy] = useState<string | null>(null);
   const [planError, setPlanError] = useState("");
-  const planRequestId = useRef<string | null>(null);
+  const planRequestIds = useRef<Record<string, string>>({});
   const byteLength = new TextEncoder().encode(question.trim()).length;
   const valid = question.trim().length > 0 && question.length <= 2000 && byteLength <= 8192;
 
@@ -105,36 +105,49 @@ export function EventConversationPanel({
     }
   }
 
-  async function prepareRestartPlan(turnId: string) {
-    if (planBusy || !operationCandidate?.available) return;
-    setPlanBusy(true);
+  async function preparePlan(
+    turnId: string,
+    actionType: ConversationOperationCandidate["action_type"],
+  ) {
+    const candidate = operationCandidates.find((item) => item.action_type === actionType);
+    if (planBusy || !candidate?.available) return;
+    setPlanBusy(actionType);
     setPlanError("");
-    planRequestId.current ??= crypto.randomUUID();
+    planRequestIds.current[actionType] ??= crypto.randomUUID();
+    const path = actionType === "docker_restart" ? "restart-plan" : "rollback-plan";
+    const errorLabel = actionType === "docker_restart" ? "安全重启" : "显式回滚";
     try {
       const response = await fetch(
-        `/console/events/${initial.event_id}/conversation/turns/${turnId}/restart-plan`,
+        `/console/events/${initial.event_id}/conversation/turns/${turnId}/${path}`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            client_request_id: planRequestId.current,
+            client_request_id: planRequestIds.current[actionType],
             expires_in_seconds: 300,
           }),
         },
       );
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.detail ?? "创建安全重启计划失败");
+      if (!response.ok) throw new Error(payload.detail ?? `创建${errorLabel}计划失败`);
       router.push(`/operations/${payload.id}`);
     } catch (reason) {
-      setPlanError(reason instanceof Error ? reason.message : "创建安全重启计划失败");
+      setPlanError(reason instanceof Error ? reason.message : `创建${errorLabel}计划失败`);
     } finally {
-      setPlanBusy(false);
+      setPlanBusy(null);
     }
   }
 
   const latestCompletedTurn = [...turns]
     .reverse()
     .find((item) => item.status === "completed" && item.answer);
+  const restartCandidate = operationCandidates.find(
+    (item) => item.action_type === "docker_restart",
+  );
+  const rollbackCandidate = operationCandidates.find(
+    (item) => item.action_type === "docker_compose_rollback",
+  );
+  const hasOperationCandidate = operationCandidates.some((item) => item.available);
 
   return (
     <section className="conversation-panel">
@@ -145,7 +158,7 @@ export function EventConversationPanel({
         </div>
         <p>
           发送问题只使用当前事件已有记录，不会访问 VPS、领取 Agent 任务或创建 Operation。
-          {operationCandidate?.available
+          {hasOperationCandidate
             ? " 下方独立按钮只能准备待确认计划。"
             : ""}
         </p>
@@ -169,21 +182,39 @@ export function EventConversationPanel({
               pendingTitle="正在整理事件上下文"
               turn={turn}
             />
-            {operationCandidate?.available && latestCompletedTurn?.id === turn.id && (
+            {hasOperationCandidate && latestCompletedTurn?.id === turn.id && (
               <div className="conversation-operation-handoff">
                 <div>
                   <strong>需要进一步处置？</strong>
                   <span>
-                    只创建待确认计划，不会立即访问 Agent 或重启服务。创建后仍需在操作页独立确认。
+                    只创建待确认计划，不会立即访问 Agent 或操作服务。创建后仍需在操作页独立确认。
                   </span>
                 </div>
-                <button
-                  disabled={planBusy}
-                  onClick={() => void prepareRestartPlan(turn.id)}
-                  type="button"
-                >
-                  {planBusy ? "正在准备计划…" : "准备安全重启计划"}
-                </button>
+                {restartCandidate?.available && (
+                  <button
+                    disabled={planBusy !== null}
+                    onClick={() => void preparePlan(turn.id, "docker_restart")}
+                    type="button"
+                  >
+                    {planBusy === "docker_restart" ? "正在准备计划…" : "准备安全重启计划"}
+                  </button>
+                )}
+                {rollbackCandidate?.available && (
+                  <>
+                    <span>
+                      回滚来源和目标镜像由服务端从当前事件关联的失败部署记录派生，不读取会话文本。
+                    </span>
+                    <button
+                      disabled={planBusy !== null}
+                      onClick={() => void preparePlan(turn.id, "docker_compose_rollback")}
+                      type="button"
+                    >
+                      {planBusy === "docker_compose_rollback"
+                        ? "正在准备计划…"
+                        : "准备回滚计划"}
+                    </button>
+                  </>
+                )}
                 {planError && <p className="error-text">{planError}</p>}
               </div>
             )}

@@ -851,23 +851,16 @@ async def create_deployment_operation(
     return await operation_view(session, operation)
 
 
-@router.post(
-    "/deployment-operations/{operation_id}/rollback",
-    response_model=OperationView,
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin)],
-)
-async def create_rollback_operation(
-    operation_id: str,
-    payload: OperationRollbackCreate,
-    session: AsyncSession = Depends(get_session),
-    settings: Settings = Depends(get_settings),
-) -> OperationView:
-    source = await session.scalar(
-        select(Operation).where(Operation.id == operation_id).with_for_update()
-    )
-    if source is None:
-        raise HTTPException(status_code=404, detail="deployment operation not found")
+async def build_rollback_plan(
+    session: AsyncSession,
+    source: Operation,
+    settings: Settings,
+    *,
+    expires_in_seconds: int,
+    source_metadata: dict | None = None,
+) -> Operation:
+    """Build one rollback plan through the production-validated M4.2c path."""
+
     if not is_rollback_source(source):
         raise HTTPException(
             status_code=409,
@@ -886,9 +879,38 @@ async def create_rollback_operation(
             status_code=409, detail="rollback operation rejected: " + ", ".join(failed)
         )
     assert source.current_digest and source.target_digest
+    source_metadata = source_metadata or {}
+    conversation_source = source_metadata.get("conversation_source")
+    plan_snapshot = {
+        "plan_version": ROLLBACK_PLAN_VERSION,
+        "execution_policy": DEPLOY_ACTION,
+        "permanently_non_executable": False,
+        "rollback_of": source.id,
+        "machine": {"id": agent.id, "name": agent.name, "hostname": agent.hostname},
+        "service": {
+            "id": managed.id,
+            "name": managed.name,
+            "environment": managed.environment,
+            "instance_id": instance.id,
+            "service_kind": instance.service_kind,
+            "service_key": instance.service_key,
+        },
+        "repository": candidate.repository,
+        "current_digest": source.target_digest,
+        "target_digest": source.current_digest,
+        "candidate_observed_at": candidate.observed_at.isoformat(),
+        "observed_state": observed.state if observed else None,
+        "observed_healthy": observed.healthy if observed else None,
+    }
+    if conversation_source is not None:
+        plan_snapshot["conversation_source"] = conversation_source
     operation = Operation(
+        organization_id=source_metadata.get("organization_id", source.organization_id),
         instance_id=instance.id,
         agent_id=agent.id,
+        source_event_id=source_metadata.get("event_id"),
+        source_conversation_turn_id=source_metadata.get("turn_id"),
+        conversation_request_id=source_metadata.get("conversation_request_id"),
         action_type=DEPLOY_ACTION,
         status="planned",
         active_key=f"{instance.id}:write",
@@ -898,27 +920,7 @@ async def create_rollback_operation(
         current_digest=source.target_digest,
         target_digest=source.current_digest,
         rollback_of=source.id,
-        plan_snapshot={
-            "plan_version": ROLLBACK_PLAN_VERSION,
-            "execution_policy": DEPLOY_ACTION,
-            "permanently_non_executable": False,
-            "rollback_of": source.id,
-            "machine": {"id": agent.id, "name": agent.name, "hostname": agent.hostname},
-            "service": {
-                "id": managed.id,
-                "name": managed.name,
-                "environment": managed.environment,
-                "instance_id": instance.id,
-                "service_kind": instance.service_kind,
-                "service_key": instance.service_key,
-            },
-            "repository": candidate.repository,
-            "current_digest": source.target_digest,
-            "target_digest": source.current_digest,
-            "candidate_observed_at": candidate.observed_at.isoformat(),
-            "observed_state": observed.state if observed else None,
-            "observed_healthy": observed.healthy if observed else None,
-        },
+        plan_snapshot=plan_snapshot,
         precheck_result=checks,
         verification_policy={
             "kind": "same_report_digest_and_health",
@@ -929,26 +931,57 @@ async def create_rollback_operation(
             "timeout_seconds": settings.operation_verification_timeout_seconds,
         },
         idempotency_key="rollback_" + secrets.token_urlsafe(24),
-        expires_at=current_time + timedelta(seconds=payload.expires_in_seconds),
+        expires_at=current_time + timedelta(seconds=expires_in_seconds),
     )
-    try:
-        async with session.begin_nested():
-            session.add(operation)
-            await session.flush()
-            session.add(
-                OperationTransition(
-                    operation_id=operation.id,
-                    from_status=None,
-                    to_status="planned",
-                    actor_type="admin",
-                    actor_id="local-admin",
-                    reason="explicit rollback requested",
-                    details={"plan_version": ROLLBACK_PLAN_VERSION, "rollback_of": source.id},
-                )
+    transition_details = {
+        **source_metadata.get("transition_details", {}),
+        "plan_version": ROLLBACK_PLAN_VERSION,
+        "rollback_of": source.id,
+    }
+    async with session.begin_nested():
+        session.add(operation)
+        await session.flush()
+        session.add(
+            OperationTransition(
+                operation_id=operation.id,
+                from_status=None,
+                to_status="planned",
+                actor_type="admin",
+                actor_id="local-admin",
+                reason=source_metadata.get("reason", "explicit rollback requested"),
+                details=transition_details,
             )
-            await transition(session, operation, "prechecking", "control_plane")
-            await transition(session, operation, "awaiting_confirmation", "control_plane")
-        await session.commit()
+        )
+        await transition(session, operation, "prechecking", "control_plane")
+        await transition(session, operation, "awaiting_confirmation", "control_plane")
+    await session.commit()
+    return operation
+
+
+@router.post(
+    "/deployment-operations/{operation_id}/rollback",
+    response_model=OperationView,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin)],
+)
+async def create_rollback_operation(
+    operation_id: str,
+    payload: OperationRollbackCreate,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> OperationView:
+    source = await session.scalar(
+        select(Operation).where(Operation.id == operation_id).with_for_update()
+    )
+    if source is None:
+        raise HTTPException(status_code=404, detail="deployment operation not found")
+    try:
+        operation = await build_rollback_plan(
+            session,
+            source,
+            settings,
+            expires_in_seconds=payload.expires_in_seconds,
+        )
     except IntegrityError as error:
         await session.rollback()
         raise HTTPException(

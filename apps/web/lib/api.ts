@@ -199,7 +199,7 @@ export type RepositoryConversation = {
   turns: ConversationTurn[];
 };
 export type ConversationOperationCandidate = {
-  action_type: "docker_restart";
+  action_type: "docker_restart" | "docker_compose_rollback";
   available: boolean;
   reason_code: string | null;
   impact_summary: string;

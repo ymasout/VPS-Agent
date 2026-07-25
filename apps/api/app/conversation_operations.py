@@ -3,7 +3,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,7 @@ from .config import Settings, get_settings
 from .conversation import ORGANIZATION_ID, scoped_event
 from .database import get_session
 from .models import (
+    AlertEvent,
     ConversationSession,
     ConversationTurn,
     ManagedService,
@@ -19,20 +20,29 @@ from .models import (
     OperationTransition,
     ServiceInstance,
 )
-from .operations import build_restart_plan
+from .operations import (
+    DEPLOY_ACTION,
+    DEPLOY_PLAN_VERSION,
+    build_restart_plan,
+    build_rollback_plan,
+    is_rollback_source,
+)
 from .schemas import (
     ConversationAnswer,
     ConversationOperationCandidate,
     ConversationOperationCandidatesView,
     ConversationRestartPlanCreate,
+    ConversationRollbackPlanCreate,
     OperationTransitionView,
     OperationView,
 )
 
 router = APIRouter(prefix="/api/v1")
 
-HANDOFF_KIND = "explicit_user_restart_plan"
-IMPACT_SUMMARY = "只创建非关键 Docker 服务的待确认重启计划"
+RESTART_HANDOFF_KIND = "explicit_user_restart_plan"
+ROLLBACK_HANDOFF_KIND = "explicit_user_rollback_plan"
+RESTART_IMPACT_SUMMARY = "只创建非关键 Docker 服务的待确认重启计划"
+ROLLBACK_IMPACT_SUMMARY = "只创建恢复失败 Compose 部署的待确认回滚计划"
 
 
 def _sha256_json(value: dict) -> str:
@@ -104,14 +114,63 @@ async def _event_instance(
 
 def _candidate(
     *,
+    action_type: str,
     available: bool,
     reason_code: str | None,
+    impact_summary: str,
 ) -> ConversationOperationCandidate:
     return ConversationOperationCandidate(
+        action_type=action_type,
         available=available,
         reason_code=reason_code,
-        impact_summary=IMPACT_SUMMARY,
+        impact_summary=impact_summary,
     )
+
+
+async def _rollback_source_for_event(
+    session: AsyncSession,
+    event: AlertEvent,
+    instance: ServiceInstance,
+    *,
+    lock: bool = False,
+) -> tuple[Operation | None, str | None]:
+    """Resolve one failed deployment whose execution overlaps this event."""
+
+    statement = (
+        select(Operation)
+        .where(
+            Operation.organization_id == event.organization_id,
+            Operation.instance_id == instance.id,
+            or_(
+                Operation.source_event_id.is_(None),
+                Operation.source_event_id == event.id,
+            ),
+            Operation.action_type == DEPLOY_ACTION,
+            Operation.status == "failed",
+            Operation.rollback_of.is_(None),
+            Operation.started_at.is_not(None),
+            Operation.completed_at.is_not(None),
+            Operation.current_digest.is_not(None),
+            Operation.target_digest.is_not(None),
+            Operation.plan_snapshot["plan_version"].as_string() == DEPLOY_PLAN_VERSION,
+            Operation.started_at <= event.last_observed_at,
+            Operation.completed_at >= event.first_observed_at,
+        )
+        .order_by(Operation.started_at.desc(), Operation.id)
+        .limit(2)
+    )
+    if lock:
+        statement = statement.with_for_update()
+    candidates = [
+        item
+        for item in (await session.scalars(statement)).all()
+        if is_rollback_source(item)
+    ]
+    if not candidates:
+        return None, "rollback_source_not_found"
+    if len(candidates) != 1:
+        return None, "rollback_source_ambiguous"
+    return candidates[0], None
 
 
 @router.get(
@@ -125,9 +184,31 @@ async def conversation_operation_candidates(
 ) -> ConversationOperationCandidatesView:
     event = await scoped_event(session, event_id, ORGANIZATION_ID)
     if not settings.conversation_operation_handoff_enabled:
-        candidate = _candidate(available=False, reason_code="feature_disabled")
+        restart = _candidate(
+            action_type="docker_restart",
+            available=False,
+            reason_code="feature_disabled",
+            impact_summary=RESTART_IMPACT_SUMMARY,
+        )
+        rollback = _candidate(
+            action_type="docker_compose_rollback",
+            available=False,
+            reason_code="feature_disabled",
+            impact_summary=ROLLBACK_IMPACT_SUMMARY,
+        )
     elif event.source != "service" or not event.service_kind or not event.service_key:
-        candidate = _candidate(available=False, reason_code="event_not_service")
+        restart = _candidate(
+            action_type="docker_restart",
+            available=False,
+            reason_code="event_not_service",
+            impact_summary=RESTART_IMPACT_SUMMARY,
+        )
+        rollback = _candidate(
+            action_type="docker_compose_rollback",
+            available=False,
+            reason_code="event_not_service",
+            impact_summary=ROLLBACK_IMPACT_SUMMARY,
+        )
     else:
         instance, managed = await _event_instance(
             session,
@@ -135,18 +216,36 @@ async def conversation_operation_candidates(
             organization_id=event.organization_id,
         )
         if instance is None or managed is None:
-            candidate = _candidate(available=False, reason_code="service_not_mapped")
+            restart_reason = rollback_reason = "service_not_mapped"
         elif instance.service_kind != "docker":
-            candidate = _candidate(available=False, reason_code="not_docker")
+            restart_reason = rollback_reason = "not_docker"
         elif managed.criticality != "non_critical":
-            candidate = _candidate(available=False, reason_code="critical_service")
-        elif not instance.restart_enabled:
-            candidate = _candidate(available=False, reason_code="restart_disabled")
+            restart_reason = rollback_reason = "critical_service"
         else:
-            candidate = _candidate(available=True, reason_code=None)
+            restart_reason = None if instance.restart_enabled else "restart_disabled"
+            if not instance.deploy_enabled:
+                rollback_reason = "deploy_disabled"
+            else:
+                _, rollback_reason = await _rollback_source_for_event(
+                    session,
+                    event,
+                    instance,
+                )
+        restart = _candidate(
+            action_type="docker_restart",
+            available=restart_reason is None,
+            reason_code=restart_reason,
+            impact_summary=RESTART_IMPACT_SUMMARY,
+        )
+        rollback = _candidate(
+            action_type="docker_compose_rollback",
+            available=rollback_reason is None,
+            reason_code=rollback_reason,
+            impact_summary=ROLLBACK_IMPACT_SUMMARY,
+        )
     return ConversationOperationCandidatesView(
         event_id=event.id,
-        candidates=[candidate],
+        candidates=[restart, rollback],
     )
 
 
@@ -195,11 +294,15 @@ def _same_handoff(
     *,
     event_id: str,
     turn_id: str,
+    action_type: str,
+    handoff_kind: str,
 ) -> bool:
+    conversation_source = operation.plan_snapshot.get("conversation_source", {})
     return (
         operation.source_event_id == event_id
         and operation.source_conversation_turn_id == turn_id
-        and operation.action_type == "docker_restart"
+        and operation.action_type == action_type
+        and conversation_source.get("handoff_kind") == handoff_kind
     )
 
 
@@ -228,6 +331,9 @@ async def create_conversation_restart_plan(
         turn_id,
         organization_id=event.organization_id,
     )
+    scoped_organization_id = event.organization_id
+    scoped_event_id = event.id
+    scoped_turn_id = turn.id
     request_id = str(payload.client_request_id)
     existing = await session.scalar(
         select(Operation).where(
@@ -236,7 +342,13 @@ async def create_conversation_restart_plan(
         )
     )
     if existing is not None:
-        if not _same_handoff(existing, event_id=event.id, turn_id=turn.id):
+        if not _same_handoff(
+            existing,
+            event_id=event.id,
+            turn_id=turn.id,
+            action_type="docker_restart",
+            handoff_kind=RESTART_HANDOFF_KIND,
+        ):
             raise HTTPException(
                 status_code=409,
                 detail="conversation request id is already in use",
@@ -257,7 +369,7 @@ async def create_conversation_restart_plan(
             "turn_id": turn.id,
             "answer_sha256": _sha256_json(answer.model_dump(mode="json")),
             "context_manifest_sha256": _sha256_json(turn.context_manifest),
-            "handoff_kind": HANDOFF_KIND,
+            "handoff_kind": RESTART_HANDOFF_KIND,
         },
         "reason": "conversation restart plan explicitly requested",
         "transition_details": {
@@ -279,12 +391,18 @@ async def create_conversation_restart_plan(
         await session.rollback()
         existing = await session.scalar(
             select(Operation).where(
-                Operation.organization_id == event.organization_id,
+                Operation.organization_id == scoped_organization_id,
                 Operation.conversation_request_id == request_id,
             )
         )
         if existing is not None:
-            if not _same_handoff(existing, event_id=event.id, turn_id=turn.id):
+            if not _same_handoff(
+                existing,
+                event_id=scoped_event_id,
+                turn_id=scoped_turn_id,
+                action_type="docker_restart",
+                handoff_kind=RESTART_HANDOFF_KIND,
+            ):
                 raise HTTPException(
                     status_code=409,
                     detail="conversation request id is already in use",
@@ -296,4 +414,125 @@ async def create_conversation_restart_plan(
         ) from error
     if operation.status not in {"awaiting_confirmation", "failed"}:
         raise RuntimeError("restart plan exceeded the M5.3 state ceiling")
+    return await _operation_view(session, operation)
+
+
+@router.post(
+    "/events/{event_id}/conversation/turns/{turn_id}/rollback-plan",
+    response_model=OperationView,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin)],
+)
+async def create_conversation_rollback_plan(
+    event_id: str,
+    turn_id: str,
+    payload: ConversationRollbackPlanCreate,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> OperationView:
+    event = await scoped_event(session, event_id, ORGANIZATION_ID)
+    if not settings.conversation_operation_handoff_enabled:
+        raise HTTPException(
+            status_code=409,
+            detail="conversation_operation_handoff_disabled",
+        )
+    turn, answer = await _scoped_completed_turn(
+        session,
+        event.id,
+        turn_id,
+        organization_id=event.organization_id,
+    )
+    scoped_organization_id = event.organization_id
+    scoped_event_id = event.id
+    scoped_turn_id = turn.id
+    request_id = str(payload.client_request_id)
+    existing = await session.scalar(
+        select(Operation).where(
+            Operation.organization_id == event.organization_id,
+            Operation.conversation_request_id == request_id,
+        )
+    )
+    if existing is not None:
+        if not _same_handoff(
+            existing,
+            event_id=event.id,
+            turn_id=turn.id,
+            action_type=DEPLOY_ACTION,
+            handoff_kind=ROLLBACK_HANDOFF_KIND,
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="conversation request id is already in use",
+            )
+        return await _operation_view(session, existing)
+    instance, managed = await _event_instance(
+        session,
+        event.id,
+        organization_id=event.organization_id,
+    )
+    if instance is None or managed is None:
+        raise HTTPException(status_code=409, detail="event service is not mapped")
+    source_operation, source_error = await _rollback_source_for_event(
+        session,
+        event,
+        instance,
+        lock=True,
+    )
+    if source_operation is None:
+        raise HTTPException(
+            status_code=409,
+            detail=source_error or "rollback_source_not_found",
+        )
+    source = {
+        "organization_id": event.organization_id,
+        "event_id": event.id,
+        "turn_id": turn.id,
+        "conversation_request_id": request_id,
+        "conversation_source": {
+            "turn_id": turn.id,
+            "answer_sha256": _sha256_json(answer.model_dump(mode="json")),
+            "context_manifest_sha256": _sha256_json(turn.context_manifest),
+            "handoff_kind": ROLLBACK_HANDOFF_KIND,
+        },
+        "reason": "conversation rollback plan explicitly requested",
+        "transition_details": {
+            "source": "conversation_handoff",
+            "turn_id": turn.id,
+        },
+    }
+    try:
+        operation = await build_rollback_plan(
+            session,
+            source_operation,
+            settings,
+            expires_in_seconds=payload.expires_in_seconds,
+            source_metadata=source,
+        )
+    except IntegrityError as error:
+        await session.rollback()
+        existing = await session.scalar(
+            select(Operation).where(
+                Operation.organization_id == scoped_organization_id,
+                Operation.conversation_request_id == request_id,
+            )
+        )
+        if existing is not None:
+            if not _same_handoff(
+                existing,
+                event_id=scoped_event_id,
+                turn_id=scoped_turn_id,
+                action_type=DEPLOY_ACTION,
+                handoff_kind=ROLLBACK_HANDOFF_KIND,
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="conversation request id is already in use",
+                ) from error
+            return await _operation_view(session, existing)
+        raise HTTPException(
+            status_code=409,
+            detail="another write operation is active for this service",
+        ) from error
+    if operation.status != "awaiting_confirmation":
+        raise RuntimeError("rollback plan exceeded the M5.3 state ceiling")
     return await _operation_view(session, operation)

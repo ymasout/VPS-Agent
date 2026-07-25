@@ -16,7 +16,7 @@ from app.models import (
     Operation,
     ServiceInstance,
 )
-from app.schemas import ConversationRestartPlanCreate
+from app.schemas import ConversationRestartPlanCreate, ConversationRollbackPlanCreate
 
 
 def now_utc() -> datetime:
@@ -85,7 +85,11 @@ def operation() -> Operation:
         requested_by="local-admin",
         risk_level="medium",
         impact_summary="restart",
-        plan_snapshot={},
+        plan_snapshot={
+            "conversation_source": {
+                "handoff_kind": "explicit_user_restart_plan",
+            }
+        },
         precheck_result={"passed": True},
         verification_policy={},
         idempotency_key="operation-idempotency",
@@ -104,6 +108,18 @@ def test_restart_plan_request_forbids_all_executable_fields() -> None:
                 "instance_id": "attacker-selected",
                 "action_type": "docker_compose_deploy",
                 "command": "rm -rf /",
+            }
+        )
+
+
+def test_rollback_plan_request_forbids_source_and_digest_fields() -> None:
+    with pytest.raises(ValidationError):
+        ConversationRollbackPlanCreate.model_validate(
+            {
+                "client_request_id": "9fd98744-1d93-4555-b019-e075b0453f35",
+                "expires_in_seconds": 300,
+                "rollback_of": "attacker-selected",
+                "target_digest": "ghcr.io/attacker/image@sha256:" + "a" * 64,
             }
         )
 
@@ -311,5 +327,186 @@ def test_candidate_read_is_static_and_has_no_operation_side_effect(
 
     assert result.candidates[0].available is True
     assert result.candidates[0].action_type == "docker_restart"
+    assert result.candidates[1].action_type == "docker_compose_rollback"
+    assert result.candidates[1].reason_code == "deploy_disabled"
     session.add.assert_not_called()
     session.commit.assert_not_awaited()
+
+
+def test_candidate_exposes_rollback_only_for_one_event_scoped_failed_deploy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current_event = event()
+    instance = ServiceInstance(
+        id="instance-1",
+        service_id="service-1",
+        agent_id="agent-1",
+        service_kind="docker",
+        service_key=current_event.service_key or "",
+        restart_enabled=True,
+        deploy_enabled=True,
+    )
+    managed = ManagedService(
+        id="service-1",
+        organization_id="local",
+        name="API",
+        criticality="non_critical",
+    )
+    session = AsyncMock()
+    session.add = MagicMock()
+    monkeypatch.setattr(handoff_module, "scoped_event", AsyncMock(return_value=current_event))
+    monkeypatch.setattr(
+        handoff_module,
+        "_event_instance",
+        AsyncMock(return_value=(instance, managed)),
+    )
+    monkeypatch.setattr(
+        handoff_module,
+        "_rollback_source_for_event",
+        AsyncMock(return_value=(Operation(id="failed-deploy-1"), None)),
+    )
+
+    result = asyncio.run(
+        handoff_module.conversation_operation_candidates(
+            "event-1",
+            session,
+            Settings(conversation_operation_handoff_enabled=True),
+        )
+    )
+
+    rollback = result.candidates[1]
+    assert rollback.action_type == "docker_compose_rollback"
+    assert rollback.available is True
+    assert rollback.reason_code is None
+    session.add.assert_not_called()
+    session.commit.assert_not_awaited()
+
+
+def test_rollback_source_resolution_fails_closed_when_ambiguous() -> None:
+    current_event = event()
+    instance = ServiceInstance(id="instance-1")
+    source_a = Operation(
+        id="deploy-a",
+        action_type="docker_compose_deploy",
+        status="failed",
+        rollback_of=None,
+        started_at=current_event.first_observed_at,
+        current_digest="repo@sha256:" + "a" * 64,
+        target_digest="repo@sha256:" + "b" * 64,
+        plan_snapshot={"plan_version": "m4.2b-executable-v1"},
+    )
+    source_b = Operation(
+        id="deploy-b",
+        action_type="docker_compose_deploy",
+        status="failed",
+        rollback_of=None,
+        started_at=current_event.first_observed_at,
+        current_digest="repo@sha256:" + "c" * 64,
+        target_digest="repo@sha256:" + "b" * 64,
+        plan_snapshot={"plan_version": "m4.2b-executable-v1"},
+    )
+    result = MagicMock()
+    result.all.return_value = [source_a, source_b]
+    session = AsyncMock()
+    session.scalars.return_value = result
+
+    source, reason = asyncio.run(
+        handoff_module._rollback_source_for_event(
+            session,
+            current_event,
+            instance,
+        )
+    )
+
+    assert source is None
+    assert reason == "rollback_source_ambiguous"
+
+
+def test_handoff_derives_rollback_source_and_stops_before_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current_event = event()
+    current_turn = turn()
+    instance = ServiceInstance(
+        id="instance-1",
+        service_id="service-1",
+        agent_id="agent-1",
+        service_kind="docker",
+        service_key=current_event.service_key or "",
+        deploy_enabled=True,
+    )
+    managed = ManagedService(
+        id="service-1",
+        organization_id="local",
+        name="API",
+        criticality="non_critical",
+    )
+    source_operation = Operation(
+        id="failed-deploy-1",
+        organization_id="local",
+        instance_id=instance.id,
+        agent_id=instance.agent_id,
+        action_type="docker_compose_deploy",
+        status="failed",
+        plan_snapshot={"plan_version": "m4.2b-executable-v1"},
+        current_digest="ghcr.io/org/app@sha256:" + "a" * 64,
+        target_digest="ghcr.io/org/app@sha256:" + "b" * 64,
+        started_at=now_utc(),
+    )
+    created = operation()
+    created.action_type = "docker_compose_deploy"
+    created.rollback_of = source_operation.id
+    created.plan_snapshot["conversation_source"][
+        "handoff_kind"
+    ] = "explicit_user_rollback_plan"
+    session = AsyncMock()
+    session.scalar.return_value = None
+    monkeypatch.setattr(handoff_module, "scoped_event", AsyncMock(return_value=current_event))
+    monkeypatch.setattr(
+        handoff_module,
+        "_scoped_completed_turn",
+        AsyncMock(
+            return_value=(
+                current_turn,
+                handoff_module.ConversationAnswer.model_validate(answer()),
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        handoff_module,
+        "_event_instance",
+        AsyncMock(return_value=(instance, managed)),
+    )
+    monkeypatch.setattr(
+        handoff_module,
+        "_rollback_source_for_event",
+        AsyncMock(return_value=(source_operation, None)),
+    )
+    build = AsyncMock(return_value=created)
+    monkeypatch.setattr(handoff_module, "build_rollback_plan", build)
+    view = AsyncMock(return_value="operation-view")
+    monkeypatch.setattr(handoff_module, "_operation_view", view)
+
+    result = asyncio.run(
+        handoff_module.create_conversation_rollback_plan(
+            current_event.id,
+            current_turn.id,
+            ConversationRollbackPlanCreate(
+                client_request_id="afda9707-3eac-4a25-bf7f-06b0a934dc4a",
+                expires_in_seconds=300,
+            ),
+            session,
+            Settings(conversation_operation_handoff_enabled=True),
+        )
+    )
+
+    assert result == "operation-view"
+    assert build.await_args.args[1] is source_operation
+    source = build.await_args.kwargs["source_metadata"]
+    assert source["conversation_source"]["handoff_kind"] == "explicit_user_rollback_plan"
+    assert "rollback_of" not in source
+    assert "target_digest" not in source
+    assert current_turn.question not in str(source)
+    assert created.status == "awaiting_confirmation"
+    assert created.task_signature is None
+    assert created.task_nonce is None
