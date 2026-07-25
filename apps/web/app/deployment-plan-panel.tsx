@@ -1,7 +1,7 @@
 "use client";
 
 import { DeploymentCandidate } from "@/lib/api";
-import { FormEvent, useState } from "react";
+import React, { FormEvent, useState } from "react";
 
 const reasonLabels: Record<string, string> = {
   multiple_replicas: "不是单副本服务",
@@ -16,7 +16,13 @@ const reasonLabels: Record<string, string> = {
   drift_rejected: "容器、单副本或当前镜像在执行前发生漂移",
 };
 
-export function DeploymentPlanPanel({ candidates }: { candidates: DeploymentCandidate[] }) {
+export function DeploymentPlanPanel({
+  candidates,
+  focusServiceKey,
+}: {
+  candidates: DeploymentCandidate[];
+  focusServiceKey?: string;
+}) {
   const [targets, setTargets] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState("");
   const [error, setError] = useState("");
@@ -69,19 +75,30 @@ export function DeploymentPlanPanel({ candidates }: { candidates: DeploymentCand
     }
   }
 
+  const orderedCandidates = [...candidates].sort((left, right) => {
+    if (left.service_key === focusServiceKey) return -1;
+    if (right.service_key === focusServiceKey) return 1;
+    return 0;
+  });
+
   return (
-    <section className="section">
+    <section className="section" id="deployment-plans">
       <div className="section-title"><h2>M4.2 部署计划</h2><span>EXPLICIT OPT-IN</span></div>
       <p className="section-copy">plan-only 仍只生成永久不可执行快照；只有 Agent 显式声明执行能力且控制台单独授权后，才会创建需再次确认的签名部署操作。</p>
       {candidates.length === 0 && <div className="empty"><strong>没有部署候选</strong><span>Agent 必须显式启用 deploy policy: plan-only。</span></div>}
       <div className="mapping-list">
-        {candidates.map((candidate) => {
+        {orderedCandidates.map((candidate) => {
           const serviceHealthy = candidate.state === "running" && candidate.healthy === true;
           const allowed = candidate.eligible && candidate.mapped && candidate.criticality === "non_critical" && serviceHealthy && Boolean(candidate.instance_id);
           const executable = candidate.deploy_capable && deployEnabled[candidate.service_key];
           const reason = candidate.reason_code ? reasonLabels[candidate.reason_code] ?? candidate.reason_code : !candidate.mapped ? "尚未映射到服务" : candidate.criticality !== "non_critical" ? "服务未标记为 non_critical" : !serviceHealthy ? "服务当前不是 running + healthy" : executable ? "可创建受控部署操作" : candidate.deploy_capable ? "Agent 已授权，控制台尚未授权" : "可创建只读计划";
           return (
-            <form className="mapping-card" key={`${candidate.service_kind}:${candidate.service_key}`} onSubmit={(event) => createPlan(event, candidate)}>
+            <form
+              aria-current={candidate.service_key === focusServiceKey ? "true" : undefined}
+              className={`mapping-card${candidate.service_key === focusServiceKey ? " focused" : ""}`}
+              key={`${candidate.service_kind}:${candidate.service_key}`}
+              onSubmit={(event) => createPlan(event, candidate)}
+            >
               <header><div><span>{allowed ? "READY" : "BLOCKED"}</span><strong>{candidate.service_name ?? candidate.service_key}</strong></div><small>{reason}</small></header>
               <p className="section-copy">{candidate.current_digest ?? candidate.repository ?? "当前 digest 不可用"}</p>
               <label htmlFor={`target-${candidate.service_key}`}>目标 repo@sha256 digest</label>

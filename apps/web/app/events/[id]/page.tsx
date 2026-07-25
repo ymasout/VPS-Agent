@@ -2,11 +2,13 @@ import Link from "next/link";
 import {
   ControlPlaneApiError,
   getConversationOperationCandidates,
+  getConversationOperationTimeline,
   getEvent,
   getEventConversation,
   getEventDiagnostics,
   type AlertEvent,
   type ConversationOperationCandidate,
+  type ConversationOperationTimeline,
   type EventConversation,
 } from "@/lib/api";
 import { notFound } from "next/navigation";
@@ -35,11 +37,17 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
       </main>
     );
   }
-  const [diagnosticsResult, conversationResult, operationCandidatesResult] =
+  const [
+    diagnosticsResult,
+    conversationResult,
+    operationCandidatesResult,
+    operationTimelineResult,
+  ] =
     await Promise.allSettled([
       getEventDiagnostics(id),
       getEventConversation(id),
       getConversationOperationCandidates(id),
+      getConversationOperationTimeline(id),
     ]);
   const diagnostics = diagnosticsResult.status === "fulfilled" ? diagnosticsResult.value : [];
   const conversation: EventConversation =
@@ -51,6 +59,19 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
     operationCandidatesResult.status === "fulfilled"
       ? operationCandidatesResult.value.candidates
       : [];
+  const operationTimeline: ConversationOperationTimeline =
+    operationTimelineResult.status === "fulfilled"
+      ? operationTimelineResult.value
+      : {
+          event_id: event.id,
+          available: false,
+          unavailable_reason: "control_plane_unavailable",
+          operations: [],
+        };
+  const deploymentHref =
+    event.source === "service" && event.service_kind === "docker" && event.service_key
+      ? `/servers/${encodeURIComponent(event.agent_id)}?service=${encodeURIComponent(event.service_key)}#deployment-plans`
+      : null;
   const active = diagnostics.some((item) => item.status === "pending" || item.status === "running");
   const machineEvent = event.source === "agent";
 
@@ -84,6 +105,8 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
       initial={conversation}
       unavailable={conversationUnavailable}
       operationCandidates={operationCandidates}
+      operationTimeline={operationTimeline}
+      deploymentHref={deploymentHref}
     />
   </main>;
 }

@@ -1,7 +1,7 @@
 # 项目状态
 
 最后同步：2026-07-25
-当前阶段：**M0、M1、M2 已完成；M3 进行中；M4 核心完成（重启+部署+回滚均生产验证）；M5 进行中，M5.1/M5.2.1/M5.2.2 生产只读金丝雀通过；M5.3.1 生产计划级+执行级金丝雀通过；M5.3.2 显式回滚交接本地实现与验收完成，生产金丝雀通过 2026-07-25**
+当前阶段：**M0、M1、M2 已完成；M3 进行中；M4 核心完成（重启+部署+回滚均生产验证）；M5 进行中，M5.1/M5.2.1/M5.2.2 生产只读金丝雀通过；M5.3.1/M5.3.2 生产计划级+执行级金丝雀通过；M5.3.3 操作只读时间线与可信部署页跳转已完成本地实现和验收**
 
 ## 1. 当前结论
 
@@ -270,7 +270,7 @@ M4 已正式开始，但没有把 M3 标记为完成。第一轮范围严格限�
 
 ## 7. M5：诊断与操作会话体验
 
-状态：**进行中（M5.1、M5.2.1、M5.2.2 生产只读金丝雀通过；M5.3.1 生产计划级+执行级金丝雀通过；M5.3.2 本地实现与验收完成，生产金丝雀通过 2026-07-25）**
+状态：**进行中（M5.1、M5.2.1、M5.2.2 生产只读金丝雀通过；M5.3.1/M5.3.2 生产计划级+执行级金丝雀通过；M5.3.3 本地实现与验收完成，Claude 审计通过，待生产金丝雀）**
 
 2026-07-23 已完成 M5 第一轮架构兼容性和安全审计，并把首个切片冻结为 **M5.1：事件上下文的只读会话基础**。计划确认后完成本地实现、Claude 安全审计（5 P0 门关闭 + 6 P2/P3 修复）、提交 `f53eeee` 推送至 `main`，并以 deterministic 与真实 HTTP(DeepSeek 经临时适配器) Provider 通过生产只读金丝雀。
 
@@ -301,6 +301,8 @@ M5.2.1 本地验收：API 157 项通过；Web 43 项、ESLint、生产构建、�
 生产只读金丝雀于 2026-07-25 通过：部署 `e0cf851` + 迁移 `0012 -> 0013` + postflight（功能关闭，M5.1 deterministic 无回归）；对 MagicPDF 仓库（`repositories.id=713c7632-3376-4f59-b8ba-170a53c47c7c`）开开关后，仓库详情 200 返回文件元数据（README.md，无正文/凭据）、空会话 200、提问 `completed`（provider=deterministic），citation `source_type=repository_file`/`repository.basis=snapshot`/`deployment_commit_sha=null`/`deployment_relation=unknown`/`available=true`，`context_manifest` 为 `m5.2.2-repository-context-v1`/`scope_type=repository`；`operations.source_conversation_turn_id` 指向本次轮次查 0 行（零写副作用生产实证），ops/trans 与 GitHub 文件/binding 不变、日志干净；金丝雀后关开关，prod 回到 deterministic + 功能关闭（`conversation_available=false`/`unavailable_reason=feature_disabled`）。
 
 同日完成 M5.3.2 本地实现与验收：复用 `0012` 会话来源/请求幂等和 `0009` `rollback_of`，不新增迁移；候选 GET 增加固定 `docker_compose_rollback`，严格 rollback-plan POST 只从当前组织、事件派生实例及事件观测窗口内唯一匹配的原始失败部署生成计划，请求体不接受失败部署 ID、digest、实例、路径或确认字段。M4 原入口和会话入口共同复用唯一 `build_rollback_plan`，结果只到 `awaiting_confirmation`，无签名/nonce，且与 restart 交接继续通过 `active_key` 互斥。真实 PostgreSQL 门控还发现并修复 M5.3.1 活动写冲突后的 ORM 失效读取，现以冻结字符串 ID 稳定返回 409。API 176 项、Web 54 项、Go 全包、Ruff、ESLint、production build、开发/生产 Compose 配置通过；隔离 PostgreSQL 16 完成空库升级、`0013 -> 0012 -> 0013`、两次 schema check 和 M5.1/M5.2.1/M5.3.1/M5.2.2/M5.3.2 五项门控。生产金丝雀通过 2026-07-25。
+
+随后完成 M5.3.3 本地实现与验收：独立开关 `CONVERSATION_OPERATION_TIMELINE_ENABLED=false` 默认关闭；新 GET 先按组织/事件解析，只返回最近 20 项同事件 Operation 的有限摘要、白名单验证状态及不含 details/actor ID 的转换，不返回计划、digest、输出、签名、nonce 或 Agent target。事件会话增加只读操作历史、详情链接和到当前 Agent M4.2 部署候选区的可信导航；服务键仅对服务端已返回候选排序/高亮，不进入写请求，也没有会话部署端点。API 179 项、Web 57 项、Go/Ruff/ESLint/build/Compose 通过；真实 PostgreSQL 16 完成空库升级、`0013 -> 0012 -> 0013`、两次 schema check 和六项 M5 门控，验证三类关联、事件/组织隔离、20 项上限和 GET 零 Operation/Transition 副作用。Claude 审计通过，待生产金丝雀。
 
 ## 8. 文档维护规则
 

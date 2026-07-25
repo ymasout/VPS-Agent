@@ -1,24 +1,42 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ConversationOperationCandidate,
+  ConversationOperationTimeline,
   ConversationTurn,
   EventConversation,
 } from "@/lib/api";
 import { ConversationTurnResult } from "@/app/conversation-turn-result";
 
 const terminalStatuses = new Set(["completed", "failed"]);
+const actionLabels: Record<string, string> = {
+  docker_restart: "安全重启",
+  docker_compose_deploy: "Compose 部署/回滚",
+};
+const verificationLabels: Record<string, string> = {
+  waiting_for_fresh_observation: "等待新鲜观测",
+  waiting_for_deployment_observation: "等待目标 digest 与健康观测",
+  waiting_for_healthy_observation: "等待健康观测",
+  stability_window: "健康稳定窗口观察中",
+  passed: "健康验证通过",
+  failed: "健康验证失败",
+};
 
 export function EventConversationPanel({
   initial,
   unavailable = false,
   operationCandidates = [],
+  operationTimeline,
+  deploymentHref = null,
 }: {
   initial: EventConversation;
   unavailable?: boolean;
   operationCandidates?: ConversationOperationCandidate[];
+  operationTimeline?: ConversationOperationTimeline;
+  deploymentHref?: string | null;
 }) {
   const router = useRouter();
   const [turns, setTurns] = useState(initial.turns);
@@ -148,6 +166,12 @@ export function EventConversationPanel({
     (item) => item.action_type === "docker_compose_rollback",
   );
   const hasOperationCandidate = operationCandidates.some((item) => item.available);
+  const timeline = operationTimeline ?? {
+    event_id: initial.event_id,
+    available: false,
+    unavailable_reason: "feature_disabled",
+    operations: [],
+  };
 
   return (
     <section className="conversation-panel">
@@ -221,6 +245,77 @@ export function EventConversationPanel({
           </article>
         ))}
       </div>
+
+      <section className="conversation-operation-history">
+        <header>
+          <div>
+            <span className="eyebrow">M5.3.3 · READ ONLY</span>
+            <h3>相关操作</h3>
+          </div>
+          {timeline.available && deploymentHref && (
+            <Link href={deploymentHref}>前往 M4.2 部署候选</Link>
+          )}
+        </header>
+        {!timeline.available && (
+          <div className={`empty ${timeline.unavailable_reason === "control_plane_unavailable" ? "error" : ""}`}>
+            <strong>
+              {timeline.unavailable_reason === "control_plane_unavailable"
+                ? "操作时间线暂时不可用"
+                : "操作时间线尚未启用"}
+            </strong>
+            <span>这里不会创建、确认或执行任何 Operation。</span>
+          </div>
+        )}
+        {timeline.available && timeline.operations.length === 0 && (
+          <div className="empty">
+            <strong>当前事件没有关联操作</strong>
+            <span>只读提问和查看历史不会产生 Operation。</span>
+          </div>
+        )}
+        {timeline.available && timeline.operations.map((operation) => (
+          <article className="conversation-operation-summary" key={operation.id}>
+            <header>
+              <div>
+                <span>{actionLabels[operation.action_type] ?? operation.action_type}</span>
+                <strong>{operation.status}</strong>
+              </div>
+              <time>{new Date(operation.requested_at).toLocaleString("zh-CN")}</time>
+            </header>
+            <p>{operation.impact_summary}</p>
+            {operation.verification_status && (
+              <small>
+                {verificationLabels[operation.verification_status] ?? "验证状态不可识别"}
+              </small>
+            )}
+            {operation.error_code && (
+              <p className="error-text">
+                {operation.error_code}
+                {operation.error_summary ? ` · ${operation.error_summary}` : ""}
+              </p>
+            )}
+            <details>
+              <summary>审计时间线（{operation.transitions.length}）</summary>
+              {operation.transitions.map((transition, index) => (
+                <div
+                  className="conversation-operation-transition"
+                  key={`${transition.created_at}-${index}`}
+                >
+                  <strong>
+                    {transition.from_status ?? "created"} → {transition.to_status}
+                  </strong>
+                  <span>
+                    {transition.actor_type}
+                  </span>
+                  <time>{new Date(transition.created_at).toLocaleString("zh-CN")}</time>
+                </div>
+              ))}
+            </details>
+            <Link href={`/operations/${encodeURIComponent(operation.id)}`}>
+              查看操作详情
+            </Link>
+          </article>
+        ))}
+      </section>
 
       <div className="conversation-composer">
         <textarea

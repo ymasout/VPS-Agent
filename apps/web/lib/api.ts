@@ -210,6 +210,31 @@ export type ConversationOperationCandidates = {
   event_id: string;
   candidates: ConversationOperationCandidate[];
 };
+export type ConversationOperationTimelineTransition = {
+  from_status: string | null;
+  to_status: string;
+  actor_type: string;
+  created_at: string;
+};
+export type ConversationOperationTimelineItem = {
+  id: string;
+  source_conversation_turn_id: string | null;
+  action_type: string;
+  status: string;
+  impact_summary: string;
+  verification_status: string | null;
+  error_code: string | null;
+  error_summary: string | null;
+  requested_at: string;
+  completed_at: string | null;
+  transitions: ConversationOperationTimelineTransition[];
+};
+export type ConversationOperationTimeline = {
+  event_id: string;
+  available: boolean;
+  unavailable_reason: string | null;
+  operations: ConversationOperationTimelineItem[];
+};
 export type OperationTransition = { from_status: string | null; to_status: string; actor_type: string; actor_id: string | null; reason: string | null; details: Record<string, unknown>; created_at: string };
 export type Operation = {
   id: string; instance_id: string; agent_id: string; source_event_id: string | null; source_diagnostic_id: string | null; source_conversation_turn_id: string | null;
@@ -257,6 +282,10 @@ export const getRepositoryConversation = (id: string) =>
 export const getConversationOperationCandidates = (id: string) =>
   request<ConversationOperationCandidates>(
     `/api/v1/events/${id}/conversation/operation-candidates`,
+  );
+export const getConversationOperationTimeline = (id: string) =>
+  request<ConversationOperationTimeline>(
+    `/api/v1/events/${id}/conversation/operations`,
   );
 export const getOperation = (id: string) => request<Operation>(`/api/v1/operations/${id}`);
 export function formatBytes(value: number) {

@@ -15,6 +15,7 @@ from .models import (
     AlertEvent,
     ConversationSession,
     ConversationTurn,
+    DiagnosticRun,
     ManagedService,
     Operation,
     OperationTransition,
@@ -31,6 +32,9 @@ from .schemas import (
     ConversationAnswer,
     ConversationOperationCandidate,
     ConversationOperationCandidatesView,
+    ConversationOperationTimelineItem,
+    ConversationOperationTimelineTransition,
+    ConversationOperationTimelineView,
     ConversationRestartPlanCreate,
     ConversationRollbackPlanCreate,
     OperationTransitionView,
@@ -43,6 +47,24 @@ RESTART_HANDOFF_KIND = "explicit_user_restart_plan"
 ROLLBACK_HANDOFF_KIND = "explicit_user_rollback_plan"
 RESTART_IMPACT_SUMMARY = "只创建非关键 Docker 服务的待确认重启计划"
 ROLLBACK_IMPACT_SUMMARY = "只创建恢复失败 Compose 部署的待确认回滚计划"
+MAX_CONVERSATION_OPERATIONS = 20
+VERIFICATION_STATUSES = {
+    "waiting_for_fresh_observation",
+    "waiting_for_deployment_observation",
+    "waiting_for_healthy_observation",
+    "stability_window",
+    "passed",
+    "failed",
+}
+ERROR_SUMMARIES = {
+    "precheck_failed": "前置检查未通过",
+    "expired": "计划或任务已过期",
+    "execution_failed": "Agent 报告执行失败",
+    "execution_timeout": "Agent 执行超时",
+    "execution_outcome_unknown": "执行结果无法确认",
+    "verification_timeout": "健康验证超时",
+    "invalid_task": "任务未通过控制平面校验",
+}
 
 
 def _sha256_json(value: dict) -> str:
@@ -246,6 +268,144 @@ async def conversation_operation_candidates(
     return ConversationOperationCandidatesView(
         event_id=event.id,
         candidates=[restart, rollback],
+    )
+
+
+def _timeline_source_turn_id(operation: Operation) -> str | None:
+    if operation.source_conversation_turn_id:
+        return operation.source_conversation_turn_id
+    conversation_source = operation.plan_snapshot.get("conversation_source")
+    if not isinstance(conversation_source, dict):
+        return None
+    turn_id = conversation_source.get("turn_id")
+    return turn_id if isinstance(turn_id, str) and len(turn_id) <= 36 else None
+
+
+def _timeline_verification_status(operation: Operation) -> str | None:
+    if not isinstance(operation.verification_result, dict):
+        return None
+    verification_status = operation.verification_result.get("status")
+    return (
+        verification_status
+        if isinstance(verification_status, str)
+        and verification_status in VERIFICATION_STATUSES
+        else None
+    )
+
+
+def _timeline_error_summary(operation: Operation) -> str | None:
+    if not operation.error_code:
+        return None
+    return ERROR_SUMMARIES.get(
+        operation.error_code,
+        "操作未成功；请在操作详情页查看受控错误信息",
+    )
+
+
+@router.get(
+    "/events/{event_id}/conversation/operations",
+    response_model=ConversationOperationTimelineView,
+)
+async def conversation_operation_timeline(
+    event_id: str,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> ConversationOperationTimelineView:
+    event = await scoped_event(session, event_id, ORGANIZATION_ID)
+    if not settings.conversation_operation_timeline_enabled:
+        return ConversationOperationTimelineView(
+            event_id=event.id,
+            available=False,
+            unavailable_reason="feature_disabled",
+            operations=[],
+        )
+
+    diagnostic_ids = select(DiagnosticRun.id).where(
+        DiagnosticRun.organization_id == event.organization_id,
+        DiagnosticRun.event_id == event.id,
+    )
+    conversation_turn_ids = (
+        select(ConversationTurn.id)
+        .join(
+            ConversationSession,
+            ConversationSession.id == ConversationTurn.session_id,
+        )
+        .where(
+            ConversationTurn.organization_id == event.organization_id,
+            ConversationSession.organization_id == event.organization_id,
+            ConversationSession.scope_type == "event",
+            ConversationSession.event_id == event.id,
+        )
+    )
+    operations = list(
+        (
+            await session.scalars(
+                select(Operation)
+                .where(
+                    Operation.organization_id == event.organization_id,
+                    or_(
+                        Operation.source_event_id == event.id,
+                        Operation.source_diagnostic_id.in_(diagnostic_ids),
+                        Operation.source_conversation_turn_id.in_(
+                            conversation_turn_ids
+                        ),
+                    ),
+                )
+                .order_by(Operation.requested_at.desc(), Operation.id)
+                .limit(MAX_CONVERSATION_OPERATIONS)
+            )
+        ).all()
+    )
+    transitions_by_operation: dict[
+        str, list[ConversationOperationTimelineTransition]
+    ] = {operation.id: [] for operation in operations}
+    if operations:
+        transitions = list(
+            (
+                await session.scalars(
+                    select(OperationTransition)
+                    .where(
+                        OperationTransition.operation_id.in_(
+                            [operation.id for operation in operations]
+                        )
+                    )
+                    .order_by(
+                        OperationTransition.created_at,
+                        OperationTransition.id,
+                    )
+                )
+            ).all()
+        )
+        for transition in transitions:
+            transitions_by_operation.setdefault(transition.operation_id, []).append(
+                ConversationOperationTimelineTransition(
+                    from_status=transition.from_status,
+                    to_status=transition.to_status,
+                    actor_type=transition.actor_type,
+                    created_at=transition.created_at,
+                )
+            )
+
+    return ConversationOperationTimelineView(
+        event_id=event.id,
+        available=True,
+        unavailable_reason=None,
+        operations=[
+            ConversationOperationTimelineItem(
+                id=operation.id,
+                source_conversation_turn_id=_timeline_source_turn_id(operation),
+                action_type=operation.action_type,
+                status=operation.status,
+                impact_summary=operation.impact_summary,
+                verification_status=_timeline_verification_status(operation),
+                error_code=operation.error_code,
+                error_summary=_timeline_error_summary(operation),
+                requested_at=operation.requested_at,
+                completed_at=operation.completed_at,
+                transitions=transitions_by_operation.get(operation.id, []),
+            )
+            for operation in operations
+        ],
     )
 
 

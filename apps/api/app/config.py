@@ -53,6 +53,7 @@ class Settings(BaseSettings):
         default=86400, ge=300, le=2592000
     )
     conversation_operation_handoff_enabled: bool = False
+    conversation_operation_timeline_enabled: bool = False
     operation_signing_key_id: str = ""
     operation_signing_private_key_base64: str = ""
     operation_observation_max_age_seconds: int = Field(default=120, ge=30, le=600)

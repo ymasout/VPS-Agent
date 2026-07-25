@@ -33,8 +33,17 @@ function ServiceSection({ title, services, defaultOpen = true }: { title: string
   );
 }
 
-export default async function ServerPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ServerPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ service?: string | string[] }>;
+}) {
   const { id } = await params;
+  const query = await searchParams;
+  const requestedService = typeof query.service === "string" ? query.service : "";
+  const focusServiceKey = requestedService.length <= 255 ? requestedService : "";
   let agent;
   try { agent = await getAgent(id); } catch { notFound(); }
   const [candidates, repositories, deploymentCandidates] = await Promise.all([
@@ -91,7 +100,10 @@ export default async function ServerPage({ params }: { params: Promise<{ id: str
       </section>
 
       <ServiceMappingPanel candidates={candidates} repositories={repositories} />
-      <DeploymentPlanPanel candidates={deploymentCandidates} />
+      <DeploymentPlanPanel
+        candidates={deploymentCandidates}
+        focusServiceKey={focusServiceKey || undefined}
+      />
     </main>
   );
 }

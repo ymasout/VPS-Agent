@@ -386,6 +386,34 @@ class ConversationOperationCandidatesView(BaseModel):
     candidates: list[ConversationOperationCandidate]
 
 
+class ConversationOperationTimelineTransition(BaseModel):
+    from_status: str | None
+    to_status: str
+    actor_type: str
+    created_at: datetime
+
+
+class ConversationOperationTimelineItem(BaseModel):
+    id: str
+    source_conversation_turn_id: str | None
+    action_type: str
+    status: str
+    impact_summary: str
+    verification_status: str | None
+    error_code: str | None
+    error_summary: str | None
+    requested_at: datetime
+    completed_at: datetime | None
+    transitions: list[ConversationOperationTimelineTransition]
+
+
+class ConversationOperationTimelineView(BaseModel):
+    event_id: str
+    available: bool
+    unavailable_reason: str | None
+    operations: list[ConversationOperationTimelineItem]
+
+
 class OperationConfirm(BaseModel):
     model_config = ConfigDict(extra="forbid")
     confirmed_by: str = Field(default="local-admin", min_length=1, max_length=128)

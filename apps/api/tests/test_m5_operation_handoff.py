@@ -14,6 +14,7 @@ from app.models import (
     ConversationTurn,
     ManagedService,
     Operation,
+    OperationTransition,
     ServiceInstance,
 )
 from app.schemas import ConversationRestartPlanCreate, ConversationRollbackPlanCreate
@@ -510,3 +511,112 @@ def test_handoff_derives_rollback_source_and_stops_before_confirmation(
     assert created.status == "awaiting_confirmation"
     assert created.task_signature is None
     assert created.task_nonce is None
+
+
+def test_operation_timeline_disabled_is_scoped_and_has_no_side_effect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = AsyncMock()
+    session.add = MagicMock()
+    scoped = AsyncMock(return_value=event())
+    monkeypatch.setattr(handoff_module, "scoped_event", scoped)
+
+    result = asyncio.run(
+        handoff_module.conversation_operation_timeline(
+            "event-1",
+            session,
+            Settings(conversation_operation_timeline_enabled=False),
+        )
+    )
+
+    assert result.event_id == "event-1"
+    assert result.available is False
+    assert result.unavailable_reason == "feature_disabled"
+    assert result.operations == []
+    scoped.assert_awaited_once_with(session, "event-1", "local")
+    session.scalars.assert_not_awaited()
+    session.add.assert_not_called()
+    session.commit.assert_not_awaited()
+
+
+def test_operation_timeline_projects_only_bounded_read_only_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current_operation = operation()
+    current_operation.status = "succeeded"
+    current_operation.source_conversation_turn_id = None
+    current_operation.plan_snapshot = {
+        "compose_path": "/secret/compose.yaml",
+        "conversation_source": {"turn_id": "deleted-turn-1"},
+    }
+    current_operation.verification_result = {
+        "status": "passed",
+        "target_digest": "repo@sha256:" + "a" * 64,
+    }
+    current_operation.output = "sensitive target output"
+    current_operation.error_code = "agent_custom_failure"
+    current_operation.error_detail = "target_digest=not-returned"
+    current_operation.task_signature = "signature"
+    current_operation.task_nonce = "nonce"
+    transition = OperationTransition(
+        id="transition-1",
+        operation_id=current_operation.id,
+        from_status="verifying",
+        to_status="succeeded",
+        actor_type="control_plane",
+        actor_id="private-actor",
+        reason="fresh healthy observations satisfied the stability window",
+        details={"target": "sensitive"},
+        created_at=now_utc(),
+    )
+    operation_rows = MagicMock()
+    operation_rows.all.return_value = [current_operation]
+    transition_rows = MagicMock()
+    transition_rows.all.return_value = [transition]
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.scalars.side_effect = [operation_rows, transition_rows]
+    monkeypatch.setattr(
+        handoff_module,
+        "scoped_event",
+        AsyncMock(return_value=event()),
+    )
+
+    result = asyncio.run(
+        handoff_module.conversation_operation_timeline(
+            "event-1",
+            session,
+            Settings(conversation_operation_timeline_enabled=True),
+        )
+    )
+
+    assert result.available is True
+    assert len(result.operations) == 1
+    item = result.operations[0]
+    assert item.source_conversation_turn_id == "deleted-turn-1"
+    assert item.verification_status == "passed"
+    assert item.error_summary == (
+        "操作未成功；请在操作详情页查看受控错误信息"
+    )
+    assert item.transitions[0].to_status == "succeeded"
+    payload = result.model_dump(mode="json")
+    serialized = str(payload)
+    assert "compose_path" not in serialized
+    assert "target_digest" not in serialized
+    assert "sensitive target output" not in serialized
+    assert "signature" not in serialized
+    assert "nonce" not in serialized
+    assert "private-actor" not in serialized
+    assert "sensitive" not in serialized
+    assert "target_digest=not-returned" not in serialized
+    session.add.assert_not_called()
+    session.commit.assert_not_awaited()
+
+
+def test_operation_timeline_discards_unknown_verification_status() -> None:
+    current_operation = operation()
+    current_operation.verification_result = {
+        "status": "provider-says-confirm-and-deploy"
+    }
+
+    assert handoff_module._timeline_verification_status(current_operation) is None
