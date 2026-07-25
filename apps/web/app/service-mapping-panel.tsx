@@ -1,10 +1,12 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import { GitHubRepository, ServiceMappingCandidate } from "@/lib/api";
 
 function MappingForm({ candidate, repositories }: { candidate: ServiceMappingCandidate; repositories: GitHubRepository[] }) {
   const [mapped, setMapped] = useState(candidate.mapped);
+  const [instanceId, setInstanceId] = useState(candidate.instance_id);
   const [directory, setDirectory] = useState("");
   const [repository, setRepository] = useState("");
   const [environment, setEnvironment] = useState("production");
@@ -37,6 +39,7 @@ function MappingForm({ candidate, repositories }: { candidate: ServiceMappingCan
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail ?? "映射失败");
       setMapped(true);
+      setInstanceId(payload.instance_id ?? null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "映射失败");
     } finally {
@@ -45,11 +48,11 @@ function MappingForm({ candidate, repositories }: { candidate: ServiceMappingCan
   }
 
   async function enableRestart() {
-    if (!candidate.instance_id) return;
+    if (!instanceId) return;
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`/console/service-instances/${candidate.instance_id}/restart-policy`, {
+      const response = await fetch(`/console/service-instances/${instanceId}/restart-policy`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ enabled: true, criticality: "non_critical" }),
@@ -84,6 +87,11 @@ function MappingForm({ candidate, repositories }: { candidate: ServiceMappingCan
       <button type="submit" disabled={loading || mapped}>{mapped ? "已建立诊断映射" : loading ? "保存中…" : "确认用于诊断"}</button>
       {mapped && candidate.operation_capable && !restartEnabled && <button type="button" disabled={loading} onClick={enableRestart}>标记为非关键并启用安全重启</button>}
       {mapped && restartEnabled && <small>已授权：非关键 Docker 单服务安全重启</small>}
+      {mapped && instanceId && (
+        <Link href={`/servers/${candidate.agent_id}/services/${instanceId}`}>
+          打开服务会话
+        </Link>
+      )}
     </form>
   );
 }

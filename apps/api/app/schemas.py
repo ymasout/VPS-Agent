@@ -786,3 +786,14 @@ class RepositoryConversationView(BaseModel):
     available: bool
     unavailable_reason: str | None
     turns: list[ConversationTurnView] = Field(default_factory=list)
+
+
+class ContextConversationView(BaseModel):
+    scope_type: Literal["agent", "service"]
+    target_id: str
+    parent_agent_id: str
+    title: str
+    session_id: str | None
+    available: bool
+    unavailable_reason: str | None
+    turns: list[ConversationTurnView] = Field(default_factory=list)

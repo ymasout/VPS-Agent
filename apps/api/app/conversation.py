@@ -27,6 +27,7 @@ from .models import (
     DiagnosticRun,
     EvidenceItem,
     ManagedService,
+    MetricSnapshot,
     Operation,
     ServiceInstance,
     ServiceStatus,
@@ -41,6 +42,7 @@ from .repository_knowledge import (
     repository_snapshot_state,
 )
 from .schemas import (
+    ContextConversationView,
     ConversationAnswer,
     ConversationCitationView,
     ConversationQuestion,
@@ -126,15 +128,21 @@ class DeterministicConversationProvider:
             item.repository is not None and item.repository.basis == "snapshot"
             for item in context.items
         )
+        scope_type = context.manifest.get("scope_type", "event")
+        scope_label = {
+            "agent": "当前 Agent",
+            "service": "当前服务",
+            "repository": "当前仓库快照",
+        }.get(scope_type, "当前事件")
         return {
             "summary": (
                 "已按当前仓库快照范围整理只读上下文；确定性提供者不声称该快照已经部署。"
                 if repository_scope
-                else "已按当前事件范围整理只读上下文；确定性提供者不声称完成根因判断。"
+                else f"已按{scope_label}范围整理只读上下文；确定性提供者不声称完成根因判断。"
             ),
             "facts": [
                 {
-                    "statement": f"已纳入当前事件范围内的记录：{item.source_label}。",
+                    "statement": f"已纳入{scope_label}范围内的记录：{item.source_label}。",
                     "citation_ids": [item.citation_id],
                 }
                 for item in factual
@@ -923,6 +931,483 @@ async def build_repository_context(
     )
 
 
+async def scoped_agent(
+    session: AsyncSession,
+    agent_id: str,
+    organization_id: str = ORGANIZATION_ID,
+) -> Agent:
+    agent = await session.scalar(
+        select(Agent).where(
+            Agent.id == agent_id,
+            Agent.organization_id == organization_id,
+        )
+    )
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    return agent
+
+
+async def scoped_service_instance(
+    session: AsyncSession,
+    instance_id: str,
+    organization_id: str = ORGANIZATION_ID,
+) -> tuple[ServiceInstance, ManagedService]:
+    row = (
+        await session.execute(
+            select(ServiceInstance, ManagedService)
+            .join(ManagedService, ManagedService.id == ServiceInstance.service_id)
+            .join(Agent, Agent.id == ServiceInstance.agent_id)
+            .where(
+                ServiceInstance.id == instance_id,
+                ManagedService.organization_id == organization_id,
+                Agent.organization_id == organization_id,
+            )
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="service instance not found")
+    return row
+
+
+async def scoped_service(
+    session: AsyncSession,
+    service_id: str,
+    organization_id: str,
+) -> ManagedService:
+    service = await session.scalar(
+        select(ManagedService).where(
+            ManagedService.id == service_id,
+            ManagedService.organization_id == organization_id,
+        )
+    )
+    if service is None:
+        raise ConversationFailure(
+            "context_scope_invalid",
+            "service no longer belongs to the conversation scope",
+        )
+    return service
+
+
+async def context_history(
+    session: AsyncSession,
+    turn: ConversationTurn,
+    budget: int,
+) -> tuple[list[dict[str, str]], int]:
+    rows = list(
+        (
+            await session.scalars(
+                select(ConversationTurn)
+                .where(
+                    ConversationTurn.session_id == turn.session_id,
+                    ConversationTurn.organization_id == turn.organization_id,
+                    ConversationTurn.status == "completed",
+                    ConversationTurn.id != turn.id,
+                )
+                .order_by(ConversationTurn.created_at.desc(), ConversationTurn.id)
+                .limit(MAX_HISTORY_TURNS)
+            )
+        ).all()
+    )
+    history: list[dict[str, str]] = []
+    used = 0
+    for previous in reversed(rows):
+        if used >= budget:
+            break
+        value, _ = bounded_redacted(
+            json_text({"question": previous.question, "answer": previous.answer}),
+            min(4096, budget - used),
+        )
+        if not value:
+            break
+        history.append({"untrusted_turn": value})
+        used += len(value.encode())
+    return history, used
+
+
+async def build_scoped_context(
+    session: AsyncSession,
+    turn: ConversationTurn,
+    scope_type: str,
+    target_id: str,
+    settings: Settings,
+) -> ConversationContext:
+    if not settings.conversation_context_chat_enabled:
+        raise ConversationFailure(
+            "feature_disabled",
+            "Agent and service conversations are disabled",
+        )
+    if scope_type not in {"agent", "service"}:
+        raise ConversationFailure("context_scope_invalid", "unsupported context scope")
+
+    agents: list[Agent]
+    service: ManagedService | None = None
+    if scope_type == "agent":
+        agents = [await scoped_agent(session, target_id, turn.organization_id)]
+        instances = list(
+            (
+                await session.scalars(
+                    select(ServiceInstance)
+                    .join(ManagedService, ManagedService.id == ServiceInstance.service_id)
+                    .join(Agent, Agent.id == ServiceInstance.agent_id)
+                    .where(
+                        ServiceInstance.agent_id == target_id,
+                        ManagedService.organization_id == turn.organization_id,
+                        Agent.organization_id == turn.organization_id,
+                    )
+                    .order_by(ServiceInstance.id)
+                    .limit(50)
+                )
+            ).all()
+        )
+    else:
+        service = await scoped_service(
+            session,
+            target_id,
+            turn.organization_id,
+        )
+        instances = list(
+            (
+                await session.scalars(
+                    select(ServiceInstance)
+                    .join(Agent, Agent.id == ServiceInstance.agent_id)
+                    .where(
+                        ServiceInstance.service_id == service.id,
+                        Agent.organization_id == turn.organization_id,
+                    )
+                    .order_by(ServiceInstance.id)
+                    .limit(50)
+                )
+            ).all()
+        )
+        agent_ids = sorted({item.agent_id for item in instances})
+        agents = (
+            list(
+                (
+                    await session.scalars(
+                        select(Agent)
+                        .where(
+                            Agent.id.in_(agent_ids),
+                            Agent.organization_id == turn.organization_id,
+                        )
+                        .order_by(Agent.id)
+                    )
+                ).all()
+            )
+            if agent_ids
+            else []
+        )
+
+    candidates: list[ContextItem] = []
+    for agent in agents:
+        metric = await session.scalar(
+            select(MetricSnapshot)
+            .where(MetricSnapshot.agent_id == agent.id)
+            .order_by(MetricSnapshot.collected_at.desc(), MetricSnapshot.id.desc())
+            .limit(1)
+        )
+        candidates.append(
+            make_context_item(
+                turn.id,
+                "agent_summary",
+                agent.id,
+                f"Agent {agent.name}",
+                json_text(
+                    {
+                        "name": agent.name,
+                        "hostname": agent.hostname,
+                        "os": agent.os,
+                        "arch": agent.arch,
+                        "version": agent.version,
+                        "last_seen_at": agent.last_seen_at,
+                        "latest_metrics": (
+                            {
+                                "cpu_percent": metric.cpu_percent,
+                                "memory_percent": metric.memory_percent,
+                                "memory_used_bytes": metric.memory_used_bytes,
+                                "memory_total_bytes": metric.memory_total_bytes,
+                                "disks": metric.disks,
+                                "collected_at": metric.collected_at,
+                            }
+                            if metric is not None
+                            else None
+                        ),
+                    }
+                ),
+                (metric.collected_at if metric is not None else agent.last_seen_at)
+                or agent.updated_at,
+                16384,
+            )
+        )
+
+    managed_by_id: dict[str, ManagedService] = {}
+    if instances:
+        managed_by_id = {
+            item.id: item
+            for item in (
+                await session.scalars(
+                    select(ManagedService).where(
+                        ManagedService.id.in_(
+                            sorted({instance.service_id for instance in instances})
+                        ),
+                        ManagedService.organization_id == turn.organization_id,
+                    )
+                )
+            ).all()
+        }
+    for instance in instances:
+        managed = managed_by_id.get(instance.service_id)
+        observed = await session.scalar(
+            select(ServiceStatus).where(
+                ServiceStatus.agent_id == instance.agent_id,
+                ServiceStatus.kind == instance.service_kind,
+                ServiceStatus.service_key == instance.service_key,
+            )
+        )
+        candidates.append(
+            make_context_item(
+                turn.id,
+                "service_instance_summary",
+                instance.id,
+                f"服务实例 {managed.name if managed else instance.service_key}",
+                json_text(
+                    {
+                        "service_name": managed.name if managed else None,
+                        "environment": managed.environment if managed else None,
+                        "description": managed.description if managed else None,
+                        "criticality": managed.criticality if managed else None,
+                        "agent_id": instance.agent_id,
+                        "service_kind": instance.service_kind,
+                        "service_key": instance.service_key,
+                        "state": observed.state if observed else None,
+                        "healthy": observed.healthy if observed else None,
+                        "observed_at": observed.observed_at if observed else None,
+                    }
+                ),
+                (
+                    observed.observed_at
+                    if observed is not None
+                    else instance.created_at
+                ),
+                12288,
+            )
+        )
+
+    if scope_type == "agent":
+        event_filter = AlertEvent.agent_id == target_id
+    else:
+        event_filters = [
+            (
+                (AlertEvent.agent_id == item.agent_id)
+                & (AlertEvent.service_kind == item.service_kind)
+                & (AlertEvent.service_key == item.service_key)
+            )
+            for item in instances
+        ]
+        event_filter = or_(*event_filters) if event_filters else None
+    events = (
+        list(
+            (
+                await session.scalars(
+                    select(AlertEvent)
+                    .where(
+                        AlertEvent.organization_id == turn.organization_id,
+                        event_filter,
+                    )
+                    .order_by(AlertEvent.last_observed_at.desc(), AlertEvent.id)
+                    .limit(10)
+                )
+            ).all()
+        )
+        if event_filter is not None
+        else []
+    )
+    for event in events:
+        candidates.append(
+            make_context_item(
+                turn.id,
+                "alert_event",
+                event.id,
+                f"事件 {event.title}",
+                json_text(
+                    {
+                        "source": event.source,
+                        "title": event.title,
+                        "severity": event.severity,
+                        "status": event.status,
+                        "detail": event.detail,
+                        "observation_count": event.observation_count,
+                        "first_observed_at": event.first_observed_at,
+                        "last_observed_at": event.last_observed_at,
+                        "resolved_at": event.resolved_at,
+                    }
+                ),
+                event.last_observed_at,
+                8192,
+            )
+        )
+
+    event_ids = [item.id for item in events]
+    diagnostics = (
+        list(
+            (
+                await session.scalars(
+                    select(DiagnosticRun)
+                    .where(
+                        DiagnosticRun.event_id.in_(event_ids),
+                        DiagnosticRun.organization_id == turn.organization_id,
+                    )
+                    .order_by(DiagnosticRun.created_at.desc(), DiagnosticRun.id)
+                    .limit(MAX_DIAGNOSTICS)
+                )
+            ).all()
+        )
+        if event_ids
+        else []
+    )
+    for diagnostic in diagnostics:
+        candidates.append(
+            make_context_item(
+                turn.id,
+                "diagnostic_run",
+                diagnostic.id,
+                f"诊断 {diagnostic.id[:8]}",
+                json_text(
+                    {
+                        "status": diagnostic.status,
+                        "provider": diagnostic.provider,
+                        "result": diagnostic.result,
+                        "error_code": diagnostic.error_code,
+                        "created_at": diagnostic.created_at,
+                        "completed_at": diagnostic.completed_at,
+                    }
+                ),
+                diagnostic.completed_at or diagnostic.created_at,
+                16384,
+            )
+        )
+    diagnostic_ids = [item.id for item in diagnostics]
+    evidence = (
+        list(
+            (
+                await session.scalars(
+                    select(EvidenceItem)
+                    .join(DiagnosticRun, DiagnosticRun.id == EvidenceItem.diagnostic_id)
+                    .where(
+                        EvidenceItem.diagnostic_id.in_(diagnostic_ids),
+                        DiagnosticRun.organization_id == turn.organization_id,
+                    )
+                    .order_by(EvidenceItem.collected_at.desc(), EvidenceItem.id)
+                    .limit(MAX_EVIDENCE_ITEMS)
+                )
+            ).all()
+        )
+        if diagnostic_ids
+        else []
+    )
+    for item in evidence:
+        candidates.append(
+            make_context_item(
+                turn.id,
+                "evidence_item",
+                item.id,
+                item.source_label,
+                item.content,
+                item.collected_at,
+                16384,
+            )
+        )
+
+    instance_ids = [item.id for item in instances]
+    operations = (
+        list(
+            (
+                await session.scalars(
+                    select(Operation)
+                    .where(
+                        Operation.organization_id == turn.organization_id,
+                        (
+                            Operation.agent_id == target_id
+                            if scope_type == "agent"
+                            else Operation.instance_id.in_(instance_ids)
+                        ),
+                    )
+                    .order_by(Operation.requested_at.desc(), Operation.id)
+                    .limit(MAX_OPERATIONS)
+                )
+            ).all()
+        )
+        if scope_type == "agent" or instance_ids
+        else []
+    )
+    for operation in operations:
+        candidates.append(
+            make_context_item(
+                turn.id,
+                "operation",
+                operation.id,
+                f"操作 {operation.action_type} · {operation.status}",
+                json_text(
+                    {
+                        "action_type": operation.action_type,
+                        "status": operation.status,
+                        "risk_level": operation.risk_level,
+                        "impact_summary": operation.impact_summary,
+                        "verification_result": operation.verification_result,
+                        "error_code": operation.error_code,
+                        "error_detail": operation.error_detail,
+                        "requested_at": operation.requested_at,
+                        "completed_at": operation.completed_at,
+                    }
+                ),
+                operation.completed_at or operation.requested_at,
+                4096,
+            )
+        )
+
+    total_budget = settings.conversation_max_context_bytes
+    selected, remaining, omitted = fit_context_items(
+        candidates,
+        total_budget - len(turn.question.encode()),
+    )
+    history, history_bytes = await context_history(
+        session,
+        turn,
+        min(32768, remaining),
+    )
+    manifest = {
+        "version": "m5.4-context-conversation-v1",
+        "scope_type": scope_type,
+        "target_id": target_id,
+        "organization_id": turn.organization_id,
+        "max_context_bytes": total_budget,
+        "context_bytes": (
+            sum(len(item.content.encode()) for item in selected) + history_bytes
+        ),
+        "history_turns": len(history),
+        "omitted_items": omitted,
+        "items": [
+            {
+                "citation_id": item.citation_id,
+                "source_type": item.source_type,
+                "source_id": item.target_id,
+                "source_label": item.source_label,
+                "source_collected_at": item.collected_at.isoformat(),
+                "snapshot_sha256": item.snapshot_sha256,
+                "content_bytes": len(item.content.encode()),
+                "truncated": item.truncated,
+                "repository": None,
+            }
+            for item in selected
+        ],
+    }
+    return ConversationContext(
+        question=turn.question,
+        items=selected,
+        history=history,
+        manifest=manifest,
+    )
+
+
 def all_citation_ids(answer: ConversationAnswer) -> list[str]:
     return [
         citation
@@ -945,7 +1430,7 @@ def validate_answer_citations(
     if invalid:
         raise ConversationFailure(
             "provider_unknown_citation",
-            "provider returned citations outside the event context",
+            "provider returned citations outside the current conversation context",
         )
     by_id = {item.citation_id: item for item in context_items}
     for fact in answer.facts:
@@ -1116,6 +1601,148 @@ async def validate_repository_context_scope(
             )
 
 
+async def validate_scoped_context(
+    session: AsyncSession,
+    scope_type: str,
+    target_id: str,
+    organization_id: str,
+    items: Sequence[ContextItem],
+) -> None:
+    if scope_type == "agent":
+        agent = await session.scalar(
+            select(Agent.id).where(
+                Agent.id == target_id,
+                Agent.organization_id == organization_id,
+            )
+        )
+        if agent is None:
+            raise ConversationFailure(
+                "citation_scope_invalid",
+                "Agent no longer belongs to the conversation scope",
+            )
+        allowed_agent_ids = {target_id}
+        instances = list(
+            (
+                await session.scalars(
+                    select(ServiceInstance)
+                    .join(ManagedService, ManagedService.id == ServiceInstance.service_id)
+                    .join(Agent, Agent.id == ServiceInstance.agent_id)
+                    .where(
+                        ServiceInstance.agent_id == target_id,
+                        ManagedService.organization_id == organization_id,
+                        Agent.organization_id == organization_id,
+                    )
+                )
+            ).all()
+        )
+        event_filter = AlertEvent.agent_id == target_id
+    elif scope_type == "service":
+        await scoped_service(session, target_id, organization_id)
+        instances = list(
+            (
+                await session.scalars(
+                    select(ServiceInstance)
+                    .join(Agent, Agent.id == ServiceInstance.agent_id)
+                    .where(
+                        ServiceInstance.service_id == target_id,
+                        Agent.organization_id == organization_id,
+                    )
+                )
+            ).all()
+        )
+        allowed_agent_ids = {item.agent_id for item in instances}
+        filters = [
+            (
+                (AlertEvent.agent_id == item.agent_id)
+                & (AlertEvent.service_kind == item.service_kind)
+                & (AlertEvent.service_key == item.service_key)
+            )
+            for item in instances
+        ]
+        event_filter = or_(*filters) if filters else None
+    else:
+        raise ConversationFailure(
+            "citation_scope_invalid",
+            "conversation session has an invalid context scope",
+        )
+
+    allowed_instance_ids = {item.id for item in instances}
+    allowed_events = (
+        set(
+            (
+                await session.scalars(
+                    select(AlertEvent.id).where(
+                        AlertEvent.organization_id == organization_id,
+                        event_filter,
+                    )
+                )
+            ).all()
+        )
+        if event_filter is not None
+        else set()
+    )
+    allowed_diagnostics = (
+        set(
+            (
+                await session.scalars(
+                    select(DiagnosticRun.id).where(
+                        DiagnosticRun.organization_id == organization_id,
+                        DiagnosticRun.event_id.in_(allowed_events),
+                    )
+                )
+            ).all()
+        )
+        if allowed_events
+        else set()
+    )
+    allowed_evidence = (
+        set(
+            (
+                await session.scalars(
+                    select(EvidenceItem.id).where(
+                        EvidenceItem.diagnostic_id.in_(allowed_diagnostics)
+                    )
+                )
+            ).all()
+        )
+        if allowed_diagnostics
+        else set()
+    )
+    operation_filter = (
+        Operation.agent_id == target_id
+        if scope_type == "agent"
+        else Operation.instance_id.in_(allowed_instance_ids)
+    )
+    allowed_operations = (
+        set(
+            (
+                await session.scalars(
+                    select(Operation.id).where(
+                        Operation.organization_id == organization_id,
+                        operation_filter,
+                    )
+                )
+            ).all()
+        )
+        if scope_type == "agent" or allowed_instance_ids
+        else set()
+    )
+    allowed = {
+        "agent_summary": allowed_agent_ids,
+        "service_instance_summary": allowed_instance_ids,
+        "alert_event": allowed_events,
+        "diagnostic_run": allowed_diagnostics,
+        "evidence_item": allowed_evidence,
+        "operation": allowed_operations,
+    }
+    for item in items:
+        if item.source_type not in allowed or item.target_id not in allowed[item.source_type]:
+            raise ConversationFailure(
+                "citation_scope_invalid",
+                f"a conversation citation no longer belongs to the {scope_type} scope",
+            )
+
+
 def citation_target(
     source_type: str,
     target_id: str,
@@ -1197,7 +1824,9 @@ def citation_href(citation: ConversationCitation, event_id: str | None) -> str |
         return f"/servers/{citation.agent_id}"
     if citation.evidence_id:
         return f"/events/{event_id}#{citation.evidence_id}" if event_id else None
-    return f"/events/{event_id}" if event_id else None
+    if citation.event_id or citation.diagnostic_id:
+        return f"/events/{event_id}" if event_id else None
+    return None
 
 
 def citation_source_id(citation: ConversationCitation) -> str | None:
@@ -1353,6 +1982,22 @@ async def run_conversation_turn(
                     conversation.repository_id,
                     settings,
                 )
+            elif conversation.scope_type == "agent" and conversation.agent_id:
+                context = await build_scoped_context(
+                    session,
+                    turn,
+                    "agent",
+                    conversation.agent_id,
+                    settings,
+                )
+            elif conversation.scope_type == "service" and conversation.service_id:
+                context = await build_scoped_context(
+                    session,
+                    turn,
+                    "service",
+                    conversation.service_id,
+                    settings,
+                )
             else:
                 raise ConversationFailure(
                     "context_assembly_failed",
@@ -1416,6 +2061,22 @@ async def run_conversation_turn(
                     turn.organization_id,
                     context.items,
                     settings,
+                )
+            elif conversation.scope_type == "agent" and conversation.agent_id:
+                await validate_scoped_context(
+                    session,
+                    "agent",
+                    conversation.agent_id,
+                    turn.organization_id,
+                    context.items,
+                )
+            elif conversation.scope_type == "service" and conversation.service_id:
+                await validate_scoped_context(
+                    session,
+                    "service",
+                    conversation.service_id,
+                    turn.organization_id,
+                    context.items,
                 )
             else:
                 raise ConversationFailure(
@@ -1863,6 +2524,260 @@ async def create_repository_conversation_turn(
     return await turn_view(session, turn, None)
 
 
+async def scoped_conversation_view(
+    session: AsyncSession,
+    *,
+    scope_type: str,
+    target_id: str,
+    parent_agent_id: str,
+    title: str,
+    settings: Settings,
+) -> ContextConversationView:
+    target_column = (
+        ConversationSession.agent_id
+        if scope_type == "agent"
+        else ConversationSession.service_id
+    )
+    conversation = await session.scalar(
+        select(ConversationSession).where(
+            target_column == target_id,
+            ConversationSession.organization_id == ORGANIZATION_ID,
+            ConversationSession.scope_type == scope_type,
+        )
+    )
+    available = settings.conversation_context_chat_enabled
+    if conversation is None:
+        return ContextConversationView(
+            scope_type=scope_type,
+            target_id=target_id,
+            parent_agent_id=parent_agent_id,
+            title=title,
+            session_id=None,
+            available=available,
+            unavailable_reason=None if available else "feature_disabled",
+            turns=[],
+        )
+    turns = list(
+        (
+            await session.scalars(
+                select(ConversationTurn)
+                .where(
+                    ConversationTurn.session_id == conversation.id,
+                    ConversationTurn.organization_id == ORGANIZATION_ID,
+                )
+                .order_by(ConversationTurn.created_at.desc(), ConversationTurn.id)
+                .limit(MAX_TURNS_RETURNED)
+            )
+        ).all()
+    )
+    turns.reverse()
+    return ContextConversationView(
+        scope_type=scope_type,
+        target_id=target_id,
+        parent_agent_id=parent_agent_id,
+        title=title,
+        session_id=conversation.id,
+        available=available,
+        unavailable_reason=None if available else "feature_disabled",
+        turns=[await turn_view(session, turn, None) for turn in turns],
+    )
+
+
+async def create_scoped_conversation_turn(
+    *,
+    scope_type: str,
+    target_id: str,
+    payload: ConversationQuestion,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession,
+    settings: Settings,
+) -> ConversationTurnView:
+    if not settings.conversation_context_chat_enabled:
+        raise HTTPException(status_code=403, detail="feature_disabled")
+    target_column = (
+        ConversationSession.agent_id
+        if scope_type == "agent"
+        else ConversationSession.service_id
+    )
+    conversation = await session.scalar(
+        select(ConversationSession).where(
+            target_column == target_id,
+            ConversationSession.organization_id == ORGANIZATION_ID,
+            ConversationSession.scope_type == scope_type,
+        )
+    )
+    if conversation is None:
+        conversation = ConversationSession(
+            organization_id=ORGANIZATION_ID,
+            scope_type=scope_type,
+            event_id=None,
+            repository_id=None,
+            agent_id=target_id if scope_type == "agent" else None,
+            service_id=target_id if scope_type == "service" else None,
+            created_by="local-admin",
+        )
+        try:
+            async with session.begin_nested():
+                session.add(conversation)
+                await session.flush()
+        except IntegrityError:
+            conversation = await session.scalar(
+                select(ConversationSession).where(
+                    target_column == target_id,
+                    ConversationSession.organization_id == ORGANIZATION_ID,
+                    ConversationSession.scope_type == scope_type,
+                )
+            )
+            if conversation is None:
+                raise
+    existing = await session.scalar(
+        select(ConversationTurn).where(
+            ConversationTurn.session_id == conversation.id,
+            ConversationTurn.client_request_id == payload.client_request_id,
+            ConversationTurn.organization_id == ORGANIZATION_ID,
+        )
+    )
+    if existing is not None:
+        return await turn_view(session, existing, None)
+    active = await session.scalar(
+        select(ConversationTurn).where(
+            ConversationTurn.session_id == conversation.id,
+            ConversationTurn.organization_id == ORGANIZATION_ID,
+            ConversationTurn.status.in_(["pending", "running"]),
+        )
+    )
+    if active is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="a conversation turn is already active",
+        )
+    safe_question, _ = redact_text(payload.question)
+    turn = ConversationTurn(
+        organization_id=ORGANIZATION_ID,
+        session_id=conversation.id,
+        client_request_id=payload.client_request_id,
+        question=safe_question,
+        status="pending",
+        provider=settings.conversation_provider,
+        context_manifest={},
+    )
+    try:
+        async with session.begin_nested():
+            session.add(turn)
+            await session.flush()
+        await session.commit()
+    except IntegrityError as error:
+        await session.rollback()
+        existing = await session.scalar(
+            select(ConversationTurn).where(
+                ConversationTurn.session_id == conversation.id,
+                ConversationTurn.client_request_id == payload.client_request_id,
+                ConversationTurn.organization_id == ORGANIZATION_ID,
+            )
+        )
+        if existing is not None:
+            return await turn_view(session, existing, None)
+        raise HTTPException(
+            status_code=409,
+            detail="a conversation turn is already active",
+        ) from error
+    background_tasks.add_task(
+        run_conversation_turn,
+        turn.id,
+        ORGANIZATION_ID,
+        settings,
+    )
+    return await turn_view(session, turn, None)
+
+
+@router.get(
+    "/agents/{agent_id}/conversation",
+    response_model=ContextConversationView,
+)
+async def get_agent_conversation(
+    agent_id: str,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> ContextConversationView:
+    agent = await scoped_agent(session, agent_id)
+    return await scoped_conversation_view(
+        session,
+        scope_type="agent",
+        target_id=agent.id,
+        parent_agent_id=agent.id,
+        title=agent.name,
+        settings=settings,
+    )
+
+
+@router.post(
+    "/agents/{agent_id}/conversation/turns",
+    response_model=ConversationTurnView,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_admin)],
+)
+async def create_agent_conversation_turn(
+    agent_id: str,
+    payload: ConversationQuestion,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> ConversationTurnView:
+    await scoped_agent(session, agent_id)
+    return await create_scoped_conversation_turn(
+        scope_type="agent",
+        target_id=agent_id,
+        payload=payload,
+        background_tasks=background_tasks,
+        session=session,
+        settings=settings,
+    )
+
+
+@router.get(
+    "/service-instances/{instance_id}/conversation",
+    response_model=ContextConversationView,
+)
+async def get_service_conversation(
+    instance_id: str,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> ContextConversationView:
+    instance, service = await scoped_service_instance(session, instance_id)
+    return await scoped_conversation_view(
+        session,
+        scope_type="service",
+        target_id=service.id,
+        parent_agent_id=instance.agent_id,
+        title=service.name,
+        settings=settings,
+    )
+
+
+@router.post(
+    "/service-instances/{instance_id}/conversation/turns",
+    response_model=ConversationTurnView,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_admin)],
+)
+async def create_service_conversation_turn(
+    instance_id: str,
+    payload: ConversationQuestion,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> ConversationTurnView:
+    _, service = await scoped_service_instance(session, instance_id)
+    return await create_scoped_conversation_turn(
+        scope_type="service",
+        target_id=service.id,
+        payload=payload,
+        background_tasks=background_tasks,
+        session=session,
+        settings=settings,
+    )
+
+
 @router.get(
     "/conversation-turns/{turn_id}",
     response_model=ConversationTurnView,
@@ -1878,6 +2793,8 @@ async def get_conversation_turn(
             ConversationSession.scope_type,
             ConversationSession.event_id,
             ConversationSession.repository_id,
+            ConversationSession.agent_id,
+            ConversationSession.service_id,
         )
         .join(
             ConversationSession,
@@ -1893,7 +2810,7 @@ async def get_conversation_turn(
     result = row.first()
     if result is None:
         raise HTTPException(status_code=404, detail="conversation turn not found")
-    turn, scope_type, event_id, repository_id = result
+    turn, scope_type, event_id, repository_id, agent_id, service_id = result
     if scope_type == "event" and event_id:
         await scoped_event(session, event_id, ORGANIZATION_ID)
         return await turn_view(session, turn, event_id)
@@ -1905,5 +2822,15 @@ async def get_conversation_turn(
             settings,
         )
         if state is not None:
+            return await turn_view(session, turn, None)
+    if scope_type == "agent" and agent_id:
+        await scoped_agent(session, agent_id, ORGANIZATION_ID)
+        return await turn_view(session, turn, None)
+    if scope_type == "service" and service_id:
+        try:
+            await scoped_service(session, service_id, ORGANIZATION_ID)
+        except ConversationFailure:
+            pass
+        else:
             return await turn_view(session, turn, None)
     raise HTTPException(status_code=404, detail="conversation turn not found")

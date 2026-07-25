@@ -12,6 +12,10 @@ M5.3.1 会话到 M4 安全操作计划的显式交接已完成本地实现与真
 
 M5.3.2 已于 2026-07-25 完成本地实现与验收：在不新增迁移或 Agent 协议的前提下，把显式交接扩展到服务端唯一派生的 M4.2c 回滚计划；生产金丝雀通过 2026-07-25，见 [M5.3_OPERATION_HANDOFF.md §20](./M5.3_OPERATION_HANDOFF.md)。
 
+M5.3.3 已于 2026-07-25 完成本地实现、真实 PostgreSQL 验收和生产只读金丝雀：事件会话可读取同事件 Operation 的有限时间线与白名单验证状态，并导航到既有 M4.2 部署候选页；不会创建会话部署端点或携带可执行参数，验证后独立功能开关已还原关闭，见 [M5.3_OPERATION_HANDOFF.md §21](./M5.3_OPERATION_HANDOFF.md)。
+
+M5.4 单 Agent/单服务上下文只读会话已于 2026-07-26 完成本地实现与真实 PostgreSQL 验收：两个 scope 共用现有轮次、Provider、预算、历史、结构化回答和引用框架，但分别通过可信 Agent/ManagedService 外键与落库前二次查询隔离；独立功能开关默认关闭，Claude 审计通过，待生产金丝雀，见 [M5.4_CONTEXT_CONVERSATION.md](./M5.4_CONTEXT_CONVERSATION.md)。
+
 M5.2.2 已于 2026-07-25 完成本地实现与验收并提交 `e0cf851`：单仓库上下文只读对话抽屉和只选择一个授权仓库的全局入口已落地，不做多仓库混合上下文；生产只读金丝雀已于 2026-07-25 通过（快照基只读对话，零写副作用，验证后功能开关已还原关闭），见 [M5.2.2_REPOSITORY_CONVERSATION.md](./M5.2.2_REPOSITORY_CONVERSATION.md)。
 
 ## 1. 当前审计结论

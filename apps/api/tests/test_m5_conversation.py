@@ -127,7 +127,7 @@ def test_answer_strictly_rejects_provider_extra_fields() -> None:
 
 def test_answer_rejects_unknown_and_duplicate_citations() -> None:
     item = context_item()
-    with pytest.raises(Exception, match="outside the event context"):
+    with pytest.raises(Exception, match="outside the current conversation context"):
         validate_answer_citations(answer(["ctx_unknown"]), [item])
     with pytest.raises(Exception, match="duplicate"):
         validate_answer_citations(answer([item.citation_id, item.citation_id]), [item])

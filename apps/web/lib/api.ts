@@ -198,6 +198,16 @@ export type RepositoryConversation = {
   unavailable_reason: string | null;
   turns: ConversationTurn[];
 };
+export type ContextConversation = {
+  scope_type: "agent" | "service";
+  target_id: string;
+  parent_agent_id: string;
+  title: string;
+  session_id: string | null;
+  available: boolean;
+  unavailable_reason: string | null;
+  turns: ConversationTurn[];
+};
 export type ConversationOperationCandidate = {
   action_type: "docker_restart" | "docker_compose_rollback";
   available: boolean;
@@ -279,6 +289,10 @@ export const getRepositoryDetail = (id: string) =>
   request<RepositoryDetail>(`/api/v1/repositories/${id}`);
 export const getRepositoryConversation = (id: string) =>
   request<RepositoryConversation>(`/api/v1/repositories/${id}/conversation`);
+export const getAgentConversation = (id: string) =>
+  request<ContextConversation>(`/api/v1/agents/${id}/conversation`);
+export const getServiceConversation = (id: string) =>
+  request<ContextConversation>(`/api/v1/service-instances/${id}/conversation`);
 export const getConversationOperationCandidates = (id: string) =>
   request<ConversationOperationCandidates>(
     `/api/v1/events/${id}/conversation/operation-candidates`,

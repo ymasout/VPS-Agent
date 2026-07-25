@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { Service, formatBytes, getAgent, getDeploymentCandidates, getGitHubRepositories, getServiceMappingCandidates } from "@/lib/api";
+import { ContextConversation, Service, formatBytes, getAgent, getAgentConversation, getDeploymentCandidates, getGitHubRepositories, getServiceMappingCandidates } from "@/lib/api";
 import { notFound } from "next/navigation";
 import { isGoodState, isServiceProblem, serviceStatusTone } from "@/lib/service-status";
 import { ServiceMappingPanel } from "../../service-mapping-panel";
 import { DeploymentPlanPanel } from "../../deployment-plan-panel";
+import { ContextConversationPanel } from "../../context-conversation";
 
 export const dynamic = "force-dynamic";
 
@@ -46,11 +47,28 @@ export default async function ServerPage({
   const focusServiceKey = requestedService.length <= 255 ? requestedService : "";
   let agent;
   try { agent = await getAgent(id); } catch { notFound(); }
-  const [candidates, repositories, deploymentCandidates] = await Promise.all([
+  const [candidates, repositories, deploymentCandidates, conversationResult] = await Promise.all([
     getServiceMappingCandidates(id).catch(() => []),
     getGitHubRepositories().catch(() => []),
     getDeploymentCandidates(id).catch(() => []),
+    getAgentConversation(id).then(
+      (value) => ({ ok: true as const, value }),
+      () => ({ ok: false as const }),
+    ),
   ]);
+  const conversation: ContextConversation =
+    conversationResult.ok
+      ? conversationResult.value
+      : {
+          scope_type: "agent",
+          target_id: id,
+          parent_agent_id: id,
+          title: agent.name,
+          session_id: null,
+          available: false,
+          unavailable_reason: "control_plane_unavailable",
+          turns: [],
+        };
 
   const metric = agent.latest_metrics;
   const problems = agent.services.filter(isServiceProblem);
@@ -100,6 +118,11 @@ export default async function ServerPage({
       </section>
 
       <ServiceMappingPanel candidates={candidates} repositories={repositories} />
+      <ContextConversationPanel
+        endpoint={`/console/agents/${id}/conversation/turns`}
+        initial={conversation}
+        unavailable={!conversationResult.ok}
+      />
       <DeploymentPlanPanel
         candidates={deploymentCandidates}
         focusServiceKey={focusServiceKey || undefined}

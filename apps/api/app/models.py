@@ -41,6 +41,13 @@ class RegistrationToken(Base):
 
 class Agent(Base):
     __tablename__ = "agents"
+    __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            name="uq_agents_id_organization_id",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id: Mapped[str] = mapped_column(String(64), default="local", index=True)
@@ -154,6 +161,13 @@ class AgentDeploymentCandidate(Base):
 
 class ManagedService(Base):
     __tablename__ = "managed_services"
+    __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            name="uq_managed_services_id_organization_id",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id: Mapped[str] = mapped_column(String(64), default="local", index=True)
@@ -522,8 +536,14 @@ class ConversationSession(Base):
     __table_args__ = (
         CheckConstraint(
             "("
-            "(scope_type = 'event' AND event_id IS NOT NULL AND repository_id IS NULL) OR "
-            "(scope_type = 'repository' AND event_id IS NULL AND repository_id IS NOT NULL)"
+            "(scope_type = 'event' AND event_id IS NOT NULL "
+            "AND repository_id IS NULL AND agent_id IS NULL AND service_id IS NULL) OR "
+            "(scope_type = 'repository' AND event_id IS NULL "
+            "AND repository_id IS NOT NULL AND agent_id IS NULL AND service_id IS NULL) OR "
+            "(scope_type = 'agent' AND event_id IS NULL "
+            "AND repository_id IS NULL AND agent_id IS NOT NULL AND service_id IS NULL) OR "
+            "(scope_type = 'service' AND event_id IS NULL "
+            "AND repository_id IS NULL AND agent_id IS NULL AND service_id IS NOT NULL)"
             ")",
             name="ck_conversation_sessions_scope_target",
         ),
@@ -536,6 +556,16 @@ class ConversationSession(Base):
             "organization_id",
             "repository_id",
             name="uq_conversation_sessions_organization_repository",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "agent_id",
+            name="uq_conversation_sessions_organization_agent",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "service_id",
+            name="uq_conversation_sessions_organization_service",
         ),
         UniqueConstraint(
             "id",
@@ -554,6 +584,18 @@ class ConversationSession(Base):
             name="fk_conversation_sessions_repository_organization",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["agent_id", "organization_id"],
+            ["agents.id", "agents.organization_id"],
+            name="fk_conversation_sessions_agent_organization",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["service_id", "organization_id"],
+            ["managed_services.id", "managed_services.organization_id"],
+            name="fk_conversation_sessions_service_organization",
+            ondelete="CASCADE",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -563,6 +605,8 @@ class ConversationSession(Base):
     repository_id: Mapped[str | None] = mapped_column(
         String(36), nullable=True, index=True
     )
+    agent_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    service_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     created_by: Mapped[str] = mapped_column(String(128), default="local-admin")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
