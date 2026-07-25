@@ -6,7 +6,7 @@ Web 控制台的信息架构、运维总览和 Agent 上下文对话方向见 [W
 M5 会话的当前设计、威胁模型和分阶段边界见 [M5_CONVERSATION.md](./M5_CONVERSATION.md)；M5.1 已提交推送并以 deterministic Provider 通过生产只读金丝雀，真实 HTTP Provider 金丝雀亦通过 2026-07-23（DeepSeek 经临时适配器；已还原 deterministic）。
 M5.2.1 事件作用域 GitHub 白名单仓库知识检索已完成本地实现、默认关闭且生产只读金丝雀通过 2026-07-24；设计与验收见 [M5.2_REPOSITORY_KNOWLEDGE.md](./M5.2_REPOSITORY_KNOWLEDGE.md)。
 M5.3.1 会话到 M4 安全重启计划的显式交接已完成生产计划级+执行级金丝雀；M5.3.2 会话到显式回滚计划交接已完成生产金丝雀；M5.3.3 操作只读时间线与可信部署页跳转已完成本地实现、真实 PostgreSQL 验收，并于 2026-07-25 通过生产金丝雀；边界见 [M5.3_OPERATION_HANDOFF.md](./M5.3_OPERATION_HANDOFF.md)。
-M5.4 单 Agent/单服务上下文只读会话已完成本地实现与真实 PostgreSQL 验收，Claude 审计通过，待生产金丝雀；两个 scope 的可信根、威胁模型和验收边界见 [M5.4_CONTEXT_CONVERSATION.md](./M5.4_CONTEXT_CONVERSATION.md)。
+M5.4 单 Agent/单服务上下文只读会话已完成本地实现与真实 PostgreSQL 验收，生产金丝雀通过 2026-07-26；两个 scope 的可信根、威胁模型和验收边界见 [M5.4_CONTEXT_CONVERSATION.md](./M5.4_CONTEXT_CONVERSATION.md)。
 
 ## 1. 产品与部署边界
 

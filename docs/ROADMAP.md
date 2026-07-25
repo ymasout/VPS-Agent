@@ -253,7 +253,7 @@ M5.2.2 于 2026-07-25 进入设计阶段。第一垂直切片冻结为**单仓�
 
 M5.2.2a/b 已完成本地实现与验收：`0013`、会话 scope 分派、snapshot/deployment 引用 basis、仓库详情/会话 API、严格二次校验、默认关闭开关、仓库抽屉和单仓库选择入口均已落地。API/Web/Go/静态/构建/Compose 回归通过；临时 PostgreSQL 16 完成迁移往返、两次 schema check 及四个 M5 门控测试。实现未增加 GitHub 网络调用、Agent/VPS 访问、Operation 或多仓库上下文。M5.2.2 已提交 `e0cf851` 并于 2026-07-25 通过生产只读金丝雀（快照基只读对话，零写副作用），验证后功能开关已还原关闭；下一门为后续 M5 切片。
 
-M5.4 单 Agent/单服务上下文只读会话已于 2026-07-26 完成本地实现与验收：`0014` 为两种 scope 增加独立组织复合外键、唯一约束和严格四选一 CHECK；服务路由只接受实例 ID 并由服务端派生业务服务，问题正文不参与选数。两个入口共用 M5.1 的 Provider、历史、预算、结构化回答、真实引用和落库前二次校验；独立开关默认关闭，不访问 VPS/Agent/GitHub 网络且不创建 Operation。API 186 项、Web 63 项、Ruff/ESLint/production build 通过；隔离 PostgreSQL 16 完成空库升级、`0014 -> 0013 -> 0014`、两次 schema check 和七项 M5 门控。Claude 审计通过，待生产金丝雀，详见 [M5.4_CONTEXT_CONVERSATION.md](./M5.4_CONTEXT_CONVERSATION.md)。
+M5.4 单 Agent/单服务上下文只读会话已于 2026-07-26 完成本地实现与验收：`0014` 为两种 scope 增加独立组织复合外键、唯一约束和严格四选一 CHECK；服务路由只接受实例 ID 并由服务端派生业务服务，问题正文不参与选数。两个入口共用 M5.1 的 Provider、历史、预算、结构化回答、真实引用和落库前二次校验；独立开关默认关闭，不访问 VPS/Agent/GitHub 网络且不创建 Operation。API 186 项、Web 63 项、Ruff/ESLint/production build 通过；隔离 PostgreSQL 16 完成空库升级、`0014 -> 0013 -> 0014`、两次 schema check 和七项 M5 门控。生产金丝雀通过 2026-07-26，详见 [M5.4_CONTEXT_CONVERSATION.md](./M5.4_CONTEXT_CONVERSATION.md)。
 
 - 提供跨 Fleet 的全局 Agent 对话，以及机器、服务、事件和仓库页面中的上下文对话抽屉。
 - 对话成为诊断和 M4 操作的统一入口：只读请求可按策略直接完成，写请求必须生成结构化计划并进入同一审批与执行状态机。
