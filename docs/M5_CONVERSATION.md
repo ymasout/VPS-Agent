@@ -10,7 +10,7 @@ M5.2.1 GitHub 白名单仓库知识检索已经本地完成、默认关闭且生
 
 M5.3.1 会话到 M4 安全操作计划的显式交接已完成本地实现与真实 PostgreSQL 验收；Provider 与自然语言仍无权创建或确认 Operation，生产计划级+执行级金丝雀通过 2026-07-24，见 [M5.3_OPERATION_HANDOFF.md](./M5.3_OPERATION_HANDOFF.md)。
 
-M5.3.2 已于 2026-07-25 完成本地实现与验收：在不新增迁移或 Agent 协议的前提下，把显式交接扩展到服务端唯一派生的 M4.2c 回滚计划；Claude 审计通过，待生产金丝雀，见 [M5.3_OPERATION_HANDOFF.md §20](./M5.3_OPERATION_HANDOFF.md)。
+M5.3.2 已于 2026-07-25 完成本地实现与验收：在不新增迁移或 Agent 协议的前提下，把显式交接扩展到服务端唯一派生的 M4.2c 回滚计划；生产金丝雀通过 2026-07-25，见 [M5.3_OPERATION_HANDOFF.md §20](./M5.3_OPERATION_HANDOFF.md)。
 
 M5.2.2 已于 2026-07-25 完成本地实现与验收并提交 `e0cf851`：单仓库上下文只读对话抽屉和只选择一个授权仓库的全局入口已落地，不做多仓库混合上下文；生产只读金丝雀已于 2026-07-25 通过（快照基只读对话，零写副作用，验证后功能开关已还原关闭），见 [M5.2.2_REPOSITORY_CONVERSATION.md](./M5.2.2_REPOSITORY_CONVERSATION.md)。
 

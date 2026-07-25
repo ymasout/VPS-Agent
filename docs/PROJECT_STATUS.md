@@ -1,7 +1,7 @@
 # 项目状态
 
 最后同步：2026-07-25
-当前阶段：**M0、M1、M2 已完成；M3 进行中；M4 核心完成（重启+部署+回滚均生产验证）；M5 进行中，M5.1/M5.2.1/M5.2.2 生产只读金丝雀通过；M5.3.1 生产计划级+执行级金丝雀通过；M5.3.2 显式回滚交接本地实现与验收完成，Claude 审计通过，待生产金丝雀**
+当前阶段：**M0、M1、M2 已完成；M3 进行中；M4 核心完成（重启+部署+回滚均生产验证）；M5 进行中，M5.1/M5.2.1/M5.2.2 生产只读金丝雀通过；M5.3.1 生产计划级+执行级金丝雀通过；M5.3.2 显式回滚交接本地实现与验收完成，生产金丝雀通过 2026-07-25**
 
 ## 1. 当前结论
 
@@ -270,7 +270,7 @@ M4 已正式开始，但没有把 M3 标记为完成。第一轮范围严格限�
 
 ## 7. M5：诊断与操作会话体验
 
-状态：**进行中（M5.1、M5.2.1、M5.2.2 生产只读金丝雀通过；M5.3.1 生产计划级+执行级金丝雀通过；M5.3.2 本地实现与验收完成，Claude 审计通过，待生产金丝雀）**
+状态：**进行中（M5.1、M5.2.1、M5.2.2 生产只读金丝雀通过；M5.3.1 生产计划级+执行级金丝雀通过；M5.3.2 本地实现与验收完成，生产金丝雀通过 2026-07-25）**
 
 2026-07-23 已完成 M5 第一轮架构兼容性和安全审计，并把首个切片冻结为 **M5.1：事件上下文的只读会话基础**。计划确认后完成本地实现、Claude 安全审计（5 P0 门关闭 + 6 P2/P3 修复）、提交 `f53eeee` 推送至 `main`，并以 deterministic 与真实 HTTP(DeepSeek 经临时适配器) Provider 通过生产只读金丝雀。
 
@@ -288,7 +288,7 @@ M4 已正式开始，但没有把 M3 标记为完成。第一轮范围严格限�
 
 M5.2.1 本地验收：API 157 项通过；Web 43 项、ESLint、生产构建、全部 Go 包和 Compose 配置通过。隔离 PostgreSQL 16 覆盖 `0010 -> 0011`、`0011 -> 0010 -> 0011`、schema check，以及真实事件会话的二次脱敏、跨组织隔离、同步错误 fail closed、零 Operation/GitHub 文件修改和撤权墓碑。M5.2.1 已提交推送 `54f356d`。生产只读金丝雀于 2026-07-24 通过：部署 `54f356d` + 迁移 `0010 -> 0011` + postflight 通过（功能关闭，M5.1 deterministic 无回归）；对已映射 MagicPDF 仓库的非关键服务事件开开关提问，轮次 `completed`，facts 含 `repository_file` aligned 引用（真实 file_id + 服务端构造 GitHub href），`operations=7`/`operation_transitions=45` 不变、GitHub 文件/binding 不变、日志干净；金丝雀后关开关 + 清测试数据，prod 回到 deterministic + 功能关闭。详见 [M5.2_REPOSITORY_KNOWLEDGE.md](./M5.2_REPOSITORY_KNOWLEDGE.md)。
 
-`8c34561` 补齐仓库上下文两个预算阶段的 manifest 省略计数并同步金丝雀文档，`91d8fff` 再修正实现清单和 README；两者已在 `origin/main` 但未部署。生产已于 2026-07-24 升级到 `c382ecb`（含上述两提交 + M5.3.1，迁移 `0011 -> 0012`，postflight 通过）；`CONVERSATION_OPERATION_HANDOFF_ENABLED=false`，prod 运行 M5.1/M5.2 关闭行为。生产于 2026-07-25 升级到 `e0cf851`（M5.2.2，迁移 `0012 -> 0013`，postflight 通过）；`CONVERSATION_REPOSITORY_CHAT_ENABLED=false`，prod 继续运行 M5.1/M5.2 关闭行为。
+`8c34561` 补齐仓库上下文两个预算阶段的 manifest 省略计数并同步金丝雀文档，`91d8fff` 再修正实现清单和 README；两者已在 `origin/main` 但未部署。生产已于 2026-07-24 升级到 `c382ecb`（含上述两提交 + M5.3.1，迁移 `0011 -> 0012`，postflight 通过）；`CONVERSATION_OPERATION_HANDOFF_ENABLED=false`，prod 运行 M5.1/M5.2 关闭行为。生产于 2026-07-25 升级到 `e0cf851`（M5.2.2，迁移 `0012 -> 0013`，postflight 通过）；`CONVERSATION_REPOSITORY_CHAT_ENABLED=false`，prod 继续运行 M5.1/M5.2 关闭行为。 生产于 2026-07-25 升级到 `c06aa8f`（M5.3.2 回滚交接，无新迁移，postflight 通过）；`CONVERSATION_OPERATION_HANDOFF_ENABLED=false` 保持关闭。
 
 2026-07-24 开始 M5.3 设计与代码审计。首片只设计从已完成事件会话显式交接到现有 M4 `docker_restart` 计划：自然语言和 Provider 输出本身不产生 Operation，用户必须点击独立动作创建待确认计划，之后仍须在现有操作页独立确认。服务实例、动作类型和所有可执行字段由服务端从事件与 M4 策略派生；部署、回滚、GitHub 写操作、自动确认和自动执行均不在首片。详见 [M5.3_OPERATION_HANDOFF.md](./M5.3_OPERATION_HANDOFF.md)。
 
@@ -300,7 +300,7 @@ M5.2.1 本地验收：API 157 项通过；Web 43 项、ESLint、生产构建、�
 
 生产只读金丝雀于 2026-07-25 通过：部署 `e0cf851` + 迁移 `0012 -> 0013` + postflight（功能关闭，M5.1 deterministic 无回归）；对 MagicPDF 仓库（`repositories.id=713c7632-3376-4f59-b8ba-170a53c47c7c`）开开关后，仓库详情 200 返回文件元数据（README.md，无正文/凭据）、空会话 200、提问 `completed`（provider=deterministic），citation `source_type=repository_file`/`repository.basis=snapshot`/`deployment_commit_sha=null`/`deployment_relation=unknown`/`available=true`，`context_manifest` 为 `m5.2.2-repository-context-v1`/`scope_type=repository`；`operations.source_conversation_turn_id` 指向本次轮次查 0 行（零写副作用生产实证），ops/trans 与 GitHub 文件/binding 不变、日志干净；金丝雀后关开关，prod 回到 deterministic + 功能关闭（`conversation_available=false`/`unavailable_reason=feature_disabled`）。
 
-同日完成 M5.3.2 本地实现与验收：复用 `0012` 会话来源/请求幂等和 `0009` `rollback_of`，不新增迁移；候选 GET 增加固定 `docker_compose_rollback`，严格 rollback-plan POST 只从当前组织、事件派生实例及事件观测窗口内唯一匹配的原始失败部署生成计划，请求体不接受失败部署 ID、digest、实例、路径或确认字段。M4 原入口和会话入口共同复用唯一 `build_rollback_plan`，结果只到 `awaiting_confirmation`，无签名/nonce，且与 restart 交接继续通过 `active_key` 互斥。真实 PostgreSQL 门控还发现并修复 M5.3.1 活动写冲突后的 ORM 失效读取，现以冻结字符串 ID 稳定返回 409。API 176 项、Web 54 项、Go 全包、Ruff、ESLint、production build、开发/生产 Compose 配置通过；隔离 PostgreSQL 16 完成空库升级、`0013 -> 0012 -> 0013`、两次 schema check 和 M5.1/M5.2.1/M5.3.1/M5.2.2/M5.3.2 五项门控。Claude 审计通过；待生产金丝雀。
+同日完成 M5.3.2 本地实现与验收：复用 `0012` 会话来源/请求幂等和 `0009` `rollback_of`，不新增迁移；候选 GET 增加固定 `docker_compose_rollback`，严格 rollback-plan POST 只从当前组织、事件派生实例及事件观测窗口内唯一匹配的原始失败部署生成计划，请求体不接受失败部署 ID、digest、实例、路径或确认字段。M4 原入口和会话入口共同复用唯一 `build_rollback_plan`，结果只到 `awaiting_confirmation`，无签名/nonce，且与 restart 交接继续通过 `active_key` 互斥。真实 PostgreSQL 门控还发现并修复 M5.3.1 活动写冲突后的 ORM 失效读取，现以冻结字符串 ID 稳定返回 409。API 176 项、Web 54 项、Go 全包、Ruff、ESLint、production build、开发/生产 Compose 配置通过；隔离 PostgreSQL 16 完成空库升级、`0013 -> 0012 -> 0013`、两次 schema check 和 M5.1/M5.2.1/M5.3.1/M5.2.2/M5.3.2 五项门控。生产金丝雀通过 2026-07-25。
 
 ## 8. 文档维护规则
 
