@@ -146,3 +146,5 @@ M3 只剩两个必须关闭的生产门：
 - 未提交、未推送、未部署，未触发生产诊断或 Provider 调用。
 
 2026-07-26 生产金丝雀结果：部署 ff4f5bc（M3 加固代码，无迁移）+ postflight。完成门1：对 m4-deploy-bad 事件 6b112ab3 触发 deterministic 诊断 -> completed，EvidenceItem(repository_file, path=README.md) + DiagnosticCitation 引用，ops/trans 13/81 不变。完成门2：配置 DIAGNOSTIC_PROVIDER=http_json + 临时 DeepSeek 适配器，触发诊断 -> failed/provider_timeout（DeepSeek >30s 超时受控），provider:http_json 不回退 deterministic，error_detail 固定字符串无凭据，ops/trans 不变。还原 DIAGNOSTIC_PROVIDER=deterministic。M3 标记为完成。
+
+注：首次完成门2因 M3 加固代码未提交（生产 git pull 只拉到已提交 main），跑了旧代码（error_code=provider_invalid_response 旧码）。提交 ff4f5bc + --no-cache 重建后，error_code 变为 provider_timeout（新码），证明加固生效。

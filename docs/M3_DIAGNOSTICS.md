@@ -2,7 +2,7 @@
 
 本文记录 M3 只读诊断纵向闭环的当前实现。它覆盖已登记 Docker/systemd 服务的有限日志取证、GitHub App 授权仓库的白名单文件快照、控制平面上下文和结构化诊断，不提供 Shell、服务重启、部署、回滚或任意路径读取。
 
-M3 已于 2026-07-26 进入最小收尾：只补真实仓库文件诊断引用和 M3 自身 `http_json` Provider 的生产证据；本地 Provider 安全加固与测试方案见 [M3_CLOSEOUT.md](./M3_CLOSEOUT.md)。M3 两项生产门已于 2026-07-26 通过（repository_file 真实引用 + http_json Provider 受控调用），M3 标记为完成。（原句：M3 在两项生产门通过前曾保持“进行中”。
+M3 已于 2026-07-26 进入最小收尾：只补真实仓库文件诊断引用和 M3 自身 `http_json` Provider 的生产证据；本地 Provider 安全加固与测试方案见 [M3_CLOSEOUT.md](./M3_CLOSEOUT.md)。M3 两项生产门已于 2026-07-26 通过（repository_file 真实引用 + http_json Provider 受控调用），M3 标记为完成。
 
 ## 1. 身份与数据模型
 
