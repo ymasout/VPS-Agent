@@ -587,17 +587,23 @@ class EvidenceRequestReceipt(BaseModel):
 
 
 class DiagnosticFact(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     statement: str = Field(min_length=1, max_length=1000)
     evidence_ids: list[str] = Field(min_length=1, max_length=16)
 
 
 class DiagnosticInference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     statement: str = Field(min_length=1, max_length=1000)
     confidence: Literal["low", "medium", "high"]
     evidence_ids: list[str] = Field(min_length=1, max_length=16)
 
 
 class DiagnosticRecommendation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     action: str = Field(min_length=1, max_length=1000)
     risk: Literal["low", "medium", "high"]
     requires_confirmation: bool = True
@@ -605,6 +611,8 @@ class DiagnosticRecommendation(BaseModel):
 
 
 class DiagnosticResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     summary: str = Field(min_length=1, max_length=2000)
     facts: list[DiagnosticFact] = Field(default_factory=list, max_length=64)
     inferences: list[DiagnosticInference] = Field(default_factory=list, max_length=64)

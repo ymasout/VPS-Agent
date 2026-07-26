@@ -1,10 +1,12 @@
 import hashlib
 import json
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
 import httpx
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,7 +38,68 @@ def utcnow() -> datetime:
 class DiagnosticProvider(Protocol):
     name: str
 
-    async def diagnose(self, evidence: Sequence[EvidenceItem]) -> object: ...
+    async def diagnose(self, evidence: Sequence["DiagnosticContextEvidence"]) -> object: ...
+
+
+@dataclass(frozen=True)
+class DiagnosticContextEvidence:
+    id: str
+    evidence_type: str
+    source_label: str
+    content: str
+
+
+class DiagnosticProviderFailure(RuntimeError):
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+
+
+EVIDENCE_PRIORITY = {
+    "alert_event": 0,
+    "agent_availability": 1,
+    "service_status": 1,
+    "metrics": 2,
+    "service_snapshot": 2,
+    "deployment_version": 3,
+    "repository_file": 4,
+    "docker_logs": 5,
+    "systemd_journal": 5,
+}
+MAX_PROVIDER_EVIDENCE_ITEMS = 64
+
+
+def build_diagnostic_context(
+    evidence: Sequence[EvidenceItem], max_bytes: int
+) -> list[DiagnosticContextEvidence]:
+    remaining = max(max_bytes, 0)
+    selected: list[DiagnosticContextEvidence] = []
+    ordered = sorted(
+        evidence,
+        key=lambda item: (
+            EVIDENCE_PRIORITY.get(item.evidence_type, 6),
+            item.collected_at,
+            item.id,
+        ),
+    )
+    for item in ordered[:MAX_PROVIDER_EVIDENCE_ITEMS]:
+        if remaining <= 0:
+            break
+        safe_content, _ = redact_text(item.content)
+        bounded, _ = truncate_utf8(safe_content, remaining)
+        if not bounded:
+            continue
+        selected.append(
+            DiagnosticContextEvidence(
+                id=item.id,
+                evidence_type=item.evidence_type,
+                source_label=truncate_utf8(redact_text(item.source_label)[0], 255)[0],
+                content=bounded,
+            )
+        )
+        remaining -= len(bounded.encode())
+    return selected
 
 
 class DeterministicDiagnosticProvider:
@@ -44,7 +107,7 @@ class DeterministicDiagnosticProvider:
 
     name = "deterministic"
 
-    async def diagnose(self, evidence: Sequence[EvidenceItem]) -> object:
+    async def diagnose(self, evidence: Sequence[DiagnosticContextEvidence]) -> object:
         facts = [
             {
                 "statement": f"已采集证据：{item.source_label}。",
@@ -79,11 +142,14 @@ class HTTPDiagnosticProvider:
         client: httpx.AsyncClient | None = None,
     ) -> None:
         if not settings.diagnostic_api_url:
-            raise RuntimeError("DIAGNOSTIC_API_URL is required for http_json provider")
+            raise DiagnosticProviderFailure(
+                "provider_invalid_configuration",
+                "DIAGNOSTIC_API_URL is required for http_json provider",
+            )
         self.settings = settings
         self.client = client
 
-    async def diagnose(self, evidence: Sequence[EvidenceItem]) -> object:
+    async def diagnose(self, evidence: Sequence[DiagnosticContextEvidence]) -> object:
         headers = {"content-type": "application/json"}
         if self.settings.diagnostic_api_key:
             headers["authorization"] = f"Bearer {self.settings.diagnostic_api_key}"
@@ -107,16 +173,39 @@ class HTTPDiagnosticProvider:
         owns_client = self.client is None
         client = self.client or httpx.AsyncClient(timeout=self.settings.diagnostic_timeout_seconds)
         try:
-            async with client.stream(
-                "POST", self.settings.diagnostic_api_url, headers=headers, json=payload
-            ) as response:
-                response.raise_for_status()
-                body = bytearray()
-                async for chunk in response.aiter_bytes():
-                    body.extend(chunk)
-                    if len(body) > 262144:
-                        raise RuntimeError("diagnostic provider response exceeds 262144 bytes")
-            decoded = json.loads(body)
+            try:
+                async with client.stream(
+                    "POST", self.settings.diagnostic_api_url, headers=headers, json=payload
+                ) as response:
+                    response.raise_for_status()
+                    body = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        body.extend(chunk)
+                        if len(body) > 262144:
+                            raise DiagnosticProviderFailure(
+                                "provider_response_too_large",
+                                "diagnostic provider response exceeded 262144 bytes",
+                            )
+            except httpx.TimeoutException as error:
+                raise DiagnosticProviderFailure(
+                    "provider_timeout", "diagnostic provider timed out"
+                ) from error
+            except httpx.HTTPStatusError as error:
+                raise DiagnosticProviderFailure(
+                    "provider_http_error",
+                    f"diagnostic provider returned HTTP {error.response.status_code}",
+                ) from error
+            except httpx.RequestError as error:
+                raise DiagnosticProviderFailure(
+                    "provider_http_error", "diagnostic provider request failed"
+                ) from error
+            try:
+                decoded = json.loads(body)
+            except (json.JSONDecodeError, UnicodeDecodeError) as error:
+                raise DiagnosticProviderFailure(
+                    "provider_invalid_json",
+                    "diagnostic provider returned invalid JSON",
+                ) from error
             return decoded.get("result", decoded) if isinstance(decoded, dict) else decoded
         finally:
             if owns_client:
@@ -442,18 +531,49 @@ async def finalize_diagnostic(
         ).all()
     )
     try:
+        provider_evidence = build_diagnostic_context(
+            evidence, settings.diagnostic_max_context_bytes
+        )
         provider = get_provider(settings)
-        raw_result = await provider.diagnose(evidence)
+        raw_result = await provider.diagnose(provider_evidence)
         result = DiagnosticResult.model_validate(raw_result)
-        validate_result_references(result, {item.id for item in evidence})
-    except Exception as error:
+        validate_result_references(result, {item.id for item in provider_evidence})
+    except DiagnosticProviderFailure as error:
         diagnostic.status = "failed"
-        diagnostic.error_code = "provider_invalid_response"
-        diagnostic.error_detail = str(error)[:512]
+        diagnostic.error_code = error.code
+        diagnostic.error_detail = error.detail
+        diagnostic.active_key = None
+        diagnostic.completed_at = utcnow()
+        return
+    except ValidationError:
+        diagnostic.status = "failed"
+        diagnostic.error_code = "provider_invalid_schema"
+        diagnostic.error_detail = "diagnostic provider returned an invalid structure"
+        diagnostic.active_key = None
+        diagnostic.completed_at = utcnow()
+        return
+    except ValueError:
+        diagnostic.status = "failed"
+        diagnostic.error_code = "provider_unknown_citation"
+        diagnostic.error_detail = "diagnostic provider returned an unknown evidence reference"
+        diagnostic.active_key = None
+        diagnostic.completed_at = utcnow()
+        return
+    except Exception:
+        diagnostic.status = "failed"
+        diagnostic.error_code = "provider_internal_error"
+        diagnostic.error_detail = "diagnostic provider failed"
         diagnostic.active_key = None
         diagnostic.completed_at = utcnow()
         return
 
+    provider_context_bytes = sum(len(item.content.encode()) for item in provider_evidence)
+    stored_evidence_bytes = sum(len(item.content.encode()) for item in evidence)
+    if len(provider_evidence) < len(evidence) or provider_context_bytes < stored_evidence_bytes:
+        result.missing_evidence = [
+            *result.missing_evidence[:63],
+            "部分证据因诊断上下文预算被省略或截断",
+        ]
     failed_requests = list(
         (
             await session.scalars(
@@ -466,6 +586,7 @@ async def finalize_diagnostic(
     )
     for request in failed_requests:
         result.missing_evidence.append(f"日志源 {request.source_key} 采集失败或超时")
+    result.missing_evidence = result.missing_evidence[:64]
     diagnostic.provider = provider.name
     diagnostic.result = result.model_dump()
     diagnostic.status = "completed"

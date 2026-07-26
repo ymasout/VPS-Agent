@@ -6,12 +6,15 @@ import pytest
 from fastapi import BackgroundTasks
 from pydantic import ValidationError
 
+import app.diagnostics as diagnostics_module
 import app.m3 as m3_module
 from app.api import reconcile_service_instance_keys
 from app.config import Settings
 from app.diagnostics import (
     DeterministicDiagnosticProvider,
+    DiagnosticProviderFailure,
     HTTPDiagnosticProvider,
+    build_diagnostic_context,
     collect_control_plane_evidence,
     finalize_diagnostic,
     reclaim_stale_diagnostics,
@@ -153,6 +156,140 @@ def test_http_provider_treats_evidence_as_untrusted_and_returns_structured_resul
     result = DiagnosticResult.model_validate(raw)
     validate_result_references(result, {"evidence-1"})
     asyncio.run(client.aclose())
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_code"),
+    [
+        ("timeout", "provider_timeout"),
+        ("http", "provider_http_error"),
+        ("invalid_json", "provider_invalid_json"),
+        ("too_large", "provider_response_too_large"),
+    ],
+)
+def test_http_diagnostic_provider_failure_modes_are_controlled(
+    mode: str, expected_code: str
+) -> None:
+    import httpx
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if mode == "timeout":
+            raise httpx.ReadTimeout("secret upstream detail", request=request)
+        if mode == "http":
+            return httpx.Response(503, request=request)
+        if mode == "invalid_json":
+            return httpx.Response(200, content=b"not-json", request=request)
+        return httpx.Response(200, content=b"x" * 262145, request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = HTTPDiagnosticProvider(
+        Settings(
+            diagnostic_provider="http_json",
+            diagnostic_api_url="https://diagnostic.invalid/v1/analyze",
+        ),
+        client,
+    )
+    with pytest.raises(DiagnosticProviderFailure) as error:
+        asyncio.run(provider.diagnose([]))
+    asyncio.run(client.aclose())
+
+    assert error.value.code == expected_code
+    assert "secret upstream detail" not in error.value.detail
+
+
+def test_diagnostic_context_is_bounded_and_prioritizes_repository_before_logs() -> None:
+    now = datetime.now(timezone.utc)
+
+    def evidence(identifier: str, evidence_type: str, content: str) -> EvidenceItem:
+        return EvidenceItem(
+            id=identifier,
+            diagnostic_id="diagnostic-1",
+            evidence_type=evidence_type,
+            source_label=evidence_type,
+            content=content,
+            content_sha256="hash",
+            redacted=True,
+            truncated=False,
+            collected_at=now,
+            source_metadata={},
+        )
+
+    selected = build_diagnostic_context(
+        [
+            evidence("logs", "docker_logs", "l" * 100),
+            evidence("repository", "repository_file", "r" * 30),
+            evidence("event", "alert_event", "e" * 10),
+        ],
+        45,
+    )
+
+    assert [item.id for item in selected] == ["event", "repository", "logs"]
+    assert sum(len(item.content.encode()) for item in selected) == 45
+
+
+def test_diagnostic_provider_configuration_and_schema_are_strict() -> None:
+    with pytest.raises(ValidationError, match="unsupported diagnostic provider"):
+        Settings(diagnostic_provider="unknown")
+    with pytest.raises(ValidationError, match="diagnostic API URL is required"):
+        Settings(diagnostic_provider="http_json", diagnostic_api_url=None)
+    with pytest.raises(ValidationError):
+        DiagnosticResult.model_validate(
+            {
+                "summary": "bounded",
+                "facts": [],
+                "inferences": [],
+                "recommendations": [],
+                "missing_evidence": [],
+                "tool_calls": [{"name": "shell"}],
+            }
+        )
+
+
+def test_finalize_diagnostic_persists_controlled_provider_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(timezone.utc)
+    diagnostic = DiagnosticRun(
+        id="diagnostic-1",
+        event_id="event-1",
+        active_key="event:event-1",
+        status="pending",
+        trigger="manual",
+        provider="http_json",
+        created_at=now,
+    )
+    evidence = EvidenceItem(
+        id="evidence-1",
+        diagnostic_id=diagnostic.id,
+        evidence_type="alert_event",
+        source_label="event",
+        content="bounded",
+        content_sha256="hash",
+        redacted=True,
+        truncated=False,
+        collected_at=now,
+        source_metadata={},
+    )
+
+    class FailingProvider:
+        name = "http_json"
+
+        async def diagnose(self, _evidence):
+            raise DiagnosticProviderFailure(
+                "provider_timeout", "diagnostic provider timed out"
+            )
+
+    session = AsyncMock()
+    session.scalar.return_value = 0
+    session.scalars.return_value = scalar_rows([evidence])
+    monkeypatch.setattr(diagnostics_module, "get_provider", lambda _settings: FailingProvider())
+
+    asyncio.run(finalize_diagnostic(session, diagnostic, Settings()))
+
+    assert diagnostic.status == "failed"
+    assert diagnostic.error_code == "provider_timeout"
+    assert diagnostic.error_detail == "diagnostic provider timed out"
+    assert diagnostic.active_key is None
 
 
 @pytest.mark.parametrize("path", ["relative/path", "/opt/../secret", "/opt/./app"])

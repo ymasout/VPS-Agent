@@ -2,6 +2,8 @@
 
 本文记录 M3 只读诊断纵向闭环的当前实现。它覆盖已登记 Docker/systemd 服务的有限日志取证、GitHub App 授权仓库的白名单文件快照、控制平面上下文和结构化诊断，不提供 Shell、服务重启、部署、回滚或任意路径读取。
 
+M3 已于 2026-07-26 进入最小收尾：只补真实仓库文件诊断引用和 M3 自身 `http_json` Provider 的生产证据；本地 Provider 安全加固与测试方案见 [M3_CLOSEOUT.md](./M3_CLOSEOUT.md)。M3 在两项生产门通过前仍保持“进行中”。
+
 ## 1. 身份与数据模型
 
 - `ServiceStatus` 仍是 Agent 最近一次上报的瞬时观测，不承担业务服务身份。
@@ -142,10 +144,11 @@ DIAGNOSTIC_API_URL=https://trusted-model-gateway.example/v1/diagnose
 DIAGNOSTIC_API_KEY=
 DIAGNOSTIC_MODEL=ops-diagnostic
 DIAGNOSTIC_TIMEOUT_SECONDS=30
+DIAGNOSTIC_MAX_CONTEXT_BYTES=131072
 DIAGNOSTIC_RUN_STALE_SECONDS=300
 ```
 
-模型响应限制为 256 KiB。超时、HTTP 错误、非法 JSON、结构错误或引用未知证据都会把诊断标记为 `failed`，不会执行任何建议。
+发送给模型的证据正文默认限制为 128 KiB，并按事件/状态、指标、版本、仓库文件、有限日志的固定顺序取舍；模型响应限制为 256 KiB。超时、HTTP 错误、非法 JSON、结构错误或引用未知证据都会把诊断标记为 `failed`，不会执行任何建议。
 
 `DIAGNOSTIC_RUN_STALE_SECONDS` 必须大于模型调用超时。Agent 领取/完成证据请求以及管理员重新触发诊断时会顺带回收陈旧任务：崩溃遗留的 Running 诊断会重新调用提供者；长期 Pending/Claimed 的证据请求会标记为 Failed，诊断继续完成并在 `missing_evidence` 中注明日志采集失败或超时。活动键最终会在 Completed/Failed 时释放。
 
@@ -192,8 +195,8 @@ Agent 和控制平面均遮蔽 Authorization、Bearer Token、密码、Cookie、
 
 - 文件日志与任意路径读取。
 - GitHub App 首版只支持一个安装 ID、至多 1000 个授权仓库和精确路径快照；同步采用 1–8 路受限并发，但仍在 API 后台任务或管理员请求内执行，尚无独立持久任务队列、全仓库检索和增量知识索引。
-- GitHub App 与 systemd journal 已在 2026-07-20 完成生产金丝雀（见第 8 节验证记录）；真实 AI 模型网关（`http_json` 提供者）的生产验收、文件日志、自动诊断调度和完整仓库同步仍未做。
+- GitHub App 与 systemd journal 已在 2026-07-20 完成生产金丝雀（见第 8 节验证记录）；M3 诊断模型网关（`http_json`）和真实仓库文件诊断引用仍待收尾生产验收。文件日志、自动诊断调度和完整仓库同步已明确转为后续增强，不阻塞 M3 完成。
 - 自动诊断调度和通用独立任务队列；当前控制平面维护循环只负责 Agent 可用性巡检与通知重试。
-- 全局聊天、页面上下文对话、向量数据库和诊断历史增强。
+- 全局聊天、页面上下文对话和诊断历史增强已由 M5 完成；向量数据库仍不在当前范围。
 - 任何 M4 写操作。
 - 证据领取仍在 Agent 的报告循环中串行执行：单次采集最多阻塞该循环 15 秒，每周期只处理一个证据请求。当前默认 30 秒报告间隔可接受；请求密度增加前应拆成独立、有并发上限的轮询循环。

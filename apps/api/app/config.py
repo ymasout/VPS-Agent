@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     diagnostic_api_key: str | None = None
     diagnostic_model: str = "ops-diagnostic"
     diagnostic_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
+    diagnostic_max_context_bytes: int = Field(default=131072, ge=16384, le=262144)
     diagnostic_log_lookback_seconds: int = Field(default=900, ge=60, le=86400)
     diagnostic_max_log_lines: int = Field(default=200, ge=1, le=500)
     diagnostic_max_log_bytes: int = Field(default=65536, ge=1024, le=65536)
@@ -99,6 +100,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_diagnostic_timing(self) -> "Settings":
+        if self.diagnostic_provider not in {"deterministic", "http_json"}:
+            raise ValueError("unsupported diagnostic provider")
+        if self.diagnostic_provider == "http_json" and not self.diagnostic_api_url:
+            raise ValueError("diagnostic API URL is required for http_json provider")
         if self.conversation_provider not in {"deterministic", "http_json"}:
             raise ValueError("unsupported conversation provider")
         if self.conversation_provider == "http_json" and not self.conversation_api_url:

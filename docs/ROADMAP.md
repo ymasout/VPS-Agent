@@ -204,6 +204,8 @@ Telegram 不再作为首个通知通道，但保留在后续多通道适配范�
 - [ ] 验证真实仓库文件证据（`repository_file`）进入诊断并被结论引用（隔离闭环已覆盖，生产未验证）。
 - [x] 在外部非关键 systemd 服务上完成 journal Claim/Complete、异常/恢复和诊断生产金丝雀（v0.3.3 修复旧版 journalctl 不认 RFC3339 时间戳，改用 `YYYY-MM-DD HH:MM:SS UTC`）。
 
+2026-07-26 开始 M3 最小收尾：范围只包含真实 `repository_file` 进入 M3 诊断引用，以及 M3 自身 `http_json` Provider 生产验证。Provider 本地加固已增加严格启动配置、128 KiB 默认总上下文预算、固定证据优先级、严格输出 schema、未知引用门和 timeout/HTTP/超大响应/非法 JSON 受控失败码；新增真实 PostgreSQL 仓库证据引用门控并已在 PostgreSQL 16 通过，schema check 一致。文件日志、自动诊断调度、整仓同步、独立任务队列和 GitHub 写均不进入收尾。详见 [M3_CLOSEOUT.md](./M3_CLOSEOUT.md)。
+
 ### 完成定义
 
 - 至少一个真实服务能映射到明确目录、受限日志来源和 GitHub 仓库版本。

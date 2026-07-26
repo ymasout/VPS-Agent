@@ -173,6 +173,8 @@ M3 将原路线中的“服务可关联”和“问题可诊断”核心闭环�
 
 M3 阶段检查点曾通过 API 81 项测试、Web 22 项测试、全部 Go 包测试、Ruff、ESLint、`go vet` 和 Web 生产构建；当时 Alembic head 为 `0005_m3_github_readonly`。当前开发树的合并验证记录见 M4 章节，不能用该历史检查点把 M3 标记为完成。
 
+2026-07-26 开始 M3 最小收尾：只关闭真实仓库文件诊断引用与 M3 `http_json` Provider 两项生产门。已在本地增加诊断 Provider 启动校验、总上下文预算与固定优先级、严格 schema、未知引用校验和受控失败码，并新增真实 PostgreSQL 仓库证据到 `DiagnosticCitation` 的门控测试；当前 API 常规回归 206 项通过、9 项数据库门跳过，Web 67 项、Ruff、Python compile、ESLint、production build、Go 全包与 vet、开发 Compose 配置通过。新增门控已在临时 PostgreSQL 16 上单独通过，验证真实 `repository_file` 进入诊断、敏感内容脱敏、`DiagnosticCitation` 落库及 Operation 数量不变，应用 schema check 一致；M3 仍须完成两项生产金丝雀后才能标记完成。详细边界与金丝雀方案见 [M3_CLOSEOUT.md](./M3_CLOSEOUT.md)。
+
 2026-07-17 已使用独立本地 Compose 项目完成真实 Caddy、PostgreSQL、API 和 Agent 端到端验收：Agent 只经 Caddy 注册、报告、领取和完成 Docker 日志证据，没有收到 Basic Auth 401；真实 Firing 事件的诊断最终进入 Completed 并保存 5 项证据，测试敏感值未进入持久化内容。测试栈使用临时值和独立数据卷，不涉及生产部署。
 
 2026-07-19 已完成生产金丝雀全闭环：停止 canary 后形成 Firing 和钉钉异常卡；Agent 经 Caddy 完成取证且无 401；双端脱敏后 `fake-secret` 持久化计数为 0、`[REDACTED]` 为 100；诊断进入 Completed 并生成 4 条带证据引用的事实；重启 canary 后进入 Resolved 并收到钉钉恢复卡。本批安全边界全部获得生产实证，M3 因产品化和剩余范围仍保持进行中。
