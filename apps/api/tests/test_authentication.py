@@ -11,6 +11,38 @@ from app.models import Agent
 from app.security import hash_token
 
 
+def test_production_requires_explicit_build_identity() -> None:
+    with pytest.raises(ValueError, match="instance id"):
+        Settings(app_env="production")
+
+    with pytest.raises(ValueError, match="commit sha"):
+        Settings(
+            app_env="production",
+            control_plane_instance_id="local-console",
+            control_plane_version="0.6.1",
+            control_plane_commit_sha="unknown-build",
+            control_plane_build_time="2026-07-26T00:00:00Z",
+        )
+
+    with pytest.raises(ValueError, match="must be UTC"):
+        Settings(
+            app_env="production",
+            control_plane_instance_id="local-console",
+            control_plane_version="0.6.1",
+            control_plane_commit_sha="a" * 40,
+            control_plane_build_time="2026-07-26T08:00:00+08:00",
+        )
+
+    settings = Settings(
+        app_env="production",
+        control_plane_instance_id="local-console",
+        control_plane_version="0.6.1",
+        control_plane_commit_sha="a" * 40,
+        control_plane_build_time="2026-07-26T00:00:00Z",
+    )
+    assert settings.control_plane_commit_sha == "a" * 40
+
+
 def test_admin_authentication_rejects_missing_and_invalid_tokens() -> None:
     settings = Settings(admin_api_token="admin-secret", skip_database_init=True)
 

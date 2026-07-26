@@ -6,7 +6,7 @@
 
 ## 1. 完成门
 
-M3 只剩两个必须关闭的生产门：
+M3 收尾定义了两个必须关闭的生产门，现均已通过：
 
 1. 真实 GitHub 白名单文件以 `repository_file` 证据进入一个真实 M3 `DiagnosticRun`，诊断事实或推断引用对应 `EvidenceItem`，并形成 `DiagnosticCitation`。
 2. M3 自身的 `DIAGNOSTIC_PROVIDER=http_json` 在生产非关键事件上完成一次受控真实模型调用；M5 Conversation Provider 的金丝雀不能替代该证明。
@@ -134,16 +134,16 @@ M3 只剩两个必须关闭的生产门：
 
 ## 9. M3 完成判定
 
-两个生产门通过并同步 `README.md`、`PROJECT_STATUS.md`、`ROADMAP.md` 与 `M3_DIAGNOSTICS.md` 后，M3 可以标记为完成。文件日志、自动调度、完整仓库同步、独立任务队列和两项兼容推广门继续进入后续 backlog，不应让已闭合的 M3 长期保持“进行中”。
+两个生产门已经通过，`README.md`、`PROJECT_STATUS.md`、`ROADMAP.md` 与 `M3_DIAGNOSTICS.md` 已同步，M3 完成条件达成。文件日志、自动调度、完整仓库同步、独立任务队列和两项兼容推广门继续进入后续 backlog，不影响 M3 已完成状态。
 
-## 10. 2026-07-26 本地进度
+## 10. 2026-07-26 实现与验收记录
 
 - README 的 M5 残留状态已修正。
 - Provider 配置、预算、严格 schema、引用和失败处理加固已实现。
 - API `206 passed, 9 skipped`；Web `67 passed`；Ruff、Python compile、ESLint、Next.js production build、Go test/vet 和开发 Compose 配置通过。
 - 新增 `test_m3_closeout_postgres.py`，用于验证真实 PostgreSQL 仓库证据与引用链及 Operation 零副作用。
 - Docker Desktop 恢复后，新增门控已在临时 PostgreSQL 16 单独通过：空库迁移到 `0017_m5_runbook_drafts`，真实 `repository_file` 进入诊断且完成脱敏，确定性 Provider 的事实引用形成 `DiagnosticCitation`，Operation 数量不变，`python -m app.schema check` 通过；临时容器已删除。
-- 未提交、未推送、未部署，未触发生产诊断或 Provider 调用。
+- 本地实现随后提交为 `ff4f5bc` 并部署生产；里程碑状态收口为 `3b459f3`，文档清理与首次金丝雀教训补充为 `5d0fab9`。
 
 2026-07-26 生产金丝雀结果：部署 ff4f5bc（M3 加固代码，无迁移）+ postflight。完成门1：对 m4-deploy-bad 事件 6b112ab3 触发 deterministic 诊断 -> completed，EvidenceItem(repository_file, path=README.md) + DiagnosticCitation 引用，ops/trans 13/81 不变。完成门2：配置 DIAGNOSTIC_PROVIDER=http_json + 临时 DeepSeek 适配器，触发诊断 -> failed/provider_timeout（DeepSeek >30s 超时受控），provider:http_json 不回退 deterministic，error_detail 固定字符串无凭据，ops/trans 不变。还原 DIAGNOSTIC_PROVIDER=deterministic。M3 标记为完成。
 

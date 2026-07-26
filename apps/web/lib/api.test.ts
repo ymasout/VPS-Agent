@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ControlPlaneApiError, formatBytes, getAgent, getAgents } from "./api";
+import { ControlPlaneApiError, formatBytes, getAgent, getAgents, getSystemInfo } from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe("control plane API client", () => {
@@ -25,6 +26,29 @@ describe("control plane API client", () => {
     await expect(request).rejects.toThrow("API returned 404");
     await expect(request).rejects.toBeInstanceOf(ControlPlaneApiError);
     await expect(request).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("keeps the managed system token in the server-side request header", async () => {
+    vi.stubEnv("ADMIN_API_TOKEN", "managed-secret");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('{"schema_current":true}', { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getSystemInfo();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/system-info",
+      {
+        cache: "no-store",
+        headers: { "X-Admin-Token": "managed-secret" },
+      },
+    );
+  });
+
+  it("fails closed when the managed system token is absent", async () => {
+    vi.stubEnv("ADMIN_API_TOKEN", "");
+    await expect(getSystemInfo()).rejects.toThrow("ADMIN_API_TOKEN is required");
   });
 });
 

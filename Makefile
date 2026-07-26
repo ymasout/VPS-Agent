@@ -1,4 +1,4 @@
-.PHONY: dev up down logs ps install check test api-test web-test agent-test
+.PHONY: dev up down logs ps install check test api-test web-test agent-test recovery-test
 
 dev: up
 up:
@@ -24,3 +24,5 @@ api-test:
 	python -m pytest apps/api/tests
 agent-test:
 	cd apps/agent && go test ./...
+recovery-test:
+	sh deploy/tests/m6-recovery-integration.sh

@@ -1,0 +1,14 @@
+name: Control Plane Recovery
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backup-restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run real PostgreSQL backup and isolated restore
+        run: sh deploy/tests/m6-recovery-integration.sh

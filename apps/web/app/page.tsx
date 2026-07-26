@@ -1,11 +1,14 @@
 import Link from "next/link";
-import { Agent, AlertEvent, GitHubRepository, GitHubStatus, formatBytes, getAgents, getEvents, getGitHubRepositories, getGitHubStatus } from "@/lib/api";
+import { Agent, AlertEvent, GitHubRepository, GitHubStatus, SystemInfo, formatBytes, getAgents, getEvents, getGitHubRepositories, getGitHubStatus, getSystemInfo } from "@/lib/api";
 import { summarizeFleet } from "@/lib/fleet";
 import { RegistrationPanel } from "./registration-panel";
 import { GitHubPanel } from "./github-panel";
 
 export const dynamic = "force-dynamic";
-const consoleVersion = "0.4.2-dev";
+
+function shortCommit(value: string) {
+  return value === "unknown-build" ? value : value.slice(0, 12);
+}
 
 function Metric({ label, value }: { label: string; value: string }) {
   return <div className="metric"><span>{label}</span><strong>{value}</strong></div>;
@@ -35,9 +38,11 @@ export default async function Home() {
   let events: AlertEvent[] = [];
   let githubStatus: GitHubStatus | null = null;
   let repositories: GitHubRepository[] = [];
+  let systemInfo: SystemInfo | null = null;
   let error = "";
   try {
     [agents, events, githubStatus] = await Promise.all([getAgents(), getEvents(), getGitHubStatus()]);
+    try { systemInfo = await getSystemInfo(); } catch { systemInfo = null; }
     if (githubStatus.configured) repositories = await getGitHubRepositories();
   } catch { error = "控制平面暂时不可用，请检查 API 服务。"; }
   const fleet = summarizeFleet(agents);
@@ -63,7 +68,7 @@ export default async function Home() {
             <time>{new Date(event.last_observed_at).toLocaleString("zh-CN")}</time>
           </Link>)}</div>
       </section>}
-      <footer><span>control plane</span> trusted <i /> <span>mode</span> self-hosted <i /> <span>console</span> {consoleVersion}</footer>
+      <footer><span>control plane</span> {systemInfo?.schema_current ? "trusted" : "check schema"} <i /> <span>mode</span> self-hosted <i /> <span>build</span> {systemInfo ? `${systemInfo.version} · ${shortCommit(systemInfo.commit_sha)}` : "unavailable"}</footer>
     </main>
   );
 }

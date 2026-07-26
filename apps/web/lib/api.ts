@@ -3,6 +3,15 @@ export type Metric = { cpu_percent: number; memory_percent: number; memory_used_
 export type Service = { kind: string; key: string; name: string; state: string; detail: string | null; healthy: boolean | null; observed_at: string };
 export type Agent = { id: string; name: string; hostname: string; os: string; arch: string; version: string; online: boolean; last_seen_at: string | null; latest_metrics: Metric | null; service_counts: Record<string, number>; service_kind_counts: Record<string, number>; service_problem_count: number };
 export type AgentDetail = Agent & { capabilities: string[]; services: Service[] };
+export type SystemInfo = {
+  instance_id: string;
+  version: string;
+  commit_sha: string;
+  build_time: string;
+  alembic_revision: string[];
+  expected_alembic_revision: string[];
+  schema_current: boolean;
+};
 export type ServiceMappingCandidate = {
   agent_id: string;
   service_kind: string;
@@ -353,7 +362,19 @@ async function request<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function adminRequest<T>(path: string): Promise<T> {
+  const token = process.env.ADMIN_API_TOKEN;
+  if (!token) throw new Error("ADMIN_API_TOKEN is required for managed API requests");
+  const response = await fetch(`${apiURL}${path}`, {
+    cache: "no-store",
+    headers: { "X-Admin-Token": token },
+  });
+  if (!response.ok) throw new ControlPlaneApiError(response.status);
+  return response.json() as Promise<T>;
+}
+
 export const getAgents = () => request<Agent[]>("/api/v1/agents");
+export const getSystemInfo = () => adminRequest<SystemInfo>("/api/v1/system-info");
 export const getAgent = (id: string) => request<AgentDetail>(`/api/v1/agents/${id}`);
 export const getServiceMappingCandidates = (id: string) =>
   request<ServiceMappingCandidate[]>(`/api/v1/agents/${id}/service-mapping-candidates`);

@@ -1,7 +1,7 @@
 # 项目状态
 
 最后同步：2026-07-26
-当前阶段：**M0、M1、M2 已完成；M3 已完成；M4 核心完成（重启+部署+回滚均生产验证）；M5 已完成，M5.1–M5.4 相应生产金丝雀通过；M5.5–M5.7 本地实现与验收完成，生产金丝雀通过 2026-07-26**
+当前阶段：**M0、M1、M2 已完成；M3 已完成；M4 核心完成（重启+部署+回滚均生产验证）；M5 已完成，M5.1–M5.7 均通过相应生产金丝雀；M6.1 首片本地实现与验证完成，等待独立审计**
 
 ## 1. 当前结论
 
@@ -156,7 +156,7 @@ M0 完成时存在的“无正式 Agent 身份、无资源持久化、无真实 
 
 ## 5. M3：上下文与 AI 诊断
 
-状态：**进行中**
+状态：**已完成**（2026-07-26）
 
 M3 将原路线中的“服务可关联”和“问题可诊断”核心闭环前置整合：先建立服务、部署目录、有限日志来源、GitHub 仓库与部署版本映射，再收集有边界、可脱敏、可引用的故障证据，最终由 AI 输出明确区分的事实、推断和建议。M3 保持只读，不包含任意 Shell 或自动修复；安全重启和其他写操作仍由 M4 的 Runbook、审批、验证与审计承载。
 
@@ -173,7 +173,7 @@ M3 将原路线中的“服务可关联”和“问题可诊断”核心闭环�
 
 M3 阶段检查点曾通过 API 81 项测试、Web 22 项测试、全部 Go 包测试、Ruff、ESLint、`go vet` 和 Web 生产构建；当时 Alembic head 为 `0005_m3_github_readonly`。当前开发树的合并验证记录见 M4 章节，不能用该历史检查点把 M3 标记为完成。
 
-2026-07-26 开始 M3 最小收尾：只关闭真实仓库文件诊断引用与 M3 `http_json` Provider 两项生产门。已在本地增加诊断 Provider 启动校验、总上下文预算与固定优先级、严格 schema、未知引用校验和受控失败码，并新增真实 PostgreSQL 仓库证据到 `DiagnosticCitation` 的门控测试；当前 API 常规回归 206 项通过、9 项数据库门跳过，Web 67 项、Ruff、Python compile、ESLint、production build、Go 全包与 vet、开发 Compose 配置通过。新增门控已在临时 PostgreSQL 16 上单独通过，验证真实 `repository_file` 进入诊断、敏感内容脱敏、`DiagnosticCitation` 落库及 Operation 数量不变，应用 schema check 一致；M3 仍须完成两项生产金丝雀后才能标记完成。详细边界与金丝雀方案见 [M3_CLOSEOUT.md](./M3_CLOSEOUT.md)。
+2026-07-26 完成 M3 最小收尾：诊断 Provider 已增加启动校验、总上下文预算与固定优先级、严格 schema、未知引用校验和受控失败码，并新增真实 PostgreSQL 仓库证据到 `DiagnosticCitation` 的门控测试；API 常规回归 206 项通过、9 项数据库门跳过，Web 67 项、Ruff、Python compile、ESLint、production build、Go 全包与 vet、开发 Compose 配置通过。新增门控已在临时 PostgreSQL 16 上单独通过，验证真实 `repository_file` 进入诊断、敏感内容脱敏、`DiagnosticCitation` 落库及 Operation 数量不变，应用 schema check 一致。两项生产金丝雀随后通过：真实仓库文件形成诊断引用，M3 `http_json` Provider 超时按 `provider_timeout` 受控失败且零 Operation 副作用；生产已恢复 deterministic，M3 标记为完成。详细证据见 [M3_CLOSEOUT.md](./M3_CLOSEOUT.md)。
 
 2026-07-17 已使用独立本地 Compose 项目完成真实 Caddy、PostgreSQL、API 和 Agent 端到端验收：Agent 只经 Caddy 注册、报告、领取和完成 Docker 日志证据，没有收到 Basic Auth 401；真实 Firing 事件的诊断最终进入 Completed 并保存 5 项证据，测试敏感值未进入持久化内容。测试栈使用临时值和独立数据卷，不涉及生产部署。
 
@@ -310,7 +310,23 @@ M5.2.1 本地验收：API 157 项通过；Web 43 项、ESLint、生产构建、�
 
 同日完成 M5.5–M5.7 收尾统一设计，并按顺序连续完成本地实现与验收。`0015_m5_fleet_conversation` 增加第五种严格 Fleet scope、不可变组织聚合快照和快照引用墓碑；Provider 异步阶段只读取已持久化 counts/IDs，不重查 live 聚合，摘要覆盖候选 source IDs。`0016_m5_conversation_feedback` 增加一轮一反馈，事件页增加统一历史、确定性同组织相似事件与显式反馈。`0017_m5_runbook_drafts` 增加不可执行草稿、只读复盘和草稿详情；草稿重新查询 citation 行，引用或快照删除后只显示无正文墓碑，来源轮次删除后复合 FK `SET NULL` 而草稿组织审计保留。三个新开关均默认关闭，不新增 Agent/VPS/GitHub 网络或 Operation 写路径。API 199 项、Web 67 项、Ruff、Python compile、ESLint、production build、Go 全包与 vet 通过；隔离 PostgreSQL 16 完成空库升级、`0014 -> 0017 -> 0014 -> 0017`、schema check 和八项 M5 门控。生产金丝雀通过 2026-07-26；详细设计与证据见 [M5_COMPLETION_PLAN.md](./M5_COMPLETION_PLAN.md)。
 
-## 8. 文档维护规则
+## 8. M6：自托管产品化
+
+状态：**进行中（M6.1 首片本地实现与验证完成，等待独立审计）**
+
+2026-07-26 完成 M6 第一轮发布、Compose、Alembic、备份/恢复、Agent 安装升级、版本/健康、Web 管理入口、CI 和发布资产审计。当前结论：
+
+审计时的生产控制平面基线为 `ff4f5bc`、Alembic `0017_m5_runbook_drafts`；该次 M3 Provider 收尾镜像重建、`--no-cache` 教训与生产验证记录见 [M3_CLOSEOUT.md §10](./M3_CLOSEOUT.md#10-生产金丝雀执行记录2026-07-26)。这是一条历史记录，任何后续生产动作仍须实时核对运行镜像和 revision。
+
+- M6.1 首片已让 `adopt`/`preflight` 共用同快照原子备份包（dump、严格 manifest、SHA256SUMS、archive 校验），并加入只允许隔离项目、显式实例确认和空目标的恢复 CLI；无新迁移，head 保持 `0017`。
+- API/Web Dockerfile 和生产 Compose 现要求显式 build version/40 位 commit/build time，缺失时只使用显眼假值或在生产设置校验中失败；受管理 system-info 返回实际/期望 revision，公开 `/healthz` 保持最小响应，Web 页脚不再硬编码版本。
+- API 测试入口已中性化工作区 GitHub 环境污染，且保留部分 GitHub 配置拒绝断言；从仓库根目录运行 212 项通过、9 项数据库门跳过。
+- Agent Release 已有双架构产物、SHA-256 和 systemd 安全配置，但升级没有 last-known-good 自动回退、发布者签名或控制平面兼容门。
+- Web 尚无 PWA manifest/service worker/安装图标；移动审批、更多通知和团队协作尚未实现。
+
+M6 顺序冻结为 M6.1 可恢复性与发布基础 → M6.2 PWA/移动只读与审批 → M6.3 通知/模板/引导配置 → M6.4 协作/开源评估；Web SSH 和限时高风险会话最后单独设计。第一纵向切片“可验证的控制平面 PostgreSQL 备份与离线恢复基础”已完成本地实现与验证：真实 PostgreSQL 16 完成迁移、种子数据、同快照备份、测试卷清空、空库恢复、schema check 和关键记录一致性；损坏包、伪造 commit、错误实例确认与非空目标均失败关闭。Web 69 项、Go test/vet、Ruff、build、Compose、Caddy 和 Alembic head 检查通过。当前等待独立审计，未提交、未推送、未部署，也未执行任何生产恢复。完整边界见 [M6_PRODUCTIZATION.md](./M6_PRODUCTIZATION.md)。
+
+## 9. 文档维护规则
 
 - 架构或协议发生变化时更新 `ARCHITECTURE.md`。
 - 每个里程碑开始和完成时更新本文件。

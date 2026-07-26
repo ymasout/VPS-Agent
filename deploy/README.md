@@ -8,7 +8,7 @@
 cd /opt/vps-agent-console
 cp deploy/.env.production.example deploy/.env.production
 chmod 600 deploy/.env.production
-# 编辑真实域名、密码哈希、数据库密码和管理令牌
+# 编辑真实域名、稳定实例 ID、构建版本/commit/time、密码哈希、数据库密码和管理令牌
 nano deploy/.env.production
 docker compose --env-file deploy/.env.production -f deploy/compose.production.yaml config
 docker compose --env-file deploy/.env.production -f deploy/compose.production.yaml build
@@ -47,27 +47,41 @@ sh deploy/control-plane-release.sh postflight
 unset CONTROL_PLANE_BASIC_AUTH
 ```
 
-`preflight` 包含 Compose 配置检查、候选 Caddy 配置校验、`pg_dump` 和从当前 revision 到 head 的离线 SQL 预览。`--sql` 只生成 SQL，不执行数据库事务，因此是“预览”而不是真正的 dry-run。`postflight` 检查数据库 revision/结构、`/healthz`、Agent operation 路由以及至少一台 Agent 的服务映射候选接口；最后一项会捕获既有表缺列，operation 健康端点会捕获 Caddy 仍把 Agent 路由挡成 401 的问题。
+`preflight` 包含 Compose 配置检查、候选 Caddy 配置校验、M6.1 原子备份包和从当前 revision 到 head 的离线 SQL 预览。`adopt` 与 `preflight` 共用同一备份实现，且前者仍在 `stamp head` 前备份旧 create_all 库。`--sql` 只生成 SQL，不执行数据库事务，因此是“预览”而不是真正的 dry-run。`postflight` 检查数据库 revision/结构、`/healthz`、Agent operation 路由以及至少一台 Agent 的服务映射候选接口；最后一项会捕获既有表缺列，operation 健康端点会捕获 Caddy 仍把 Agent 路由挡成 401 的问题。
 
-## 备份校验与失败恢复
+## M6.1 备份包与隔离恢复
 
-`adopt` 和 `preflight` 默认把 PostgreSQL custom-format 备份写入 `/var/backups/vps-agent-console`，权限分别为目录 `0700`、文件 `0600`，并在成功输出中打印确切文件名。脚本不会自动删除备份。至少保留 pre-adoption 备份到 M4.2 生产验证完成，并保留最近三份 pre-migration 备份；清理前先确认已有更新且验证过的备份。
-
-迁移前应使用脚本输出的确切路径检查文件非空且目录可被 `pg_restore` 读取：
+`adopt` 和 `preflight` 默认把原子备份包写入 `/var/backups/vps-agent-console`。也可由管理员显式创建一次备份：
 
 ```bash
-BACKUP=/var/backups/vps-agent-console/脚本输出的文件名.dump
-test -s "$BACKUP"
-docker compose --env-file deploy/.env.production -f deploy/compose.production.yaml \
-  exec -T postgres pg_restore --list < "$BACKUP" >/dev/null
+BACKUP_DIR=/var/backups/vps-agent-console \
+  sh deploy/control-plane-backup.sh manual
 ```
+
+命令只在 `pg_dump`、`pg_restore --list`、严格 manifest 和 `SHA256SUMS` 全部通过后，将临时目录原子改名为 `control-plane-标签-UTC时间`。成品固定包含 `postgres.dump`、`manifest.json` 和 `SHA256SUMS`，目录/文件权限为 `0700`/`0600`，脚本不自动上传或删除旧包。dump 与固定关键表计数来自同一 exported snapshot；备份可能包含开始时仍在途的 Operation，因此计划内金丝雀应避开 M4 执行窗口并记录 manifest 的 `active_operation_count`。
+
+恢复只能面向已经启动的隔离、空 PostgreSQL Compose 项目。隔离环境必须使用与备份相同的稳定实例 ID、应用版本/commit、数据库名和角色，并提供相同 PostgreSQL major 及所需 extension；不得复用生产项目名。先只读检查，再显式确认实例并恢复：
+
+```bash
+export ENV_FILE=/安全绝对路径/restore.env
+export COMPOSE_PROJECT_NAME=vps-agent-restore-drill-20260726
+export RESTORE_ISOLATED_TARGET=yes
+PACKAGE=/安全绝对路径/control-plane-manual-UTC时间
+
+sh deploy/control-plane-restore.sh inspect "$PACKAGE"
+export RESTORE_CONFIRM_INSTANCE_ID=manifest中的实例ID
+export RESTORE_AUDIT_DIR=/安全绝对路径/restore-audit
+sh deploy/control-plane-restore.sh restore "$PACKAGE"
+```
+
+恢复脚本拒绝 symlink、损坏包、错误 build/实例/PG major/数据库名/角色、缺少 extension 支持和任何非空目标；不提供 `--force`、`--clean`、Web/API/Provider/Agent 入口。实际恢复使用 `--exit-on-error --single-transaction --no-owner --no-privileges`，随后执行 revision/schema 和固定关键表计数核对，只输出有限 JSON 摘要。真实生产库恢复属于单独事故授权事件，不是 M6.1 正常金丝雀。
 
 失败时按发生阶段处理：
 
-- `verify-adoption` 或 preflight 在迁移前失败：数据库尚未被迁移；停止发布、保留备份并修复检查项。不得绕过校验执行 `stamp`。
+- `verify-adoption` 或 preflight 在迁移前失败：数据库尚未被迁移；停止发布、保留已完成的原子备份包并修复检查项。不得绕过校验执行 `stamp`。
 - `migrate` 失败：不要启动新 API，也不要立即重跑或执行 `alembic downgrade`。先查看容器日志，再运行 `docker compose --env-file deploy/.env.production -f deploy/compose.production.yaml run --rm --no-deps api python -m app.schema revisions` 确认数据库 revision；只有确认事务已完整回滚后才能修复并重试。
 - API/Web 启动或 postflight 失败，但 `app.schema check` 已通过：优先把应用和 Caddy 回到上一个已知可用提交，保留当前数据库和备份；不要仅因应用问题恢复数据库。
-- 只有确认数据库结构或数据已经不一致时才考虑恢复备份。恢复前停止 Caddy、Web 和 API 的写入，保留失败现场的二次备份，并针对脚本输出的确切备份文件制定单独、复核过的 `pg_restore` 操作；不要直接对在线生产库使用通用的 `--clean` 恢复命令。
+- 只有确认数据库结构或数据已经不一致时才考虑生产恢复。恢复前停止 Caddy、Web 和 API 的写入，保留失败现场的二次备份，并取得指定恢复点和目标的单独事故授权；不得把上面的隔离演练命令直接指向在线生产库。
 
 M4.1 的一次性接管是在结构已经与 `0006` 完全一致后才 stamp，因此单纯回退 M4.1 应用代码不需要删除 `alembic_version` 或恢复数据库。
 
@@ -77,7 +91,11 @@ M4.1 的一次性接管是在结构已经与 `0006` 完全一致后才 stamp，�
 docker compose --env-file deploy/.env.production -f deploy/compose.production.yaml ps
 docker compose --env-file deploy/.env.production -f deploy/compose.production.yaml logs -f caddy api
 curl https://你的域名/healthz
+curl -u 'Caddy用户名:原始密码' -H "X-Admin-Token: $ADMIN_API_TOKEN" \
+  https://你的域名/api/v1/system-info
 ```
+
+`system-info` 必须返回与本次构建镜像一致的 commit、版本以及实际/期望 Alembic revision；公开 `/healthz` 仍应只返回最小 `status/service`，不包含 commit、数据库名或备份路径。
 
 浏览器访问域名时使用 `CADDY_ADMIN_USER` 和生成哈希前的原始密码登录。
 

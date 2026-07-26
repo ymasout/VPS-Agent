@@ -21,6 +21,7 @@ from .models import (
     ServiceStatus,
 )
 from .notifications import deliver_pending_notifications
+from .schema import current_revisions, expected_revisions
 from .schemas import (
     AgentDetail,
     AgentRegister,
@@ -35,6 +36,7 @@ from .schemas import (
     RegistrationTokenCreated,
     ReportReceipt,
     ServiceView,
+    SystemInfo,
 )
 from .security import generate_token, hash_token
 
@@ -57,6 +59,32 @@ async def require_admin(
 ) -> None:
     if not x_admin_token or hash_token(x_admin_token) != hash_token(settings.admin_api_token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid admin token")
+
+
+@router.get(
+    "/system-info",
+    response_model=SystemInfo,
+    dependencies=[Depends(require_admin)],
+)
+async def system_info(
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> SystemInfo:
+    expected = sorted(expected_revisions())
+    current = (
+        []
+        if settings.skip_database_init
+        else sorted(await current_revisions(await session.connection()))
+    )
+    return SystemInfo(
+        instance_id=settings.control_plane_instance_id,
+        version=settings.control_plane_version,
+        commit_sha=settings.control_plane_commit_sha,
+        build_time=settings.control_plane_build_time,
+        alembic_revision=current,
+        expected_alembic_revision=expected,
+        schema_current=current == expected,
+    )
 
 
 async def current_agent(

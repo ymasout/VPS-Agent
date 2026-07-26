@@ -7,6 +7,16 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from .image_refs import normalize_repository, parse_digest_reference
 
 
+class SystemInfo(BaseModel):
+    instance_id: str
+    version: str
+    commit_sha: str
+    build_time: str
+    alembic_revision: list[str]
+    expected_alembic_revision: list[str]
+    schema_current: bool
+
+
 class RegistrationTokenCreate(BaseModel):
     name: str = Field(default="VPS Agent", min_length=1, max_length=255)
     expires_in_minutes: int = Field(default=30, ge=1, le=1440)

@@ -8,6 +8,7 @@ M5.2.1 事件作用域 GitHub 白名单仓库知识检索已完成本地实现�
 M5.3.1 会话到 M4 安全重启计划的显式交接已完成生产计划级+执行级金丝雀；M5.3.2 会话到显式回滚计划交接已完成生产金丝雀；M5.3.3 操作只读时间线与可信部署页跳转已完成本地实现、真实 PostgreSQL 验收，并于 2026-07-25 通过生产金丝雀；边界见 [M5.3_OPERATION_HANDOFF.md](./M5.3_OPERATION_HANDOFF.md)。
 M5.4 单 Agent/单服务上下文只读会话已完成本地实现与真实 PostgreSQL 验收，生产金丝雀通过 2026-07-26；两个 scope 的可信根、威胁模型和验收边界见 [M5.4_CONTEXT_CONVERSATION.md](./M5.4_CONTEXT_CONVERSATION.md)。
 M5.5–M5.7 已完成本地实现与真实 PostgreSQL 验收：组织级 Fleet 只读会话使用先持久化的不可变聚合快照；事件洞察提供确定性历史/相似事件与显式反馈；Runbook 只保存不可执行草稿并对失效 citation 显示墓碑。三片共用既有 Provider、引用、脱敏和组织隔离框架，独立迁移与开关均默认关闭；生产金丝雀通过 2026-07-26。详细边界见 [M5_COMPLETION_PLAN.md](./M5_COMPLETION_PLAN.md)。
+M6 设计已确认，M6.1 首片本地实现与真实 PostgreSQL 验证完成，等待独立审计；尚未提交或部署。自托管发布、运行版本身份、备份/恢复边界、威胁模型和分阶段顺序见 [M6_PRODUCTIZATION.md](./M6_PRODUCTIZATION.md)。
 
 ## 1. 产品与部署边界
 
@@ -94,6 +95,7 @@ Release 安装器在首次安装时生成独立的 Agent machine-id，保存在 
 - Caddy 是唯一公网入口，终止 HTTPS，并分别路由 Web、控制 API、Agent API 和 Release 中转。
 - Next.js、FastAPI、PostgreSQL、Redis 和 Caddy 由生产 Docker Compose 托管。
 - Alembic 是开发和生产数据库结构的唯一演进机制。部署在 API 启动前显式执行一次迁移；API entrypoint 不运行迁移，只在启动时核对数据库 revision，版本不匹配则拒绝启动。
+- M6.1 首片保持显式迁移，并把“迁移前 `pg_dump`”扩展为同一 exported snapshot 下、带运行版本/commit/revision/PostgreSQL major、固定计数 allowlist、manifest 和校验的原子备份包。恢复仅作为管理员显式离线操作，默认拒绝非空/错误目标，不接入 Web、Provider、Agent 或 M4 Operation；本地正/负向验证已完成，等待独立审计，尚未部署。
 - 从历史 `create_all` 数据库接管时，必须先备份并对照当前 ORM 元数据验证结构，再一次性 `stamp head`；不得对未知或不完整结构盲目 stamp。`create_all` 仅保留在历史 `0001` 的空库 bootstrap 和 CI 旧库切换夹具中，不再由应用运行时调用。
 - 外部 VPS 上的 Agent 由各自主机的 systemd 托管，只需访问控制平面的 443 端口。
 - 控制平面宿主机可以运行同一 Agent 进行自监控，但该 Agent 与控制面容器生命周期分离；控制面整体故障时，自监控上报也会中断，这是当前单实例部署的已知盲区。
@@ -267,7 +269,7 @@ flowchart LR
 
 ## 10. 明确延后能力
 
-- M3 后续：文件日志、真实模型生产验收和同步任务可靠性增强；Docker 自动发现、Web 单服务确认、Agent 可用性、GitHub/systemd 隔离闭环以及两条生产金丝雀（GitHub App 同步/Webhook/撤权、外部 systemd journal 取证）已进入当前实现。
+- M3 后续：文件日志和同步任务可靠性增强；Docker 自动发现、Web 单服务确认、Agent 可用性、GitHub/systemd 隔离闭环、真实仓库诊断引用与 `http_json` Provider 受控生产调用均已完成验证。
 - M4 后续扩展：拉取源码/构建、受限清理。重启、部署和回滚已生产验证。
-- M5：全局/上下文对话、仓库知识和诊断历史增强。
-- M6：Web SSH、PWA/移动审批、团队协作和自托管产品化。
+- M5 已完成：全局/上下文对话、仓库知识、诊断历史、反馈、Runbook 草稿与只读复盘均已通过生产金丝雀；GitHub 写和会话部署交接仍为后续独立扩展。
+- M6：先完成可验证的安装/升级/备份/恢复和发布基础，再进入 PWA/移动审批、通知/模板、团队协作和开源评估；Web SSH/高风险会话最后单独实施。

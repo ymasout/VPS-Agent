@@ -29,13 +29,8 @@ require_url() {
 
 backup_database() {
     label=$1
-    mkdir -p "$BACKUP_DIR"
-    chmod 700 "$BACKUP_DIR"
-    timestamp=$(date -u +%Y%m%dT%H%M%SZ)
-    backup="$BACKUP_DIR/postgres-$label-$timestamp.dump"
-    dc exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom' >"$backup"
-    chmod 600 "$backup"
-    printf '%s\n' "$backup"
+    ENV_FILE="$ENV_FILE" COMPOSE_FILE="$COMPOSE_FILE" BACKUP_DIR="$BACKUP_DIR" \
+        sh "$REPO_ROOT/deploy/control-plane-backup.sh" "$label"
 }
 
 adopt_database() {

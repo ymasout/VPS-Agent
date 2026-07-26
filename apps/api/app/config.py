@@ -1,3 +1,5 @@
+import re
+from datetime import datetime, timezone
 from functools import lru_cache
 
 from pydantic import Field, field_validator, model_validator
@@ -11,6 +13,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://vps_agent:vps_agent_dev@localhost:5432/vps_agent"
     redis_url: str = "redis://localhost:6379/0"
     admin_api_token: str = "change-me-in-production"
+    control_plane_instance_id: str = "unset-instance"
+    control_plane_version: str = "unset"
+    control_plane_commit_sha: str = "unknown-build"
+    control_plane_build_time: str = "unknown-build-time"
     dev_agent_registration_token: str | None = None
     agent_offline_after_seconds: int = Field(default=90, ge=30, le=3600)
     agent_availability_scan_interval_seconds: int = Field(default=30, ge=5, le=300)
@@ -100,6 +106,37 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_diagnostic_timing(self) -> "Settings":
+        if self.app_env == "production":
+            if self.control_plane_instance_id == "unset-instance" or (
+                self.control_plane_instance_id.startswith("replace_")
+            ):
+                raise ValueError("production control-plane instance id must be set")
+            if not re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}",
+                self.control_plane_instance_id,
+            ):
+                raise ValueError("production control-plane instance id is invalid")
+            if self.control_plane_version == "unset" or self.control_plane_version.startswith(
+                "replace_"
+            ):
+                raise ValueError("production control-plane version must be set")
+            if not re.fullmatch(r"[0-9a-f]{40}", self.control_plane_commit_sha):
+                raise ValueError("production control-plane commit sha must be set")
+            try:
+                parsed_build_time = datetime.fromisoformat(
+                    self.control_plane_build_time.replace("Z", "+00:00")
+                )
+            except ValueError as error:
+                raise ValueError(
+                    "production control-plane build time must be an ISO-8601 timestamp"
+                ) from error
+            if (
+                parsed_build_time.tzinfo is None
+                or parsed_build_time.utcoffset() != timezone.utc.utcoffset(None)
+            ):
+                raise ValueError("production control-plane build time must be UTC")
+            if self.control_plane_build_time == "unknown-build-time":
+                raise ValueError("production control-plane build time must be set")
         if self.diagnostic_provider not in {"deterministic", "http_json"}:
             raise ValueError("unsupported diagnostic provider")
         if self.diagnostic_provider == "http_json" and not self.diagnostic_api_url:
