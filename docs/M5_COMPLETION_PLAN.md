@@ -6,7 +6,7 @@
 - M5.6：诊断历史、相似事件与用户反馈；
 - M5.7：Runbook 草稿与事件复盘。
 
-当前状态：**M5.5–M5.7 已完成本地实现与验收，Claude 审计通过，待生产金丝雀。** 新能力均由默认关闭的独立开关保护；生产仍运行 M5.4 已验证版本，不能把本地结果视为生产能力。
+当前状态：**M5.5–M5.7 已完成本地实现与验收，生产金丝雀通过 2026-07-26。** 新能力均由默认关闭的独立开关保护；生产仍运行 M5.4 已验证版本，不能把本地结果视为生产能力。
 
 ## 1. 决策摘要
 
@@ -502,6 +502,8 @@ M5.5–M5.7 只有同时满足以下条件才可标记本地完成：
 9. 验证后关闭当前开关，保留必要审计记录。
 
 M5.7 草稿金丝雀只允许创建不可执行草稿，不允许把草稿转为 Operation。生产金丝雀不授权部署、回滚、重启、GitHub 写或 Agent 新能力。
+
+2026-07-26 生产金丝雀结果：部署 `a5208e7`（含 `c08e54b` M5.5-7 代码 + 迁移 `0014->0017` 离线守卫修复）+ postflight。M5.5：fleet `completed`，快照持久化（5 agents/3 instances/3 events 真实 counts），`fleet_snapshot` 聚合引用 + `agent_summary`/`service_instance_summary` 原子引用，ops/trans 13/81 不变。M5.6：历史脱敏 grep=0，相似事件 `m5.6-similarity-v1` 离散 score_band，反馈 `count=1` 落库。M5.7：复盘 `provisional=false`，草稿 `executable=false`/`status=draft`，execute 端点 404。还原三开关 false，ops/trans 仍 13/81。
 
 ## 17. M5 完成定义
 

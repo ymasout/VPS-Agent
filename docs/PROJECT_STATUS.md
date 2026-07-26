@@ -1,7 +1,7 @@
 # 项目状态
 
 最后同步：2026-07-26
-当前阶段：**M0、M1、M2 已完成；M3 进行中；M4 核心完成（重启+部署+回滚均生产验证）；M5 进行中，M5.1–M5.4 相应生产金丝雀通过；M5.5–M5.7 本地实现与验收完成，Claude 审计通过，待生产金丝雀**
+当前阶段：**M0、M1、M2 已完成；M3 进行中；M4 核心完成（重启+部署+回滚均生产验证）；M5 进行中，M5.1–M5.4 相应生产金丝雀通过；M5.5–M5.7 本地实现与验收完成，生产金丝雀通过 2026-07-26**
 
 ## 1. 当前结论
 
@@ -270,7 +270,7 @@ M4 已正式开始，但没有把 M3 标记为完成。第一轮范围严格限�
 
 ## 7. M5：诊断与操作会话体验
 
-状态：**进行中（M5.1–M5.4 相应生产金丝雀通过；M5.5–M5.7 本地实现与验收完成，Claude 审计通过，待生产金丝雀）**
+状态：**进行中（M5.1–M5.4 相应生产金丝雀通过；M5.5–M5.7 本地实现与验收完成，生产金丝雀通过 2026-07-26）**
 
 2026-07-23 已完成 M5 第一轮架构兼容性和安全审计，并把首个切片冻结为 **M5.1：事件上下文的只读会话基础**。计划确认后完成本地实现、Claude 安全审计（5 P0 门关闭 + 6 P2/P3 修复）、提交 `f53eeee` 推送至 `main`，并以 deterministic 与真实 HTTP(DeepSeek 经临时适配器) Provider 通过生产只读金丝雀。
 
@@ -288,7 +288,7 @@ M4 已正式开始，但没有把 M3 标记为完成。第一轮范围严格限�
 
 M5.2.1 本地验收：API 157 项通过；Web 43 项、ESLint、生产构建、全部 Go 包和 Compose 配置通过。隔离 PostgreSQL 16 覆盖 `0010 -> 0011`、`0011 -> 0010 -> 0011`、schema check，以及真实事件会话的二次脱敏、跨组织隔离、同步错误 fail closed、零 Operation/GitHub 文件修改和撤权墓碑。M5.2.1 已提交推送 `54f356d`。生产只读金丝雀于 2026-07-24 通过：部署 `54f356d` + 迁移 `0010 -> 0011` + postflight 通过（功能关闭，M5.1 deterministic 无回归）；对已映射 MagicPDF 仓库的非关键服务事件开开关提问，轮次 `completed`，facts 含 `repository_file` aligned 引用（真实 file_id + 服务端构造 GitHub href），`operations=7`/`operation_transitions=45` 不变、GitHub 文件/binding 不变、日志干净；金丝雀后关开关 + 清测试数据，prod 回到 deterministic + 功能关闭。详见 [M5.2_REPOSITORY_KNOWLEDGE.md](./M5.2_REPOSITORY_KNOWLEDGE.md)。
 
-`8c34561` 补齐仓库上下文两个预算阶段的 manifest 省略计数并同步金丝雀文档，`91d8fff` 再修正实现清单和 README；两者已在 `origin/main` 但未部署。生产已于 2026-07-24 升级到 `c382ecb`（含上述两提交 + M5.3.1，迁移 `0011 -> 0012`，postflight 通过）；`CONVERSATION_OPERATION_HANDOFF_ENABLED=false`，prod 运行 M5.1/M5.2 关闭行为。生产于 2026-07-25 升级到 `e0cf851`（M5.2.2，迁移 `0012 -> 0013`，postflight 通过）；`CONVERSATION_REPOSITORY_CHAT_ENABLED=false`，prod 继续运行 M5.1/M5.2 关闭行为。生产于 2026-07-25 升级到 `c06aa8f`（M5.3.2 回滚交接，无新迁移，postflight 通过）；`CONVERSATION_OPERATION_HANDOFF_ENABLED=false` 保持关闭。生产于 2026-07-25 升级到 `cd9531c`（M5.3.3 只读时间线，无新迁移，postflight 通过）；`CONVERSATION_OPERATION_TIMELINE_ENABLED=false` 保持关闭。生产于 2026-07-26 升级到 `58f3308`（M5.4 agent/service 上下文会话，迁移 `0013 -> 0014`，postflight 通过）；`CONVERSATION_CONTEXT_CHAT_ENABLED=false` 保持关闭。
+`8c34561` 补齐仓库上下文两个预算阶段的 manifest 省略计数并同步金丝雀文档，`91d8fff` 再修正实现清单和 README；两者已在 `origin/main` 但未部署。生产已于 2026-07-24 升级到 `c382ecb`（含上述两提交 + M5.3.1，迁移 `0011 -> 0012`，postflight 通过）；`CONVERSATION_OPERATION_HANDOFF_ENABLED=false`，prod 运行 M5.1/M5.2 关闭行为。生产于 2026-07-25 升级到 `e0cf851`（M5.2.2，迁移 `0012 -> 0013`，postflight 通过）；`CONVERSATION_REPOSITORY_CHAT_ENABLED=false`，prod 继续运行 M5.1/M5.2 关闭行为。生产于 2026-07-25 升级到 `c06aa8f`（M5.3.2 回滚交接，无新迁移，postflight 通过）；`CONVERSATION_OPERATION_HANDOFF_ENABLED=false` 保持关闭。生产于 2026-07-25 升级到 `cd9531c`（M5.3.3 只读时间线，无新迁移，postflight 通过）；`CONVERSATION_OPERATION_TIMELINE_ENABLED=false` 保持关闭。生产于 2026-07-26 升级到 `58f3308`（M5.4 agent/service 上下文会话，迁移 `0013 -> 0014`，postflight 通过）；`CONVERSATION_CONTEXT_CHAT_ENABLED=false` 保持关闭。生产于 2026-07-26 升级到 `a5208e7`（M5.5-7 fleet/insights/runbook，迁移 `0014 -> 0017`，含离线守卫修复，postflight 通过）；`CONVERSATION_FLEET_CHAT_ENABLED`/`CONVERSATION_INSIGHTS_ENABLED`/`CONVERSATION_REVIEW_ENABLED=false` 保持关闭。
 
 2026-07-24 开始 M5.3 设计与代码审计。首片只设计从已完成事件会话显式交接到现有 M4 `docker_restart` 计划：自然语言和 Provider 输出本身不产生 Operation，用户必须点击独立动作创建待确认计划，之后仍须在现有操作页独立确认。服务实例、动作类型和所有可执行字段由服务端从事件与 M4 策略派生；部署、回滚、GitHub 写操作、自动确认和自动执行均不在首片。详见 [M5.3_OPERATION_HANDOFF.md](./M5.3_OPERATION_HANDOFF.md)。
 
@@ -306,7 +306,7 @@ M5.2.1 本地验收：API 157 项通过；Web 43 项、ESLint、生产构建、�
 
 2026-07-26 完成 M5.4 单 Agent/单服务上下文只读会话本地实现与验收：`0014_m5_context_scope` 为 Agent 与 ManagedService 增加可供组织复合引用的唯一约束，并为会话增加独立 `agent_id/service_id`、唯一约束、组织复合外键和 event/repository/agent/service 严格四选一 CHECK。Agent 页面直接提供机器上下文会话；已映射服务进入独立服务会话页，服务 ID 始终从 URL 实例和数据库关系服务端派生。上下文仅含当前 scope 的 Agent、实例状态、事件、诊断、有限证据和 Operation 只读摘要；Provider 无工具，引用落库前按当前组织与 scope 二次查询。独立开关 `CONVERSATION_CONTEXT_CHAT_ENABLED=false` 默认关闭。API 186 项、Web 63 项、Ruff、ESLint、production build 通过；隔离 PostgreSQL 16 完成空库升级、`0014 -> 0013 -> 0014`、两次 schema check 与七项 M5 门控，跨组织复合外键、混合 scope 拒绝、恶意证据脱敏和零 Operation/Transition 副作用均通过。生产金丝雀通过 2026-07-26，详见 [M5.4_CONTEXT_CONVERSATION.md](./M5.4_CONTEXT_CONVERSATION.md)。
 
-同日完成 M5.5–M5.7 收尾统一设计，并按顺序连续完成本地实现与验收。`0015_m5_fleet_conversation` 增加第五种严格 Fleet scope、不可变组织聚合快照和快照引用墓碑；Provider 异步阶段只读取已持久化 counts/IDs，不重查 live 聚合，摘要覆盖候选 source IDs。`0016_m5_conversation_feedback` 增加一轮一反馈，事件页增加统一历史、确定性同组织相似事件与显式反馈。`0017_m5_runbook_drafts` 增加不可执行草稿、只读复盘和草稿详情；草稿重新查询 citation 行，引用或快照删除后只显示无正文墓碑，来源轮次删除后复合 FK `SET NULL` 而草稿组织审计保留。三个新开关均默认关闭，不新增 Agent/VPS/GitHub 网络或 Operation 写路径。API 199 项、Web 67 项、Ruff、Python compile、ESLint、production build、Go 全包与 vet 通过；隔离 PostgreSQL 16 完成空库升级、`0014 -> 0017 -> 0014 -> 0017`、schema check 和八项 M5 门控。Claude 审计通过，待生产金丝雀；详细设计与证据见 [M5_COMPLETION_PLAN.md](./M5_COMPLETION_PLAN.md)。
+同日完成 M5.5–M5.7 收尾统一设计，并按顺序连续完成本地实现与验收。`0015_m5_fleet_conversation` 增加第五种严格 Fleet scope、不可变组织聚合快照和快照引用墓碑；Provider 异步阶段只读取已持久化 counts/IDs，不重查 live 聚合，摘要覆盖候选 source IDs。`0016_m5_conversation_feedback` 增加一轮一反馈，事件页增加统一历史、确定性同组织相似事件与显式反馈。`0017_m5_runbook_drafts` 增加不可执行草稿、只读复盘和草稿详情；草稿重新查询 citation 行，引用或快照删除后只显示无正文墓碑，来源轮次删除后复合 FK `SET NULL` 而草稿组织审计保留。三个新开关均默认关闭，不新增 Agent/VPS/GitHub 网络或 Operation 写路径。API 199 项、Web 67 项、Ruff、Python compile、ESLint、production build、Go 全包与 vet 通过；隔离 PostgreSQL 16 完成空库升级、`0014 -> 0017 -> 0014 -> 0017`、schema check 和八项 M5 门控。生产金丝雀通过 2026-07-26；详细设计与证据见 [M5_COMPLETION_PLAN.md](./M5_COMPLETION_PLAN.md)。
 
 ## 8. 文档维护规则
 
