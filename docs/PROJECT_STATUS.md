@@ -1,7 +1,7 @@
 # 项目状态
 
 最后同步：2026-07-26
-当前阶段：**M0、M1、M2 已完成；M3 进行中；M4 核心完成（重启+部署+回滚均生产验证）；M5 已完成，M5.1–M5.4 相应生产金丝雀通过；M5.5–M5.7 本地实现与验收完成，生产金丝雀通过 2026-07-26**
+当前阶段：**M0、M1、M2 已完成；M3 已完成；M4 核心完成（重启+部署+回滚均生产验证）；M5 已完成，M5.1–M5.4 相应生产金丝雀通过；M5.5–M5.7 本地实现与验收完成，生产金丝雀通过 2026-07-26**
 
 ## 1. 当前结论
 
@@ -177,7 +177,7 @@ M3 阶段检查点曾通过 API 81 项测试、Web 22 项测试、全部 Go 包�
 
 2026-07-17 已使用独立本地 Compose 项目完成真实 Caddy、PostgreSQL、API 和 Agent 端到端验收：Agent 只经 Caddy 注册、报告、领取和完成 Docker 日志证据，没有收到 Basic Auth 401；真实 Firing 事件的诊断最终进入 Completed 并保存 5 项证据，测试敏感值未进入持久化内容。测试栈使用临时值和独立数据卷，不涉及生产部署。
 
-2026-07-19 已完成生产金丝雀全闭环：停止 canary 后形成 Firing 和钉钉异常卡；Agent 经 Caddy 完成取证且无 401；双端脱敏后 `fake-secret` 持久化计数为 0、`[REDACTED]` 为 100；诊断进入 Completed 并生成 4 条带证据引用的事实；重启 canary 后进入 Resolved 并收到钉钉恢复卡。本批安全边界全部获得生产实证，M3 因产品化和剩余范围仍保持进行中。
+2026-07-19 已完成生产金丝雀全闭环：停止 canary 后形成 Firing 和钉钉异常卡；Agent 经 Caddy 完成取证且无 401；双端脱敏后 `fake-secret` 持久化计数为 0、`[REDACTED]` 为 100；诊断进入 Completed 并生成 4 条带证据引用的事实；重启 canary 后进入 Resolved 并收到钉钉恢复卡。本批安全边界全部获得生产实证，M3 因产品化和剩余范围曾保持进行中；2026-07-26 两项收尾生产门通过后标记为完成。
 
 ### 产品化首批实现（2026-07-19）
 
@@ -190,7 +190,7 @@ M3 阶段检查点曾通过 API 81 项测试、Web 22 项测试、全部 Go 包�
 
 隔离集成验证使用真实 PostgreSQL、API、Agent 和 Docker Compose：自动发现生成 8 个稳定 Docker 身份及日志来源，Web 所需候选 API 完成映射且不暴露目标；容器重启后稳定键和映射保持不变；旧容器 ID 下的真实 Firing 与服务映射切换到稳定键后，事件正确 Resolved 且映射继续有效。临时项目、凭据和数据卷已清理。
 
-2026-07-19 v0.3.1 产品化金丝雀（自动发现模式）在生产 control-plane 宿主机跑通全闭环：控制平面升级到 `7ce516e`；control-plane Agent 保留身份升级到 `v0.3.1` 并以 `--evidence-policy docker-logs` 开启自动发现。Agent 自动发现 compose 栈 5 个容器，稳定 `service_key` 为 `compose:vps-agent-console:<service>:1`，`agent_evidence_sources` 与 `agent_evidence_source_bindings` 均无 target 列。浏览器在机器详情页确认 `m3-auto-canary` 候选即建立映射，无需手填 source_key、容器 ID 或 JSON，也不手敲映射 API。停止 canary 进入 Firing 后触发诊断进入 Completed，证据请求经 Caddy 无 401，docker_logs 证据中 `fake-secret` 计数为 0、`[REDACTED]` 为 97，双端脱敏生效。同名重建 canary（新容器 ID）后 `service_key` 与映射不变，第二次诊断仍 Completed，稳定身份跨重建存活。清理后 control-plane 回到纯自动发现（手工白名单置空），DB 孤儿映射与事件已清，4 台 Agent 持续在线；控制平面每上报周期 reconcile `agent_evidence_sources` 与 `service_statuses`，Agent 停止声明的来源与状态自动清除。M3 因剩余生产验收与真实模型验证仍保持进行中。
+2026-07-19 v0.3.1 产品化金丝雀（自动发现模式）在生产 control-plane 宿主机跑通全闭环：控制平面升级到 `7ce516e`；control-plane Agent 保留身份升级到 `v0.3.1` 并以 `--evidence-policy docker-logs` 开启自动发现。Agent 自动发现 compose 栈 5 个容器，稳定 `service_key` 为 `compose:vps-agent-console:<service>:1`，`agent_evidence_sources` 与 `agent_evidence_source_bindings` 均无 target 列。浏览器在机器详情页确认 `m3-auto-canary` 候选即建立映射，无需手填 source_key、容器 ID 或 JSON，也不手敲映射 API。停止 canary 进入 Firing 后触发诊断进入 Completed，证据请求经 Caddy 无 401，docker_logs 证据中 `fake-secret` 计数为 0、`[REDACTED]` 为 97，双端脱敏生效。同名重建 canary（新容器 ID）后 `service_key` 与映射不变，第二次诊断仍 Completed，稳定身份跨重建存活。清理后 control-plane 回到纯自动发现（手工白名单置空），DB 孤儿映射与事件已清，4 台 Agent 持续在线；控制平面每上报周期 reconcile `agent_evidence_sources` 与 `service_statuses`，Agent 停止声明的来源与状态自动清除。M3 因剩余生产验收与真实模型验证曾保持进行中；2026-07-26 两项收尾生产门通过后标记为完成。
 
 ### Agent 失联与恢复首批实现（2026-07-19）
 

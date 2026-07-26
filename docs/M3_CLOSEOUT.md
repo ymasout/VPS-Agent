@@ -2,7 +2,7 @@
 
 本文冻结 M3 从“进行中”到“已完成”的最后范围。M3 已有 Docker/systemd 有限取证、GitHub App 白名单快照、双端脱敏、结构化诊断、真实引用、失联诊断和生产闭环；收尾不重新开发诊断平台，只补齐尚缺的生产证据与真实模型门。
 
-当前状态：**本地收尾实现进行中，尚未完成生产金丝雀，M3 仍保持进行中。**
+当前状态：**M3 收尾完成，两项生产金丝雀于 2026-07-26 通过，M3 标记为完成。**
 
 ## 1. 完成门
 
@@ -144,3 +144,5 @@ M3 只剩两个必须关闭的生产门：
 - 新增 `test_m3_closeout_postgres.py`，用于验证真实 PostgreSQL 仓库证据与引用链及 Operation 零副作用。
 - Docker Desktop 恢复后，新增门控已在临时 PostgreSQL 16 单独通过：空库迁移到 `0017_m5_runbook_drafts`，真实 `repository_file` 进入诊断且完成脱敏，确定性 Provider 的事实引用形成 `DiagnosticCitation`，Operation 数量不变，`python -m app.schema check` 通过；临时容器已删除。
 - 未提交、未推送、未部署，未触发生产诊断或 Provider 调用。
+
+2026-07-26 生产金丝雀结果：部署 ff4f5bc（M3 加固代码，无迁移）+ postflight。完成门1：对 m4-deploy-bad 事件 6b112ab3 触发 deterministic 诊断 -> completed，EvidenceItem(repository_file, path=README.md) + DiagnosticCitation 引用，ops/trans 13/81 不变。完成门2：配置 DIAGNOSTIC_PROVIDER=http_json + 临时 DeepSeek 适配器，触发诊断 -> failed/provider_timeout（DeepSeek >30s 超时受控），provider:http_json 不回退 deterministic，error_detail 固定字符串无凭据，ops/trans 不变。还原 DIAGNOSTIC_PROVIDER=deterministic。M3 标记为完成。
