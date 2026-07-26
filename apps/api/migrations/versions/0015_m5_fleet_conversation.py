@@ -1,7 +1,7 @@
 """M5.5 organization-scoped Fleet conversation snapshots."""
 
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 
 revision = "0015_m5_fleet_conversation"
 down_revision = "0014_m5_context_scope"
@@ -127,7 +127,8 @@ def source_target_check(*, include_fleet: bool) -> str:
 
 
 def upgrade() -> None:
-    if has_constraint("conversation_sessions", "ck_conversation_sessions_scope_target"):
+    offline = context.is_offline_mode()
+    if offline or has_constraint("conversation_sessions", "ck_conversation_sessions_scope_target"):
         op.drop_constraint(
             "ck_conversation_sessions_scope_target",
             "conversation_sessions",
@@ -138,7 +139,7 @@ def upgrade() -> None:
         "conversation_sessions",
         SESSION_SCOPE_CHECK,
     )
-    if not has_index(
+    if offline or not has_index(
         "conversation_sessions", "uq_conversation_sessions_organization_fleet"
     ):
         op.create_index(
@@ -149,7 +150,7 @@ def upgrade() -> None:
             postgresql_where=sa.text("scope_type = 'fleet'"),
         )
 
-    if not has_table("fleet_conversation_snapshots"):
+    if offline or not has_table("fleet_conversation_snapshots"):
         op.create_table(
             "fleet_conversation_snapshots",
             sa.Column("id", sa.String(length=36), nullable=False),
@@ -178,7 +179,7 @@ def upgrade() -> None:
                 name="uq_fleet_conversation_snapshots_identity_scope",
             ),
         )
-    if not has_index(
+    if offline or not has_index(
         "fleet_conversation_snapshots",
         "ix_fleet_conversation_snapshots_organization_id",
     ):
@@ -187,7 +188,7 @@ def upgrade() -> None:
             "fleet_conversation_snapshots",
             ["organization_id"],
         )
-    if not has_index(
+    if offline or not has_index(
         "fleet_conversation_snapshots", "ix_fleet_conversation_snapshots_turn_id"
     ):
         op.create_index(
@@ -196,18 +197,20 @@ def upgrade() -> None:
             ["turn_id"],
         )
 
-    if not has_column("conversation_citations", "fleet_snapshot_id"):
+    if offline or not has_column("conversation_citations", "fleet_snapshot_id"):
         op.add_column(
             "conversation_citations",
             sa.Column("fleet_snapshot_id", sa.String(length=36), nullable=True),
         )
-    if has_constraint("conversation_citations", "ck_conversation_citations_source_type"):
+    if offline or has_constraint("conversation_citations", "ck_conversation_citations_source_type"):
         op.drop_constraint(
             "ck_conversation_citations_source_type",
             "conversation_citations",
             type_="check",
         )
-    if has_constraint("conversation_citations", "ck_conversation_citations_source_target"):
+    if offline or has_constraint(
+        "conversation_citations", "ck_conversation_citations_source_target"
+    ):
         op.drop_constraint(
             "ck_conversation_citations_source_target",
             "conversation_citations",
@@ -223,7 +226,7 @@ def upgrade() -> None:
         "conversation_citations",
         source_target_check(include_fleet=True),
     )
-    if not has_foreign_key_columns("conversation_citations", ["fleet_snapshot_id"]):
+    if offline or not has_foreign_key_columns("conversation_citations", ["fleet_snapshot_id"]):
         op.create_foreign_key(
             "fk_conversation_citations_fleet_snapshot",
             "conversation_citations",
@@ -232,7 +235,7 @@ def upgrade() -> None:
             ["id"],
             ondelete="SET NULL",
         )
-    if not has_index(
+    if offline or not has_index(
         "conversation_citations", "ix_conversation_citations_fleet_snapshot_id"
     ):
         op.create_index(

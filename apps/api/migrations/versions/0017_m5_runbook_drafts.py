@@ -1,7 +1,7 @@
 """M5.7 non-executable Runbook drafts."""
 
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 
 revision = "0017_m5_runbook_drafts"
 down_revision = "0016_m5_conversation_feedback"
@@ -14,7 +14,8 @@ def has_table(table_name: str) -> bool:
 
 
 def upgrade() -> None:
-    if has_table("runbook_drafts"):
+    offline = context.is_offline_mode()
+    if not offline and has_table("runbook_drafts"):
         return
     op.create_table(
         "runbook_drafts",

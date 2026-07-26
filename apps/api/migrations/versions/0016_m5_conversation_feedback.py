@@ -1,7 +1,7 @@
 """M5.6 explicit conversation feedback."""
 
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 
 revision = "0016_m5_conversation_feedback"
 down_revision = "0015_m5_fleet_conversation"
@@ -14,7 +14,8 @@ def has_table(table_name: str) -> bool:
 
 
 def upgrade() -> None:
-    if has_table("conversation_turn_feedback"):
+    offline = context.is_offline_mode()
+    if not offline and has_table("conversation_turn_feedback"):
         return
     op.create_table(
         "conversation_turn_feedback",
