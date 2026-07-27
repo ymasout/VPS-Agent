@@ -246,18 +246,18 @@
 
 ## 12. P0 / P1 / P2 风险清单
 
-### P0：M6.1 恢复代码前必须关闭（首片本地已关闭，待独立审计）
+### P0：M6.1 恢复代码前必须关闭（首片已关闭并通过独立审计、CI 与生产金丝雀）
 
 1. **本地已关闭：**恢复执行器和真实恢复门已落地，不再把 `pg_dump` 存在等同于可恢复。
 2. **本地已关闭：**build/commit/schema 身份来自镜像参数和受保护端点，不使用宿主机 Git HEAD 代替。
 3. **本地已关闭：**备份使用原子成品、严格 manifest、hash、archive 校验和实例/版本绑定。
-4. **本地已关闭：**恢复默认拒绝非空数据库、错误实例、错误版本/revision/PG major 和 symlink/损坏包；Linux symlink 负向用例将在新增 CI 首次运行时再确认。
+4. **已关闭：**恢复默认拒绝非空数据库、错误实例、错误版本/revision/PG major 和 symlink/损坏包；Linux symlink 负向用例已由 Ubuntu CI 确认。
 5. **设计与代码已关闭：**配置/密钥与数据库责任分层，恢复摘要不声明数据库包以外的秘密已恢复。
 6. **代码已关闭：**备份/恢复只有管理员宿主机 CLI，没有 Web、Provider、Agent 或自然语言入口；日志和摘要只含固定非秘密字段。
 
 ### P1：M6.1 完成前关闭
 
-1. **本地已关闭、CI 待首次运行：**真实 PostgreSQL 备份→恢复→schema/关键数据一致性工作流已通过，并已加入 PR/push 门。
+1. **已关闭：**真实 PostgreSQL 备份→恢复→schema/关键数据一致性工作流已通过，并已加入 PR/push 门且由 Ubuntu CI 验证。
 2. **部分关闭：**构建身份已强制显式注入；完整控制平面 CI、不可变发布镜像和生产依赖镜像固定仍在 M6.1c。
 3. **仍开放：**Agent last-known-good、失败回退和协议兼容矩阵属于 M6.1c。
 4. **本地已关闭：**`.env.production.example` 已补齐 Compose 的诊断预算、M5 开关和 M6 build 身份字段，Compose config 通过。
@@ -300,4 +300,4 @@ M6.1 首片生产金丝雀在用户明确授权下执行并通过：
 - 零生产副作用：生产 `ops/trans` 前后均 `13/81` 不变；M5 开关与 Provider 未变；生产 api 日志无连接串/令牌/密码/dump 正文。
 - 收尾：隔离恢复项目（容器/卷/镜像）已清理；首份 M6.1 原子备份包保留于 `/var/backups/vps-agent-console/`（0700/0600）。
 
-M6.1 无 feature flag（构建身份 always-on，backup/restore 为 CLI 工具），新代码 `38b8d40` 留作生产运行基线；若需回退则代码回滚到 `ff4f5bc`（无迁移，DB 不受影响）。M6.1 首片完成；下一阶段 M6.2 PWA/移动审批。
+M6.1 无 feature flag（构建身份 always-on，backup/restore 为 CLI 工具），新代码 `38b8d40` 留作生产运行基线；若需回退则代码回滚到 `ff4f5bc`（无迁移，DB 不受影响）。M6.1 首片完成。M6.2a/M6.2b 已在后续工作区完成本地实现、验证和独立审计（无 P0/P1），仍待提交和生产金丝雀；详见 [M6_PWA_MOBILE.md](./M6_PWA_MOBILE.md)。
