@@ -1,6 +1,6 @@
 # M6 自托管产品化
 
-本文冻结 M6 的目标、安全边界、阶段顺序和第一个可实现切片。M6 当前状态为：**设计已确认，M6.1 首片本地实现与验证已完成，等待独立审计；尚未提交或部署**。本文不是生产操作授权；任何提交、推送、生产部署、生产备份恢复演练或数据修改仍需用户另行明确授权。
+本文冻结 M6 的目标、安全边界、阶段顺序和第一个可实现切片。M6 当前状态为：**M6.1 首片已由 codex 实现、Claude 审计通过（无 P0/P1；P2-1 symlink 经 ubuntu CI 确认；P3 非阻断），提交 `38b8d40` 推送至 main，并于 2026-07-27 通过生产金丝雀（在线一致性备份 + 隔离空库恢复，零生产副作用）**。本文不是后续生产操作授权；任何生产备份恢复演练或数据修改仍需用户另行明确授权。
 
 ## 1. 目标与非目标
 
@@ -37,7 +37,7 @@
 
 ### 2.2 审计确认的缺口
 
-- 审计开始时的备份只是迁移前安全垫，没有原子成品、manifest、校验和、环境/版本绑定、自动 `pg_restore --list`、恢复执行器或真实 CI 门；M6.1 首片已在本地补齐，尚未部署。
+- 审计开始时的备份只是迁移前安全垫，没有原子成品、manifest、校验和、环境/版本绑定、自动 `pg_restore --list`、恢复执行器或真实 CI 门；M6.1 首片已补齐并于 2026-07-27 生产验证。
 - 审计开始时没有通用恢复命令；M6.1 首片现提供只面向显式隔离项目和空目标的 CLI，仍禁止在线 `--clean` 覆盖。
 - 审计开始时 FastAPI 和 Web 页脚都硬编码 `0.4.2-dev`；M6.1 首片已在本地改为镜像 ARG/label/runtime 身份和受保护 system-info。宿主机 Git HEAD 仍不能证明正在运行的镜像版本。
 - 生产 API/Web 由本地源码构建，镜像没有统一不可变版本标签/摘要和构建 provenance；Caddy、PostgreSQL、Redis 使用 `2-alpine`、`16-alpine`、`7-alpine` 浮动标签。
@@ -204,7 +204,7 @@
 - stdout/stderr、测试日志和摘要不包含数据库连接串、管理令牌、Agent/GitHub/Provider/通知凭据或证据正文。
 - API/Web 展示的运行 commit 与实际构建产物一致，不再硬编码 `0.4.2-dev`。
 - 没有新增 Web/API/Provider/Agent 恢复入口，没有改变任何 M4 Operation/Transition。
-- 本地实现、独立审计和用户确认完成后，才可申请提交/推送；生产只做新备份和隔离恢复验证，不对现有生产数据库执行覆盖恢复。
+- 本地实现、独立审计和用户确认均已完成；提交 `38b8d40` 后生产金丝雀只做了新备份和隔离恢复验证，未对现有生产数据库执行覆盖恢复。
 
 ## 9. 测试矩阵
 
@@ -287,3 +287,17 @@ M6 只有在以下条件全部满足后才可标记完成：
 - Web SSH/高风险会话若未完成独立安全门，必须继续标记为未实现，不能阻塞其他已冻结的 M6 子阶段，也不能被偷渡进产品化范围。
 - API/Web/Go/Compose/迁移/备份恢复测试、独立安全审计和经授权生产金丝雀均通过，文档与实际运行状态一致。
 - SaaS、多租户、注册、计费和跨租户控制平面仍保持冻结。
+
+## 14. 2026-07-27 生产金丝雀记录
+
+M6.1 首片生产金丝雀在用户明确授权下执行并通过：
+
+- 部署：生产 `git pull` `5d0fab9 -> 38b8d40`，`docker compose build api web`（注入 build version/40 位 commit/UTC build time），`preflight`（生成新原子备份包 `control-plane-pre-migration-20260727T131115Z` + 迁移 SQL 预览）、`migrate`（no-op，head 仍 `0017`）、`up -d`、`reload-caddy`、`postflight` 全部通过。
+- 构建身份：`/api/v1/system-info`（受管理认证）返回 `commit_sha=38b8d40e76ea1c30497bbfa0f17d2b87aaa27977`、`version=0.6.1`、`instance_id=ops-ymast-shop`、`schema_current=true`、`alembic_revision=expected=["0017_m5_runbook_drafts"]`；公开 `/healthz` 仍只返回 `{"status":"ok","service":"api"}`。
+- 备份包 inspect：`backup manifest is compatible` + `checksum, archive and compatibility checks passed`。
+- 隔离恢复：`COMPOSE_PROJECT_NAME=vps-agent-restore-canary-*`、`RESTORE_ISOLATED_TARGET=yes`、`RESTORE_CONFIRM_INSTANCE_ID=ops-ymast-shop`、空目标 -> `restore target is empty and compatible` -> `pg_restore --exit-on-error --single-transaction --no-owner --no-privileges` -> `database revision and schema match the application`；审计摘要 `schema_current=true`、`key_table_counts_match=true`、`active_operation_count=0`。
+- 数据一致性：恢复后 `ops=13/trans=81/agents=5`，与生产基线一致。
+- 零生产副作用：生产 `ops/trans` 前后均 `13/81` 不变；M5 开关与 Provider 未变；生产 api 日志无连接串/令牌/密码/dump 正文。
+- 收尾：隔离恢复项目（容器/卷/镜像）已清理；首份 M6.1 原子备份包保留于 `/var/backups/vps-agent-console/`（0700/0600）。
+
+M6.1 无 feature flag（构建身份 always-on，backup/restore 为 CLI 工具），新代码 `38b8d40` 留作生产运行基线；若需回退则代码回滚到 `ff4f5bc`（无迁移，DB 不受影响）。M6.1 首片完成；下一阶段 M6.2 PWA/移动审批。

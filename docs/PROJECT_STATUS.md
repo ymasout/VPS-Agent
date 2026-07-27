@@ -1,7 +1,7 @@
 # 项目状态
 
-最后同步：2026-07-26
-当前阶段：**M0、M1、M2 已完成；M3 已完成；M4 核心完成（重启+部署+回滚均生产验证）；M5 已完成，M5.1–M5.7 均通过相应生产金丝雀；M6.1 首片本地实现与验证完成，等待独立审计**
+最后同步：2026-07-27
+当前阶段：**M0、M1、M2 已完成；M3 已完成；M4 核心完成（重启+部署+回滚均生产验证）；M5 已完成，M5.1–M5.7 均通过相应生产金丝雀；M6.1 首片生产金丝雀通过 2026-07-27**
 
 ## 1. 当前结论
 
@@ -312,11 +312,11 @@ M5.2.1 本地验收：API 157 项通过；Web 43 项、ESLint、生产构建、�
 
 ## 8. M6：自托管产品化
 
-状态：**进行中（M6.1 首片本地实现与验证完成，等待独立审计）**
+状态：**进行中（M6.1 首片已生产金丝雀通过 2026-07-27；M6.2–M6.4 待开始）**
 
 2026-07-26 完成 M6 第一轮发布、Compose、Alembic、备份/恢复、Agent 安装升级、版本/健康、Web 管理入口、CI 和发布资产审计。当前结论：
 
-审计时的生产控制平面基线为 `ff4f5bc`、Alembic `0017_m5_runbook_drafts`；该次 M3 Provider 收尾镜像重建、`--no-cache` 教训与生产验证记录见 [M3_CLOSEOUT.md §10](./M3_CLOSEOUT.md#10-生产金丝雀执行记录2026-07-26)。这是一条历史记录，任何后续生产动作仍须实时核对运行镜像和 revision。
+审计时的生产控制平面基线为 `ff4f5bc`、Alembic `0017_m5_runbook_drafts`；该次 M3 Provider 收尾镜像重建、`--no-cache` 教训与生产验证记录见 [M3_CLOSEOUT.md §10](./M3_CLOSEOUT.md#10-生产金丝雀执行记录2026-07-26)。M6.1 首片已于 2026-07-27 部署 `38b8d40` 并通过生产金丝雀（见本节末尾）；这是一条历史记录，任何后续生产动作仍须实时核对运行镜像和 revision。
 
 - M6.1 首片已让 `adopt`/`preflight` 共用同快照原子备份包（dump、严格 manifest、SHA256SUMS、archive 校验），并加入只允许隔离项目、显式实例确认和空目标的恢复 CLI；无新迁移，head 保持 `0017`。
 - API/Web Dockerfile 和生产 Compose 现要求显式 build version/40 位 commit/build time，缺失时只使用显眼假值或在生产设置校验中失败；受管理 system-info 返回实际/期望 revision，公开 `/healthz` 保持最小响应，Web 页脚不再硬编码版本。
@@ -324,7 +324,9 @@ M5.2.1 本地验收：API 157 项通过；Web 43 项、ESLint、生产构建、�
 - Agent Release 已有双架构产物、SHA-256 和 systemd 安全配置，但升级没有 last-known-good 自动回退、发布者签名或控制平面兼容门。
 - Web 尚无 PWA manifest/service worker/安装图标；移动审批、更多通知和团队协作尚未实现。
 
-M6 顺序冻结为 M6.1 可恢复性与发布基础 → M6.2 PWA/移动只读与审批 → M6.3 通知/模板/引导配置 → M6.4 协作/开源评估；Web SSH 和限时高风险会话最后单独设计。第一纵向切片“可验证的控制平面 PostgreSQL 备份与离线恢复基础”已完成本地实现与验证：真实 PostgreSQL 16 完成迁移、种子数据、同快照备份、测试卷清空、空库恢复、schema check 和关键记录一致性；损坏包、伪造 commit、错误实例确认与非空目标均失败关闭。Web 69 项、Go test/vet、Ruff、build、Compose、Caddy 和 Alembic head 检查通过。当前等待独立审计，未提交、未推送、未部署，也未执行任何生产恢复。完整边界见 [M6_PRODUCTIZATION.md](./M6_PRODUCTIZATION.md)。
+M6 顺序冻结为 M6.1 可恢复性与发布基础 → M6.2 PWA/移动只读与审批 → M6.3 通知/模板/引导配置 → M6.4 协作/开源评估；Web SSH 和限时高风险会话最后单独设计。第一纵向切片“可验证的控制平面 PostgreSQL 备份与离线恢复基础”已由 codex 实现并经 Claude 审计（无 P0/P1；P2-1 symlink 经 ubuntu CI 确认；P3 非阻断）：真实 PostgreSQL 16 完成迁移、种子数据、同快照备份、测试卷清空、空库恢复、schema check 和关键记录一致性；损坏包、伪造 commit、错误实例确认与非空目标均失败关闭。Web 69 项、Go test/vet、Ruff、build、Compose、Caddy 和 Alembic head 检查通过。已提交 `38b8d40` 推送至 main，CI `Control Plane Recovery` 通过。完整边界见 [M6_PRODUCTIZATION.md](./M6_PRODUCTIZATION.md)。
+
+2026-07-27 生产金丝雀通过：部署 `38b8d40`（注入 build version/commit/build time）+ postflight；`/api/v1/system-info` 返回 `commit_sha=38b8d40e76ea1c30497bbfa0f17d2b87aaa27977`、`version=0.6.1`、`schema_current=true`、`alembic_revision=["0017_m5_runbook_drafts"]`；`preflight` 生成原子备份包 `control-plane-pre-migration-20260727T131115Z`，`inspect` + 隔离空库 `restore` 成功，审计摘要 `schema_current=true`/`key_table_counts_match=true`/`active_operation_count=0`；恢复后 `ops=13/trans=81/agents=5` 与生产一致；生产 `ops/trans` 前后不变、日志无秘密、开关未变；隔离项目已清理，首份原子备份包保留（0700/0600）。M6.1 无 feature flag，`38b8d40` 留作运行基线。
 
 ## 9. 文档维护规则
 
