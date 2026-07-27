@@ -1,6 +1,6 @@
 # M6.2 PWA 与移动端只读/审批设计
 
-本文冻结 M6.2a 与 M6.2b 的产品和安全边界。当前状态为：**修复 `fa35eee` 已提交推送并通过三个 CI（含新增 Web 镜像门）；生产已重新部署 `fa35eee`，Phase 3 PWA 实机金丝雀通过 2026-07-27（SW 注册+预缓存 3 资产+安装+standalone+离线无数据泄露，ops/trans 13/81 不变）；Phase 4 移动 M4 审批写路径金丝雀待执行；M6.2 尚未完成**。
+本文冻结 M6.2a 与 M6.2b 的产品和安全边界。当前状态为：**M6.2 生产金丝雀通过 2026-07-27（Phase 3 PWA + Phase 4 移动 M4 审批全链路）；M6.2 完成**。
 
 ## 1. 目标与切片
 
@@ -139,4 +139,5 @@ service worker 不调用 `cache.put()` 保存运行时响应，不存认证头�
 - 本地验证：Web 80 项、ESLint、普通 Next.js 生产构建通过。Docker Desktop 未运行，Windows standalone 构建受 symlink 权限限制，故 Linux 镜像门由提交后 CI 提供。
 - 修复 `fa35eee` 已提交推送；`Control Plane Recovery`/`Migrations`/`Web` 三个 CI 全通过（Web CI 1m3s 真实构建镜像+启动+验证 4 资产）。
 - 生产重新部署 `fa35eee` 后 Phase 3 PWA 实机金丝雀通过 2026-07-27：`/sw.js`/`/offline.html`/`/pwa-icon.svg`/`/manifest.webmanifest` 均返回 200 且 Content-Type 正确；Chrome 在 Caddy Basic Auth 下成功注册 SW、预缓存仅 3 项静态资产（Cache Storage 无 API/console/运维数据）、抓取 manifest+maskable 图标并安装、standalone 独立窗口启动 `/mobile` 在线只读正常；离线刷新只显示无数据离线页；ops/trans 前后 13/81 不变。
-- Phase 4（移动 M4 审批写路径全链路）待用户授权执行；M6.2 尚未完成。
+- Phase 4（移动 M4 审批写路径全链路）通过 2026-07-27：aliyun-VPS `m4-deploy-bad`（instance `da777ab7`）临时启用 restart，`POST /api/v1/operations` 创建 op `43191ab3`（awaiting_confirmation, risk=medium）；standalone PWA 核对审批卡（冻结目标/动作/有效期/前置检查）+ checkbox 默认未勾 + 按钮禁用 + Offline 门禁用；移动端勾选+确认触发完整 M4 链（ops 13->14 +1, trans 81->89 +8 = awaiting_confirmation->queued->claimed->running->verifying->succeeded）；还原 `restart_enabled=false`。
+- M6.2 完成（Phase 3 + Phase 4 均通过）；M6 仍进行中（M6.3-M6.4 + Web SSH 待开始）。
