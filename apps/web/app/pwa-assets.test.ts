@@ -6,6 +6,7 @@ describe("PWA static assets", () => {
   const serviceWorker = readFileSync(resolve(process.cwd(), "public/sw.js"), "utf8");
   const offlinePage = readFileSync(resolve(process.cwd(), "public/offline.html"), "utf8");
   const registration = readFileSync(resolve(process.cwd(), "app/pwa-registration.tsx"), "utf8");
+  const dockerfile = readFileSync(resolve(process.cwd(), "Dockerfile"), "utf8");
 
   it("only precaches a fixed public allowlist", () => {
     expect(serviceWorker).toContain('const STATIC_ASSETS = ["/offline.html", "/pwa-icon.svg", "/manifest.webmanifest"]');
@@ -26,5 +27,9 @@ describe("PWA static assets", () => {
   it("registers whether hydration happens before or after window load", () => {
     expect(registration).toContain('document.readyState === "complete"');
     expect(registration).toContain('window.addEventListener("load", register');
+  });
+
+  it("packages public PWA assets into the standalone runtime image", () => {
+    expect(dockerfile).toContain("COPY --from=build /repo/apps/web/public ./apps/web/public");
   });
 });

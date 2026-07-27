@@ -1,0 +1,41 @@
+name: Control Plane Web
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  standalone-pwa-assets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build standalone Web image
+        run: >-
+          docker build
+          --file apps/web/Dockerfile
+          --build-arg CONTROL_PLANE_VERSION=ci
+          --build-arg CONTROL_PLANE_COMMIT_SHA=${GITHUB_SHA}
+          --build-arg CONTROL_PLANE_BUILD_TIME=ci
+          --tag vps-agent-web:pwa-ci
+          .
+      - name: Start standalone Web image
+        run: docker run --detach --name vps-agent-web-pwa-ci --publish 127.0.0.1:3107:3000 vps-agent-web:pwa-ci
+      - name: Verify packaged PWA assets
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3107/manifest.webmanifest >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:3107/sw.js | grep --fixed-strings 'vps-agent-static-v1'
+          curl --fail --silent http://127.0.0.1:3107/offline.html | grep --fixed-strings '不会离线保存机器、事件、诊断或操作数据'
+          curl --fail --silent http://127.0.0.1:3107/pwa-icon.svg | grep --fixed-strings '<svg'
+          curl --fail --silent http://127.0.0.1:3107/manifest.webmanifest | grep --fixed-strings '"display":"standalone"'
+      - name: Show Web logs on failure
+        if: failure()
+        run: docker logs vps-agent-web-pwa-ci || true
+      - name: Remove test container
+        if: always()
+        run: docker rm --force vps-agent-web-pwa-ci || true

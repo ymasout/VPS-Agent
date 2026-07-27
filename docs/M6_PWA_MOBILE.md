@@ -1,6 +1,6 @@
 # M6.2 PWA 与移动端只读/审批设计
 
-本文冻结 M6.2a 与 M6.2b 的产品和安全边界。当前状态为：**本地实现、验证和独立审计完成（P0/P1 均无），待提交和生产金丝雀；尚未提交、推送或部署**。
+本文冻结 M6.2a 与 M6.2b 的产品和安全边界。当前状态为：**源码实现与审计后已部署 `80b950f`；PWA Phase 3 因 standalone 镜像漏打包 `public/`、生产 `/sw.js` 404 而停止。本地修复待提交、CI、重新部署和重跑；M6.2 尚未完成**。
 
 ## 1. 目标与切片
 
@@ -84,11 +84,12 @@ service worker 不调用 `cache.put()` 保存运行时响应，不存认证头�
 - **本地已关闭：**离线审批、Background Sync、自动确认、自动执行和自动回滚均不存在。
 - **本地已关闭：**移动核对不能覆盖冻结目标/动作，确认仍复用 M4 服务端状态、过期、签名和审计门。
 
-### P1：代码审计前必须关闭（已全部关闭）
+### P1：生产金丝雀前必须关闭
 
 - **已关闭并通过审计：**`/mobile` 入口和底部导航不进入包含注册、同步、诊断触发或会话提交的页面。
 - **已关闭并通过审计：**service worker 在 hydration 早于或晚于 window load 时均尝试注册，失败不影响在线控制台。
 - **已关闭并通过审计：**审批默认禁用、离线禁用、显式核对后只发送现有空 POST；同源与管理令牌保护未改变。
+- **金丝雀发现、本地已修复，待 CI/重新部署：**standalone runtime 必须复制 `apps/web/public`；Ubuntu CI 必须真实构建/启动 Web 镜像并确认 `/sw.js`、`/offline.html`、`/pwa-icon.svg`、`/manifest.webmanifest` 均可读取。
 
 ### P2：兼容与后续增强
 
@@ -119,11 +120,20 @@ service worker 不调用 `cache.put()` 保存运行时响应，不存认证头�
 
 ## 12. 本地验证记录（2026-07-27）
 
-- Web：30 个测试文件、79 项测试通过；ESLint 与 Next.js 生产构建通过，`/manifest.webmanifest` 为静态路由，`/mobile` 为动态在线只读路由。
+- Web：30 个测试文件、80 项测试通过；ESLint 与普通 Next.js 生产构建通过，`/manifest.webmanifest` 为静态路由，`/mobile` 为动态在线只读路由。
 - API：212 项通过、9 项既有 PostgreSQL 条件用例跳过；Ruff 通过。
 - Agent：`go test ./...` 与 `go vet ./...` 通过；Compose config 通过。
 - 移动核对：390px 视口下 manifest、viewport-fit、安全区底栏和 44px 触控目标正确；`/mobile` 无 button/input/form 且无横向溢出；375px/390px 离线页无横向溢出。
 - 安全回归：service worker 只预缓存 manifest、图标和无数据离线页，预缓存请求显式使用 `credentials=same-origin`/`cache=reload`；成功导航只刷新同一固定 allowlist，不缓存导航响应，不注册 sync/push。新增运行时事件测试实际执行 install、API/POST 旁路、在线刷新和离线回退；审批默认禁用，需显式勾选且在线，提交内容不包含可覆盖目标或动作。`navigator.onLine` 仅为 UX 防误触门，真正安全门仍是服务端 M4 重新校验。
 - 无 API、迁移、Agent 协议、Operation 状态或生产配置变更；Alembic head 预期继续为 `0017_m5_runbook_drafts`。
 
-独立审计于 2026-07-27 通过，P0/P1 均无。审计指出 Basic Auth + PWA 安装必须由实机金丝雀验证；代码随后补充显式同源凭据、固定静态缓存刷新和 service worker 事件执行测试。Caddy 认证范围未放宽；若目标 Chrome 仍无法安装，只能在单独评审后考虑公开这三个固定静态资产，不得扩大到动态或数据路由。当前未提交、未推送、未部署，生产金丝雀尚未执行。
+独立源码审计于 2026-07-27 通过，当时未发现 P0/P1。审计指出 Basic Auth + PWA 安装必须由实机金丝雀验证；代码随后补充显式同源凭据、固定静态缓存刷新和 service worker 事件执行测试。Caddy 认证范围未放宽；若目标 Chrome 仍无法安装，只能在单独评审后考虑公开这三个固定静态资产，不得扩大到动态或数据路由。
+
+## 13. 首轮生产金丝雀失败记录（2026-07-27）
+
+- 生产页面页脚实时显示 `0.6.1 · 80b950f64f70`，manifest link、PWA 图标 link 和移动导航均已进入运行页面，证明 `80b950f` 已部署。
+- 已通过 Caddy Basic Auth 的桌面 Chrome 直接访问 `/sw.js`、`/pwa-icon.svg` 和 `/offline.html`，三者均实际返回 Next.js 404 HTML；因此 Service Workers 面板没有 `/sw.js` 是正确表现，不是浏览器操作遗漏。
+- 根因：`apps/web/Dockerfile` runtime 只复制 `.next/standalone` 和 `.next/static`，没有复制 `apps/web/public`。Next 生成的 manifest 路由存在，但 `sw.js`、`offline.html` 和 `pwa-icon.svg` 三个 public 资产未进入镜像。
+- 金丝雀在 SW 注册前停止；未验证预缓存、安装、standalone 启动、离线回退或移动 M4 审批，不得把 Phase 3 或 M6.2 标记为通过。
+- 本地修复：runtime 增加 public 目录复制；Web 测试增加 Dockerfile 断言；新增 `Control Plane Web` Ubuntu CI，真实构建/启动 standalone 镜像并请求四项 PWA 资源。
+- 本地验证：Web 80 项、ESLint、普通 Next.js 生产构建通过。Docker Desktop 未运行，Windows standalone 构建受 symlink 权限限制，故 Linux 镜像门必须等提交后的 CI 结果；当前生产仍为有缺口的 `80b950f`。

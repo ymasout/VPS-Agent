@@ -300,4 +300,4 @@ M6.1 首片生产金丝雀在用户明确授权下执行并通过：
 - 零生产副作用：生产 `ops/trans` 前后均 `13/81` 不变；M5 开关与 Provider 未变；生产 api 日志无连接串/令牌/密码/dump 正文。
 - 收尾：隔离恢复项目（容器/卷/镜像）已清理；首份 M6.1 原子备份包保留于 `/var/backups/vps-agent-console/`（0700/0600）。
 
-M6.1 无 feature flag（构建身份 always-on，backup/restore 为 CLI 工具），新代码 `38b8d40` 留作生产运行基线；若需回退则代码回滚到 `ff4f5bc`（无迁移，DB 不受影响）。M6.1 首片完成。M6.2a/M6.2b 已在后续工作区完成本地实现、验证和独立审计（无 P0/P1），仍待提交和生产金丝雀；详见 [M6_PWA_MOBILE.md](./M6_PWA_MOBILE.md)。
+M6.1 无 feature flag（构建身份 always-on，backup/restore 为 CLI 工具），新代码 `38b8d40` 留作生产运行基线；若需回退则代码回滚到 `ff4f5bc`（无迁移，DB 不受影响）。M6.1 首片完成。M6.2a/M6.2b `80b950f` 已部署，但首轮 PWA 实机金丝雀因 standalone runtime 漏打包 `public/`、生产 `/sw.js` 404 而停止；本地修复待提交、CI、重新部署和重跑，详见 [M6_PWA_MOBILE.md](./M6_PWA_MOBILE.md)。
