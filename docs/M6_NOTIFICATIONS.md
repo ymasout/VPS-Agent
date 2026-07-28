@@ -1,6 +1,6 @@
 # M6.3 通知、模板与引导式配置设计
 
-当前状态：**M6.3 已开始；M6.3a“秘密不回显的通知就绪状态、固定模板目录与引导配置页”已完成本地实现和常规回归，尚待独立审计、提交、推送与生产验证。M6.3 整体未完成。**
+当前状态：**M6.3a 已由 codex 实现、Claude 审计通过（无 P0/P1/P2），提交 `19e829b` 推送至 main，并于 2026-07-28 通过生产金丝雀（秘密不回显、ops/trans 14/89 不变）。M6.3 整体未完成（M6.3b 测试消息/M6.3c 第二通道/M6.3d 模板版本待开始）。**
 
 ## 1. 当前基线
 
@@ -62,7 +62,7 @@
 - Web 84 项通过，ESLint 与 Next.js production build 通过；`/settings/notifications` 为动态服务端路由。
 - Agent 全部 Go 包 test/vet 通过；Compose production 配置解析通过；Alembic 保持单 head `0017_m5_runbook_drafts`。
 - 本机 Docker Desktop daemon 未运行，不能本地执行最终 Web 镜像门；提交后仍须由既有 `Control Plane Web` CI 真实构建/启动 standalone 镜像并验证页面，再考虑生产金丝雀。
-- `git diff --check` 通过。未提交、推送或部署。
+- `git diff --check` 通过。已提交 `19e829b` 推送至 main，三个 CI 全绿；生产金丝雀见 §11。
 
 ## 10. M6.3 完成定义
 
@@ -70,3 +70,14 @@
 - 至少一个新增通道复用可靠 Delivery 语义，测试消息具备限速、幂等和有限审计。
 - 配置和模板不泄露秘密，不接受模型生成的收件人/URL/可执行内容。
 - README、ROADMAP、PROJECT_STATUS、ARCHITECTURE 与本文状态同步；未完成前不得标记 M6.3 完成。
+
+## 11. 生产金丝雀记录（2026-07-28）
+
+M6.3a 生产金丝雀在用户明确授权下执行并通过：
+
+- 部署 `fa35eee -> 19e829b`（注入 build identity），`preflight`（原子备份包）+ `migrate`（no-op，head 仍 `0017`）+ `up -d` + `postflight` 全通过；三个 CI（Recovery/Migrations/Web）全绿。
+- `/api/v1/system-info` 返回 `commit_sha=19e829b83355e477fa2873389c5ca833d3721edf`、`schema_current=true`。
+- `GET /api/v1/notification-configuration`（受管理认证）返回 `ready=true`、`channels=[dingtalk configured+signing_enabled]`、4 模板、`issues=[]`；未带 admin token -> 401。
+- 秘密不泄露：API 响应与 `/settings/notifications` 页面 HTML 均不含 webhook URL/access_token/secret（grep `access_token|oapi.dingtalk|webhook/send` 无命中；页面无 `<input>/<form>`）。
+- 零副作用：生产 ops/trans 前后 `14/89` 不变（只读，无测试发送/外部消息）。
+- M6.3a 无 feature flag（只读 always-on），`19e829b` 留作运行基线；M6.3 整体未完成。
