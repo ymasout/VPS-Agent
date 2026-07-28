@@ -1,6 +1,6 @@
 # M6.3 通知、模板与引导式配置设计
 
-当前状态：**M6.3a 已由 codex 实现、Claude 审计通过（无 P0/P1/P2），提交 `19e829b` 推送至 main，并于 2026-07-28 通过生产金丝雀（秘密不回显、ops/trans 14/89 不变）。M6.3b 已完成本地实现，尚待独立审计、真实 PostgreSQL CI、提交和生产验证；M6.3 整体未完成。**
+当前状态：**M6.3a 已由 codex 实现、Claude 审计通过，提交 `19e829b` 推送至 main，并于 2026-07-28 通过生产金丝雀。M6.3b 已由 codex 实现、Claude 审计通过（无 P0/P1；P2-1 迁移 downgrade offline 守卫已修复），提交 `a4944fb` 推送至 main，三个 CI 全绿（含双向离线 SQL + 真实 PG 幂等/限速/零副作用门），并于 2026-07-28 通过两阶段生产金丝雀（功能关闭 403 + 临时开启发一条测试 succeeded/attempt_count=1 + 幂等重放 200 不重发 + 同窗口 429 + 还原，ops/trans 14/89 不变）。M6.3 整体未完成（M6.3c/d 待开始）。**
 
 ## 1. 当前基线
 
@@ -131,4 +131,14 @@ M6.3a 生产金丝雀在用户明确授权下执行并通过：
 
 ### 13.3 当前结论
 
-M6.3a 文档收尾已复核并修正历史缺口措辞。M6.3b 本地实现与普通回归完成，但尚未独立审计、提交、推送或生产验证；生产仍运行 `19e829b` 与 schema `0017_m5_runbook_drafts`，不得提前标记 M6.3b 或 M6.3 完成。
+M6.3a 文档收尾已复核并修正历史缺口措辞。M6.3b 已由 codex 实现、Claude 审计通过（无 P0/P1；P2-1 迁移 downgrade offline 守卫已修复+验证），提交 `a4944fb` 推送至 main，三个 CI 全绿，并于 2026-07-28 通过两阶段生产金丝雀（见 §14）；生产现运行 `a4944fb` 与 schema `0018_m6_notification_tests`。M6.3 整体未完成（M6.3c 第二通道/M6.3d 模板版本待开始）。
+
+## 14. M6.3b 生产金丝雀记录（2026-07-28）
+
+两阶段金丝雀在用户明确授权下执行并通过：
+
+- **Phase A（功能关闭）**：部署 `a4944fb` + 迁移 `0017 -> 0018`（建 `notification_test_requests` 表）+ postflight 通过；`/api/v1/system-info` commit=a4944fb、revision=0018、schema_current=true；`/api/v1/notification-configuration` test_messages_enabled=false；测试端点 403；ops/trans 14/89 不变；`notification_test_requests` 表空。
+- **Phase B（临时开启 + 发一条测试 + 还原）**：开启 `NOTIFICATION_TESTS_ENABLED=true`；POST 测试 -> 202 + id=dcae38ab -> 轮询 `succeeded/attempt_count=1`（钉钉群收到 1 条“✅ VPS Agent 通知测试”）；同 Idempotency-Key 重放 -> 200（不重发，无新消息）；新 KEY 同窗口 -> 429（被拦截，不入库）；还原关闭 -> 403。
+- **P2 固定窗口边界**：因对话往返延迟，KEY1/2/3 跨分钟落不同窗口（16:10/16:12/16:16）各 202，符合设计 §13.2 P2 接受的相邻窗口边界行为；KEY4/KEY5 背靠背同窗口 -> key4 202 + key5 429，验证限速。
+- **零副作用**：ops/trans 前后 14/89 不变（测试不创建 Operation）；`notification_test_requests` 4 条 succeeded（KEY5 被 429 拦截不入库）；不污染 AlertEvent/NotificationDelivery。
+- M6.3b 功能已还原关闭（`NOTIFICATION_TESTS_ENABLED=false`），`a4944fb` 留作运行基线。
