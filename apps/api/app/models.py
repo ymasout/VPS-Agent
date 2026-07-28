@@ -359,6 +359,49 @@ class NotificationDelivery(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class NotificationTestRequest(Base):
+    __tablename__ = "notification_test_requests"
+    __table_args__ = (
+        CheckConstraint("channel = 'dingtalk'", name="ck_notification_test_channel"),
+        CheckConstraint(
+            "status IN ('pending', 'sending', 'succeeded', 'failed', 'delivery_outcome_unknown')",
+            name="ck_notification_test_status",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0 AND attempt_count <= 1",
+            name="ck_notification_test_attempt_count",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "channel",
+            "client_request_id",
+            name="uq_notification_test_request_idempotency",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "channel",
+            "rate_limit_window",
+            name="uq_notification_test_rate_window",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id: Mapped[str] = mapped_column(String(64), default="local", index=True)
+    channel: Mapped[str] = mapped_column(String(32), default="dingtalk")
+    client_request_id: Mapped[str] = mapped_column(String(36))
+    rate_limit_window: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    requested_by: Mapped[str] = mapped_column(String(128), default="local-admin")
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class DiagnosticRun(Base):
     __tablename__ = "diagnostic_runs"
 

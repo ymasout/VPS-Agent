@@ -118,6 +118,8 @@ async def notification_configuration(
         max_delivery_attempts=MAX_DELIVERY_ATTEMPTS,
         sending_stale_seconds=settings.notification_sending_stale_seconds,
         timeout_seconds=settings.notification_timeout_seconds,
+        test_messages_enabled=settings.notification_tests_enabled,
+        test_cooldown_seconds=settings.notification_test_cooldown_seconds,
         channels=[
             NotificationChannelInfo(
                 channel="dingtalk",

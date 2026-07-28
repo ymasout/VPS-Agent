@@ -72,11 +72,13 @@ def test_maintenance_still_delivers_notifications_when_scan_fails(
 ) -> None:
     scan = AsyncMock(side_effect=RuntimeError("database temporarily unavailable"))
     delivery = AsyncMock()
+    test_maintenance = AsyncMock()
     conversation_recovery = AsyncMock()
     log = MagicMock()
     log.aexception = AsyncMock()
     monkeypatch.setattr(maintenance, "reconcile_offline_agents", scan)
     monkeypatch.setattr(maintenance, "deliver_pending_notifications", delivery)
+    monkeypatch.setattr(maintenance, "maintain_notification_tests", test_maintenance)
     monkeypatch.setattr(
         maintenance, "recover_stale_conversation_turns", conversation_recovery
     )
@@ -86,6 +88,7 @@ def test_maintenance_still_delivers_notifications_when_scan_fails(
     asyncio.run(run_maintenance_once(settings))
 
     delivery.assert_awaited_once_with(settings)
+    test_maintenance.assert_awaited_once_with(settings)
     conversation_recovery.assert_awaited_once_with(settings, maintenance.ORGANIZATION_ID)
     log.aexception.assert_awaited_once_with("agent.availability_scan_failed")
 
@@ -94,6 +97,7 @@ def test_maintenance_retries_notifications_then_waits_startup_grace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     delivery = AsyncMock()
+    test_maintenance = AsyncMock()
     sleeps: list[float] = []
 
     async def cancel_after_first_sleep(seconds: float) -> None:
@@ -101,6 +105,7 @@ def test_maintenance_retries_notifications_then_waits_startup_grace(
         raise asyncio.CancelledError
 
     monkeypatch.setattr(maintenance, "deliver_pending_notifications", delivery)
+    monkeypatch.setattr(maintenance, "maintain_notification_tests", test_maintenance)
     monkeypatch.setattr(maintenance.asyncio, "sleep", cancel_after_first_sleep)
     settings = Settings(agent_offline_after_seconds=90)
 
@@ -108,4 +113,5 @@ def test_maintenance_retries_notifications_then_waits_startup_grace(
         asyncio.run(control_plane_maintenance_loop(settings))
 
     delivery.assert_awaited_once_with(settings)
+    test_maintenance.assert_awaited_once_with(settings)
     assert sleeps == [90]

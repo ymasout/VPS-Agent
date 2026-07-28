@@ -113,3 +113,12 @@ DINGTALK_SECRET=SEC...
 ```
 
 Webhook 和密钥只注入 API 容器，不进入 Web 页面或 Agent。`ALERT_PENDING_OBSERVATIONS` 默认是 `2`，表示同一服务异常需要连续观察两次才从 Pending 进入 Firing 并发送通知。恢复通知只在已经进入 Firing、Acknowledged 或 Silenced 的事件明确恢复后生成。
+
+M6.3b 的管理员测试消息默认关闭。仅在受控验证窗口中设置：
+
+```text
+NOTIFICATION_TESTS_ENABLED=true
+NOTIFICATION_TEST_COOLDOWN_SECONDS=60
+```
+
+测试入口固定使用已配置的钉钉机器人和服务端模板，不接受 URL、收件人或消息正文。每条请求必须有 UUID 幂等键，数据库按固定窗口限速且最多尝试发送一次；验证后应按计划恢复 `NOTIFICATION_TESTS_ENABLED=false`。不要在命令输出或工单中打印完整 Webhook、签名 URL、access token 或 secret。

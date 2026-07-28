@@ -27,6 +27,7 @@ jobs:
         working-directory: apps/api
     env:
       DATABASE_URL: postgresql+asyncpg://vps_agent:migration_test@localhost:5432/vps_agent
+      M6_TEST_DATABASE_URL: postgresql+asyncpg://vps_agent:migration_test@localhost:5432/vps_agent
       SKIP_DATABASE_INIT: "true"
     steps:
       - uses: actions/checkout@v4
@@ -47,3 +48,15 @@ jobs:
         run: |
           python -m app.schema check
           python -m scripts.create_all_adoption_fixture assert
+      - name: Verify M6.3b offline SQL in both directions
+        run: |
+          alembic -c alembic.ini upgrade 0017_m5_runbook_drafts:0018_m6_notification_tests --sql > /dev/null
+          alembic -c alembic.ini downgrade 0018_m6_notification_tests:0017_m5_runbook_drafts --sql > /dev/null
+      - name: Verify M6.3b downgrade and incremental re-upgrade
+        run: |
+          alembic -c alembic.ini downgrade 0017_m5_runbook_drafts
+          alembic -c alembic.ini upgrade head
+          python -m app.schema check
+          python -m scripts.create_all_adoption_fixture assert
+      - name: Verify M6.3b notification test audit semantics
+        run: pytest -q tests/test_m6_notification_tests_postgres.py

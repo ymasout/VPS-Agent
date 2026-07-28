@@ -98,6 +98,18 @@ async def send_dingtalk_notification(
     notification_type: str,
     client: httpx.AsyncClient | None = None,
 ) -> None:
+    await send_dingtalk_payload(
+        settings,
+        dingtalk_payload(event, notification_type, settings.console_public_url),
+        client,
+    )
+
+
+async def send_dingtalk_payload(
+    settings: Settings,
+    payload: dict[str, object],
+    client: httpx.AsyncClient | None = None,
+) -> None:
     if not settings.dingtalk_webhook_url:
         raise RuntimeError("DingTalk webhook is not configured")
     timestamp_ms = int(time.time() * 1000)
@@ -110,7 +122,7 @@ async def send_dingtalk_notification(
     try:
         response = await client.post(
             url,
-            json=dingtalk_payload(event, notification_type, settings.console_public_url),
+            json=payload,
         )
         response.raise_for_status()
         payload = response.json()

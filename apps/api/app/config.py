@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     console_public_url: str = "http://localhost:3000"
     notification_timeout_seconds: float = 5.0
     notification_sending_stale_seconds: int = 120
+    notification_tests_enabled: bool = False
+    notification_test_cooldown_seconds: int = Field(default=60, ge=30, le=3600)
     diagnostic_provider: str = "deterministic"
     diagnostic_api_url: str | None = None
     diagnostic_api_key: str | None = None

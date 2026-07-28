@@ -9,6 +9,7 @@ from .config import Settings
 from .conversation import ORGANIZATION_ID, recover_stale_conversation_turns
 from .database import session_factory
 from .models import Agent
+from .notification_tests import maintain_notification_tests
 from .notifications import deliver_pending_notifications
 from .operations import recover_stale_operations
 
@@ -58,6 +59,10 @@ async def run_maintenance_once(settings: Settings) -> None:
     except Exception:
         await logger.aexception("notification.pending_delivery_scan_failed")
     try:
+        await maintain_notification_tests(settings)
+    except Exception:
+        await logger.aexception("notification.test_maintenance_failed")
+    try:
         await recover_stale_conversation_turns(settings, ORGANIZATION_ID)
     except Exception:
         await logger.aexception("conversation.recovery_scan_failed")
@@ -72,6 +77,10 @@ async def control_plane_maintenance_loop(settings: Settings) -> None:
         await deliver_pending_notifications(settings)
     except Exception:
         await logger.aexception("notification.pending_delivery_scan_failed")
+    try:
+        await maintain_notification_tests(settings)
+    except Exception:
+        await logger.aexception("notification.test_maintenance_failed")
     await asyncio.sleep(settings.agent_offline_after_seconds)
     while True:
         try:

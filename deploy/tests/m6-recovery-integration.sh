@@ -98,7 +98,7 @@ fi
 
 wrong_revision="$TEST_ROOT/wrong-revision-package"
 cp -R "$package" "$wrong_revision"
-sed -i 's/0017_m5_runbook_drafts/0016_m5_conversation_feedback/g' \
+sed -i 's/0018_m6_notification_tests/0017_m5_runbook_drafts/g' \
     "$wrong_revision/manifest.json"
 (
     cd "$wrong_revision"

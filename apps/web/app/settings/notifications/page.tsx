@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { getNotificationConfiguration } from "@/lib/api";
+import { getNotificationConfiguration, getNotificationTests, type NotificationTest } from "@/lib/api";
+import { NotificationTestPanel } from "./test-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +11,12 @@ const issueText: Record<string, string> = {
 
 export default async function NotificationSettingsPage() {
   let configuration = null;
+  let tests: NotificationTest[] = [];
   try {
-    configuration = await getNotificationConfiguration();
+    [configuration, tests] = await Promise.all([
+      getNotificationConfiguration(),
+      getNotificationTests(),
+    ]);
   } catch {
     return (
       <main>
@@ -62,7 +67,7 @@ export default async function NotificationSettingsPage() {
             <li><code>DINGTALK_SECRET</code>：机器人启用“加签”时设置；未启用加签可留空。</li>
             <li><code>CONTROL_PLANE_DOMAIN</code>：生产 Compose 据此生成 HTTPS 控制台链接。</li>
           </ol>
-          <p>本切片不提供页面录入秘密、测试发送或运行时改配置；避免凭据进入浏览器和无审计的外部消息副作用。</p>
+          <p>页面仍不提供秘密录入或运行时改配置。下方测试入口只发送服务端固定消息，并单独执行限速、幂等和审计。</p>
         </div>
       </section>
 
@@ -79,6 +84,13 @@ export default async function NotificationSettingsPage() {
         </div>
         <p className="section-copy">事件标题、目标和详情仍按不可信文本转义；模板不接受模型生成内容，也不能产生 Operation。</p>
       </section>
+
+      <NotificationTestPanel
+        configured={dingtalk.configured}
+        enabled={configuration.test_messages_enabled}
+        cooldownSeconds={configuration.test_cooldown_seconds}
+        initialTests={tests}
+      />
 
       <footer>
         <span>delivery</span> firing + resolved <i /> <span>retry</span> 最多 {configuration.max_delivery_attempts} 次 <i /> <span>stale reclaim</span> {configuration.sending_stale_seconds}s

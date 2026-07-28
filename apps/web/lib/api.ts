@@ -18,6 +18,8 @@ export type NotificationConfiguration = {
   max_delivery_attempts: number;
   sending_stale_seconds: number;
   timeout_seconds: number;
+  test_messages_enabled: boolean;
+  test_cooldown_seconds: number;
   channels: Array<{
     channel: "dingtalk";
     configured: boolean;
@@ -31,6 +33,17 @@ export type NotificationConfiguration = {
     title: string;
   }>;
   issues: string[];
+};
+export type NotificationTest = {
+  id: string;
+  channel: "dingtalk";
+  status: "pending" | "sending" | "succeeded" | "failed" | "delivery_outcome_unknown";
+  attempt_count: number;
+  error_code: string | null;
+  requested_by: string;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
 };
 export type ServiceMappingCandidate = {
   agent_id: string;
@@ -397,6 +410,8 @@ export const getAgents = () => request<Agent[]>("/api/v1/agents");
 export const getSystemInfo = () => adminRequest<SystemInfo>("/api/v1/system-info");
 export const getNotificationConfiguration = () =>
   adminRequest<NotificationConfiguration>("/api/v1/notification-configuration");
+export const getNotificationTests = () =>
+  adminRequest<NotificationTest[]>("/api/v1/notification-tests?limit=10");
 export const getAgent = (id: string) => request<AgentDetail>(`/api/v1/agents/${id}`);
 export const getServiceMappingCandidates = (id: string) =>
   request<ServiceMappingCandidate[]>(`/api/v1/agents/${id}/service-mapping-candidates`);

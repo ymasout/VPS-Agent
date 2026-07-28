@@ -37,9 +37,25 @@ class NotificationConfiguration(BaseModel):
     max_delivery_attempts: int
     sending_stale_seconds: int
     timeout_seconds: float
+    test_messages_enabled: bool
+    test_cooldown_seconds: int
     channels: list[NotificationChannelInfo]
     templates: list[NotificationTemplateInfo]
     issues: list[str]
+
+
+class NotificationTestView(BaseModel):
+    id: str
+    channel: Literal["dingtalk"]
+    status: Literal[
+        "pending", "sending", "succeeded", "failed", "delivery_outcome_unknown"
+    ]
+    attempt_count: int
+    error_code: str | None
+    requested_by: str
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
 
 
 class RegistrationTokenCreate(BaseModel):

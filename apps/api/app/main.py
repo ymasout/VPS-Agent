@@ -17,6 +17,7 @@ from .logging import configure_logging
 from .m3 import router as m3_router
 from .maintenance import control_plane_maintenance_loop
 from .models import ManagedService, RegistrationToken, ServiceInstance
+from .notification_tests import router as notification_tests_router
 from .operations import router as operations_router
 from .releases import router as releases_router
 from .schema import verify_database_current
@@ -83,6 +84,7 @@ app.include_router(conversation_operations_router)
 app.include_router(conversation_completion_router)
 app.include_router(github_router)
 app.include_router(releases_router)
+app.include_router(notification_tests_router)
 
 
 @app.get("/healthz", tags=["system"])

@@ -1,6 +1,6 @@
 # M6 自托管产品化
 
-本文冻结 M6 的目标、安全边界、阶段顺序和第一个可实现切片。M6 当前状态为：**M6.1 首片已由 codex 实现、Claude 审计通过（无 P0/P1；P2-1 symlink 经 ubuntu CI 确认；P3 非阻断），提交 `38b8d40` 推送至 main，并于 2026-07-27 通过生产金丝雀（在线一致性备份 + 隔离空库恢复，零生产副作用）**。本文不是后续生产操作授权；任何生产备份恢复演练或数据修改仍需用户另行明确授权。
+本文冻结 M6 的目标、安全边界和阶段顺序。当前状态为：**M6.1、M6.2、M6.3a 已完成相应生产金丝雀；M6.3b 默认关闭的审计测试消息已完成本地实现并待审计/CI/生产验证；M6.3 整体未完成**。本文不是后续生产操作授权；任何生产备份恢复、外部测试消息或数据修改仍需用户另行明确授权。
 
 ## 1. 目标与非目标
 
@@ -28,7 +28,7 @@
 ### 2.1 已存在的可靠性基础
 
 - 生产 Compose 由 Caddy、Web、API、PostgreSQL 16 和 Redis 组成；PostgreSQL、Redis 与 Caddy 数据使用命名卷。
-- Alembic 是当前 schema 演进唯一入口，迁移链为单 head `0017_m5_runbook_drafts`。API 启动时校验数据库 revision，不自动迁移。
+- Alembic 是当前 schema 演进唯一入口。生产仍运行 `0017_m5_runbook_drafts`；M6.3b 本地代码迁移链为单 head `0018_m6_notification_tests`。API 启动时校验数据库 revision，不自动迁移。
 - `deploy/control-plane-release.sh` 已分离 `preflight`、`migrate`、`reload-caddy` 和 `postflight`；`postflight` 会运行 schema check、数据库感知健康检查、Agent operation 路由和映射候选检查。
 - `preflight` 会生成 PostgreSQL custom-format `pg_dump` 和迁移 SQL 预览，备份目录/文件权限分别为 `0700`/`0600`，不自动删除备份。
 - Agent 通过 GitHub Release 发布 Linux amd64/arm64 静态二进制、安装器和 `SHA256SUMS`；安装器校验二进制、保留身份/策略，并由 systemd 托管。
@@ -240,7 +240,7 @@
 3. **M6.1c 发布与升级可靠性**：不可变控制平面镜像、依赖镜像固定、统一 CI、Agent last-known-good 升级/回退和版本兼容矩阵。
 4. **M6.1d 秘密与灾备运行手册**：配置/密钥清单、加密离机副本、恢复演练频率、RPO/RTO 和人工审计。
 5. **M6.2 PWA 与移动体验**：manifest/service worker/图标、移动只读事件与 M4 审批；不新增写权限。
-6. **M6.3 通知与引导式配置**：M6.3a 已完成（秘密不回显的就绪状态、固定模板目录、只读引导页，生产金丝雀通过 2026-07-28）；再进入带限速/幂等/审计的测试消息、统一适配器和第二通道。完整边界见 [M6_NOTIFICATIONS.md](./M6_NOTIFICATIONS.md)。
+6. **M6.3 通知与引导式配置**：M6.3a 已完成（秘密不回显的就绪状态、固定模板目录、只读引导页，生产金丝雀通过 2026-07-28）；M6.3b 已完成本地实现默认关闭、限速、幂等、最多一次发送的审计测试消息，待独立审计、真实 PostgreSQL CI 与授权生产验证。统一适配器和第二通道后续进入。完整边界见 [M6_NOTIFICATIONS.md](./M6_NOTIFICATIONS.md)。
 7. **M6.4 协作与开源评估**：先定义单实例本地身份、角色、审批 actor 和分发安全基线；SaaS 继续冻结。
 8. **最后阶段：Web SSH/实时终端/限时高风险会话**，单独威胁建模和验收。
 
