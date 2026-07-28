@@ -17,6 +17,31 @@ class SystemInfo(BaseModel):
     schema_current: bool
 
 
+class NotificationTemplateInfo(BaseModel):
+    key: str
+    notification_type: Literal["firing", "resolved"]
+    target: Literal["service", "agent"]
+    title: str
+
+
+class NotificationChannelInfo(BaseModel):
+    channel: Literal["dingtalk"]
+    configured: bool
+    signing_enabled: bool
+    supports: list[Literal["firing", "resolved"]]
+
+
+class NotificationConfiguration(BaseModel):
+    ready: bool
+    console_links_https: bool
+    max_delivery_attempts: int
+    sending_stale_seconds: int
+    timeout_seconds: float
+    channels: list[NotificationChannelInfo]
+    templates: list[NotificationTemplateInfo]
+    issues: list[str]
+
+
 class RegistrationTokenCreate(BaseModel):
     name: str = Field(default="VPS Agent", min_length=1, max_length=255)
     expires_in_minutes: int = Field(default=30, ge=1, le=1440)

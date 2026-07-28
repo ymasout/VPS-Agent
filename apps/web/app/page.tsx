@@ -55,6 +55,7 @@ export default async function Home() {
         <Link className="back" href="/agent">进入全局 Fleet 只读会话 →</Link>
       </section>
       <RegistrationPanel operationKeyId={process.env.AGENT_OPERATION_KEY_ID} operationPublicKey={process.env.AGENT_OPERATION_PUBLIC_KEY_BASE64} />
+      <Link className="back" href="/settings/notifications">查看通知配置与固定模板 →</Link>
       {githubStatus?.configured && <GitHubPanel status={githubStatus} repositories={repositories} />}
       {error && <div className="empty error">{error}</div>}
       {!error && agents.length === 0 && <div className="empty"><strong>还没有已注册的 VPS</strong><span>启动带注册令牌的 Agent 后，机器会自动出现在这里。</span></div>}

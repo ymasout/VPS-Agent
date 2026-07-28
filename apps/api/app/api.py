@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, status
 from sqlalchemy import delete, func, select
@@ -20,7 +21,11 @@ from .models import (
     ServiceInstance,
     ServiceStatus,
 )
-from .notifications import deliver_pending_notifications
+from .notifications import (
+    MAX_DELIVERY_ATTEMPTS,
+    NOTIFICATION_TEMPLATE_CATALOG,
+    deliver_pending_notifications,
+)
 from .schema import current_revisions, expected_revisions
 from .schemas import (
     AgentDetail,
@@ -32,6 +37,9 @@ from .schemas import (
     AlertEventView,
     DeploymentCandidateView,
     MetricView,
+    NotificationChannelInfo,
+    NotificationConfiguration,
+    NotificationTemplateInfo,
     RegistrationTokenCreate,
     RegistrationTokenCreated,
     ReportReceipt,
@@ -84,6 +92,50 @@ async def system_info(
         alembic_revision=current,
         expected_alembic_revision=expected,
         schema_current=current == expected,
+    )
+
+
+@router.get(
+    "/notification-configuration",
+    response_model=NotificationConfiguration,
+    dependencies=[Depends(require_admin)],
+)
+async def notification_configuration(
+    settings: Settings = Depends(get_settings),
+) -> NotificationConfiguration:
+    """Return secret-free notification readiness for the self-hosted admin UI."""
+
+    webhook_configured = bool(settings.dingtalk_webhook_url)
+    console_links_https = urlsplit(settings.console_public_url).scheme == "https"
+    issues: list[str] = []
+    if not webhook_configured:
+        issues.append("dingtalk_webhook_missing")
+    if settings.app_env == "production" and not console_links_https:
+        issues.append("console_public_url_not_https")
+    return NotificationConfiguration(
+        ready=not issues,
+        console_links_https=console_links_https,
+        max_delivery_attempts=MAX_DELIVERY_ATTEMPTS,
+        sending_stale_seconds=settings.notification_sending_stale_seconds,
+        timeout_seconds=settings.notification_timeout_seconds,
+        channels=[
+            NotificationChannelInfo(
+                channel="dingtalk",
+                configured=webhook_configured,
+                signing_enabled=bool(settings.dingtalk_secret),
+                supports=["firing", "resolved"],
+            )
+        ],
+        templates=[
+            NotificationTemplateInfo(
+                key=key,
+                notification_type=notification_type,
+                target=target,
+                title=title,
+            )
+            for key, notification_type, target, title in NOTIFICATION_TEMPLATE_CATALOG
+        ],
+        issues=issues,
     )
 
 

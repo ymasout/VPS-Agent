@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ControlPlaneApiError, formatBytes, getAgent, getAgents, getSystemInfo } from "./api";
+import { ControlPlaneApiError, formatBytes, getAgent, getAgents, getNotificationConfiguration, getSystemInfo } from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -49,6 +49,22 @@ describe("control plane API client", () => {
   it("fails closed when the managed system token is absent", async () => {
     vi.stubEnv("ADMIN_API_TOKEN", "");
     await expect(getSystemInfo()).rejects.toThrow("ADMIN_API_TOKEN is required");
+  });
+
+  it("keeps notification readiness behind the managed server request", async () => {
+    vi.stubEnv("ADMIN_API_TOKEN", "managed-secret");
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"ready":true}', { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getNotificationConfiguration();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/notification-configuration",
+      {
+        cache: "no-store",
+        headers: { "X-Admin-Token": "managed-secret" },
+      },
+    );
   });
 });
 

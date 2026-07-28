@@ -1,7 +1,7 @@
 # 项目状态
 
-最后同步：2026-07-27
-当前阶段：**M0、M1、M2 已完成；M3 已完成；M4 核心完成（重启+部署+回滚均生产验证）；M5 已完成，M5.1–M5.7 均通过相应生产金丝雀；M6.1 + M6.2 生产金丝雀通过 2026-07-27**
+最后同步：2026-07-28
+当前阶段：**M0、M1、M2 已完成；M3 已完成；M4 核心完成（重启+部署+回滚均生产验证）；M5 已完成；M6.1 + M6.2 已完成，M6.3 已开始且尚未提交/生产验证**
 
 ## 1. 当前结论
 
@@ -312,7 +312,7 @@ M5.2.1 本地验收：API 157 项通过；Web 43 项、ESLint、生产构建、�
 
 ## 8. M6：自托管产品化
 
-状态：**进行中（M6.1 生产金丝雀通过 2026-07-27；M6.2 PWA + 移动 M4 审批生产金丝雀通过 2026-07-27，M6.2 完成；M6.3–M6.4 + Web SSH 待开始）**
+状态：**进行中（M6.1、M6.2 已完成；M6.3 已开始，M6.3a 已本地实现且尚待独立审计/提交/生产验证；M6.4 + Web SSH 待开始）**
 
 2026-07-26 完成 M6 第一轮发布、Compose、Alembic、备份/恢复、Agent 安装升级、版本/健康、Web 管理入口、CI 和发布资产审计。当前结论：
 
@@ -327,6 +327,10 @@ M5.2.1 本地验收：API 157 项通过；Web 43 项、ESLint、生产构建、�
 M6 顺序冻结为 M6.1 可恢复性与发布基础 → M6.2 PWA/移动只读与审批 → M6.3 通知/模板/引导配置 → M6.4 协作/开源评估；Web SSH 和限时高风险会话最后单独设计。第一纵向切片“可验证的控制平面 PostgreSQL 备份与离线恢复基础”已由 codex 实现并经 Claude 审计（无 P0/P1；P2-1 symlink 经 ubuntu CI 确认；P3 非阻断）：真实 PostgreSQL 16 完成迁移、种子数据、同快照备份、测试卷清空、空库恢复、schema check 和关键记录一致性；损坏包、伪造 commit、错误实例确认与非空目标均失败关闭。Web 69 项、Go test/vet、Ruff、build、Compose、Caddy 和 Alembic head 检查通过。已提交 `38b8d40` 推送至 main，CI `Control Plane Recovery` 通过。完整边界见 [M6_PRODUCTIZATION.md](./M6_PRODUCTIZATION.md)。
 
 M6.2a/M6.2b 已完成本地实现、验证和独立源码审计：新增 manifest、静态图标、受限 service worker、无业务数据离线页、独立 `/mobile` 只读状态页、移动安全区/只读导航，以及展示冻结目标、动作、风险、有效期和前置检查的独立审批卡。审批默认禁用，必须显式勾选且在线，仍仅调用现有同源 M4 确认代理；不新增 API、迁移、Agent 协议、后台同步或离线写。代码 `80b950f` 部署后首轮 PWA 实机金丝雀发现 `/sw.js` 返回 Next 404（standalone runtime 未复制 `apps/web/public`，源码级测试未覆盖最终镜像内容）。修复 `fa35eee` 补 `COPY .../public`、Dockerfile 回归断言和 `Control Plane Web` Ubuntu CI（真实构建/启动镜像+验证 4 资产），三个 CI 全通过；生产重新部署 `fa35eee` 后 Phase 3 PWA 实机金丝雀通过 2026-07-27（SW 注册+预缓存仅 3 静态资产、Chrome 在 Basic Auth 下安装+standalone 启动、离线无数据泄露、ops/trans 13/81 不变）。Phase 4 移动 M4 审批写路径全链路金丝雀通过 2026-07-27（m4-deploy-bad 临时 restart，op `43191ab3`，移动端核对+确认触发完整 M4 链，ops/trans +1/+8，还原）；M6.2 完成，边界与失败/通过记录见 [M6_PWA_MOBILE.md](./M6_PWA_MOBILE.md)。
+
+M6.2 金丝雀前后生产 `CONVERSATION_REPOSITORY_KNOWLEDGE_ENABLED=true` 与 `CONVERSATION_OPERATION_TIMELINE_ENABLED=true` 均未变化；二者是既有 M5 只读能力，不是 M6.2 写副作用。当前证据尚不能证明其启用来源，保留为独立 M5 配置回溯项，不借 M6.3 改动生产开关。
+
+2026-07-28 开始 M6.3 代码审计并完成首片本地实现。现有 M2 通知已具备钉钉 firing/resolved、事件序列去重、最多 3 次尝试和陈旧 sending 回收，但告警建单仍硬编码 `dingtalk`，配置只来自环境变量，Web 无秘密安全的就绪状态或引导入口。M6.3a 增加受管理认证保护的秘密不回显状态 API、与实际渲染共用的固定 4 类模板目录和只读引导配置页；不发送测试消息、不新增第二通道、迁移、Agent/M4/Operation 变更或外部写副作用。API 216 项、Web 84 项、Ruff、ESLint、Web production build、Go test/vet、Compose 配置和 Alembic 单 head 均通过；本机 Docker daemon 未运行，真实 standalone 镜像门留给授权提交后的既有 Web CI。尚待独立审计、提交和生产验证。详见 [M6_NOTIFICATIONS.md](./M6_NOTIFICATIONS.md)。
 
 2026-07-27 M6.1 生产金丝雀通过：部署 `38b8d40`（注入 build version/commit/build time）+ postflight；`/api/v1/system-info` 返回 `commit_sha=38b8d40e76ea1c30497bbfa0f17d2b87aaa27977`、`version=0.6.1`、`schema_current=true`、`alembic_revision=["0017_m5_runbook_drafts"]`；`preflight` 生成原子备份包 `control-plane-pre-migration-20260727T131115Z`，`inspect` + 隔离空库 `restore` 成功，审计摘要 `schema_current=true`/`key_table_counts_match=true`/`active_operation_count=0`；恢复后 `ops=13/trans=81/agents=5` 与生产一致；生产 `ops/trans` 前后不变、日志无秘密、开关未变；隔离项目已清理，首份原子备份包保留（0700/0600）。M6.1 无 feature flag，`38b8d40` 留作运行基线。
 

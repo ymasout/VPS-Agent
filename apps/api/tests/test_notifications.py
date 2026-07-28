@@ -96,6 +96,11 @@ def test_dingtalk_payload_labels_agent_disconnect_as_vps_event() -> None:
     assert resolved["markdown"]["title"] == "✅ VPS 已恢复连接"  # type: ignore[index]
 
 
+def test_dingtalk_payload_rejects_unknown_notification_type() -> None:
+    with pytest.raises(ValueError, match="unsupported notification type"):
+        dingtalk_payload(event(), "custom", "https://ops.example.com")
+
+
 def test_dingtalk_sender_accepts_success_and_rejects_api_error() -> None:
     requests: list[httpx.Request] = []
 

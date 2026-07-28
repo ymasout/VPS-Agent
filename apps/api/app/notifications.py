@@ -12,11 +12,20 @@ from .config import Settings
 from .database import session_factory
 from .models import AlertEvent, NotificationDelivery
 
+MAX_DELIVERY_ATTEMPTS = 3
+NOTIFICATION_TEMPLATE_CATALOG = (
+    ("service_firing", "firing", "service", "🔴 服务异常"),
+    ("service_resolved", "resolved", "service", "✅ 服务已恢复"),
+    ("agent_firing", "firing", "agent", "🔴 VPS 失联"),
+    ("agent_resolved", "resolved", "agent", "✅ VPS 已恢复连接"),
+)
+NOTIFICATION_TEMPLATE_TITLES = {item[0]: item[3] for item in NOTIFICATION_TEMPLATE_CATALOG}
+
 
 def delivery_is_claimable(
     delivery: NotificationDelivery, stale_before: datetime
 ) -> bool:
-    if delivery.attempt_count >= 3:
+    if delivery.attempt_count >= MAX_DELIVERY_ATTEMPTS:
         return False
     if delivery.status in {"pending", "failed"}:
         return True
@@ -50,12 +59,12 @@ def escape_markdown(value: str) -> str:
 def dingtalk_payload(
     event: AlertEvent, notification_type: str, console_public_url: str
 ) -> dict[str, object]:
+    if notification_type not in {"firing", "resolved"}:
+        raise ValueError("unsupported notification type")
     resolved = notification_type == "resolved"
     agent_event = event.source == "agent"
-    if agent_event:
-        heading = "✅ VPS 已恢复连接" if resolved else "🔴 VPS 失联"
-    else:
-        heading = "✅ 服务已恢复" if resolved else "🔴 服务异常"
+    template_key = f"{'agent' if agent_event else 'service'}_{notification_type}"
+    heading = NOTIFICATION_TEMPLATE_TITLES[template_key]
     status = "Resolved" if resolved else "Firing"
     detail = escape_markdown((event.detail or "无额外详情")[:300])
     title = escape_markdown(event.title)
@@ -168,7 +177,7 @@ async def deliver_pending_notifications(settings: Settings) -> None:
                             NotificationDelivery.updated_at <= stale_before,
                         ),
                     ),
-                    NotificationDelivery.attempt_count < 3,
+                    NotificationDelivery.attempt_count < MAX_DELIVERY_ATTEMPTS,
                 )
                 .order_by(NotificationDelivery.created_at)
                 .limit(20)

@@ -12,6 +12,26 @@ export type SystemInfo = {
   expected_alembic_revision: string[];
   schema_current: boolean;
 };
+export type NotificationConfiguration = {
+  ready: boolean;
+  console_links_https: boolean;
+  max_delivery_attempts: number;
+  sending_stale_seconds: number;
+  timeout_seconds: number;
+  channels: Array<{
+    channel: "dingtalk";
+    configured: boolean;
+    signing_enabled: boolean;
+    supports: Array<"firing" | "resolved">;
+  }>;
+  templates: Array<{
+    key: string;
+    notification_type: "firing" | "resolved";
+    target: "service" | "agent";
+    title: string;
+  }>;
+  issues: string[];
+};
 export type ServiceMappingCandidate = {
   agent_id: string;
   service_kind: string;
@@ -375,6 +395,8 @@ async function adminRequest<T>(path: string): Promise<T> {
 
 export const getAgents = () => request<Agent[]>("/api/v1/agents");
 export const getSystemInfo = () => adminRequest<SystemInfo>("/api/v1/system-info");
+export const getNotificationConfiguration = () =>
+  adminRequest<NotificationConfiguration>("/api/v1/notification-configuration");
 export const getAgent = (id: string) => request<AgentDetail>(`/api/v1/agents/${id}`);
 export const getServiceMappingCandidates = (id: string) =>
   request<ServiceMappingCandidate[]>(`/api/v1/agents/${id}/service-mapping-candidates`);

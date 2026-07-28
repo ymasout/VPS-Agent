@@ -129,7 +129,7 @@ service worker 不调用 `cache.put()` 保存运行时响应，不存认证头�
 
 独立源码审计于 2026-07-27 通过，当时未发现 P0/P1。审计指出 Basic Auth + PWA 安装必须由实机金丝雀验证；代码随后补充显式同源凭据、固定静态缓存刷新和 service worker 事件执行测试。Caddy 认证范围未放宽；若目标 Chrome 仍无法安装，只能在单独评审后考虑公开这三个固定静态资产，不得扩大到动态或数据路由。
 
-## 13. 首轮生产金丝雀失败记录（2026-07-27）
+## 13. 生产金丝雀记录：首轮失败、修复与通过（2026-07-27）
 
 - 生产页面页脚实时显示 `0.6.1 · 80b950f64f70`，manifest link、PWA 图标 link 和移动导航均已进入运行页面，证明 `80b950f` 已部署。
 - 已通过 Caddy Basic Auth 的桌面 Chrome 直接访问 `/sw.js`、`/pwa-icon.svg` 和 `/offline.html`，三者均实际返回 Next.js 404 HTML；因此 Service Workers 面板没有 `/sw.js` 是正确表现，不是浏览器操作遗漏。
@@ -140,4 +140,5 @@ service worker 不调用 `cache.put()` 保存运行时响应，不存认证头�
 - 修复 `fa35eee` 已提交推送；`Control Plane Recovery`/`Migrations`/`Web` 三个 CI 全通过（Web CI 1m3s 真实构建镜像+启动+验证 4 资产）。
 - 生产重新部署 `fa35eee` 后 Phase 3 PWA 实机金丝雀通过 2026-07-27：`/sw.js`/`/offline.html`/`/pwa-icon.svg`/`/manifest.webmanifest` 均返回 200 且 Content-Type 正确；Chrome 在 Caddy Basic Auth 下成功注册 SW、预缓存仅 3 项静态资产（Cache Storage 无 API/console/运维数据）、抓取 manifest+maskable 图标并安装、standalone 独立窗口启动 `/mobile` 在线只读正常；离线刷新只显示无数据离线页；ops/trans 前后 13/81 不变。
 - Phase 4（移动 M4 审批写路径全链路）通过 2026-07-27：aliyun-VPS `m4-deploy-bad`（instance `da777ab7`）临时启用 restart，`POST /api/v1/operations` 创建 op `43191ab3`（awaiting_confirmation, risk=medium）；standalone PWA 核对审批卡（冻结目标/动作/有效期/前置检查）+ checkbox 默认未勾 + 按钮禁用 + Offline 门禁用；移动端勾选+确认触发完整 M4 链（ops 13->14 +1, trans 81->89 +8 = awaiting_confirmation->queued->claimed->running->verifying->succeeded）；还原 `restart_enabled=false`。
-- M6.2 完成（Phase 3 + Phase 4 均通过）；M6 仍进行中（M6.3-M6.4 + Web SSH 待开始）。
+- M6.2 完成（Phase 3 + Phase 4 均通过）；截至 2026-07-27 金丝雀收尾时，M6 仍进行中且 M6.3/M6.4/Web SSH 尚未开始。M6.3 已于 2026-07-28 另行启动，不改变本节 M6.2 结论。
+- 金丝雀前后观察到 `CONVERSATION_REPOSITORY_KNOWLEDGE_ENABLED=true` 与 `CONVERSATION_OPERATION_TIMELINE_ENABLED=true`；两者为既有 M5 只读功能且本次前后未变，不是 M6.2 副作用。其启用来源仍需作为独立 M5 配置回溯项处理。
