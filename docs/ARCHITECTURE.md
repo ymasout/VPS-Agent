@@ -14,6 +14,7 @@ M6.1 首片（可验证的控制平面备份与离线恢复基础）已由 codex
 
 - 产品形态：自托管、单实例、面向个人和小团队的 Web/PWA 运维控制台。
 - 当前租户模型：所有资源固定使用 `organization_id = local`，不实现 SaaS、多租户、用户注册、RBAC 或计费。
+- M6.4 设计审计确认：当前 Caddy Basic Auth 和 `ADMIN_API_TOKEN` 都是共享管理员边界，不能提供可信具名 actor；`organization_id=local` 继续只是单实例一致性字段。团队模式若实施，身份与 capability 必须由服务端认证上下文派生，不能信任客户端 `confirmed_by` 或身份 header，且不得改变 M4 状态机。详见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)。
 - 控制平面应与关键被控业务分开部署，并具备独立备份能力。
 - Agent 只建立出站 HTTPS/WSS 连接，不要求 VPS 开放新的入站管理端口。
 - 浏览器不保存 SSH 私钥、Agent 密钥或其他服务器凭据，也不直接访问 VPS。

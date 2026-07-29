@@ -7,7 +7,7 @@
 - M2 已有钉钉自定义机器人通道，支持服务异常/恢复与 VPS 失联/恢复。
 - `notification_deliveries` 以 `(event_id, sequence, channel)` 去重；待发送、失败和陈旧 `sending` 可重试，单条最多尝试 3 次。
 - Webhook 与可选加签密钥只由环境变量注入 API；Web 和 Agent 不持有通知凭据。
-- 生产当前告警建单仍运行只含 `dingtalk` 的 `a4944fb`；本地 M6.3c+d 已消除硬编码单通道，M6.3b 测试审计和 Web 配置入口均保留。
+- 生产当前运行 `1073969 + 0019_m6_multichannel_notify`，告警通道选择仍为 `dingtalk`；M6.3c+d 已消除代码中的硬编码单通道，M6.3b 测试审计和 Web 配置入口均保留。
 
 ## 2. 目标
 
@@ -43,8 +43,8 @@
 
 1. **M6.3a（已完成）：**通知就绪状态、固定模板目录、引导配置页；只读、无迁移、无外部副作用。
 2. **M6.3b（已完成）：**显式测试消息；固定钉钉通道和服务端模板、默认关闭、请求 UUID 幂等、数据库固定窗口限速、一次发送、有限审计；不复用生产 AlertEvent 伪造故障。
-3. **M6.3c（本地实现完成、待验证）：**Telegram 第二通知通道；适配器注册表、每通道独立 Delivery、配置校验和真实失败隔离门；飞书只保留不可启用的注册/测试位。
-4. **M6.3d（本地实现完成、待验证）：**受限模板 `v1`、通道白名单组合和冻结渲染上下文；只允许服务端定义字段和安全渲染，不开放任意模板代码。
+3. **M6.3c（已完成）：**Telegram 第二通知通道；适配器注册表、每通道独立 Delivery、配置校验和真实失败隔离门；飞书只保留不可启用的注册/测试位。
+4. **M6.3d（已完成）：**受限模板 `v1`、通道白名单组合和冻结渲染上下文；只允许服务端定义字段和安全渲染，不开放任意模板代码。
 
 ## 7. 测试矩阵
 
@@ -55,7 +55,7 @@
 
 ## 8. 生产金丝雀边界
 
-M6.3a 的历史金丝雀边界是只读且不发送测试消息。M6.3c+d 生产验证见 §15.4，仍需用户另行授权；不得把 Telegram 凭据发送到聊天、日志或工单，也不得制造生产 AlertEvent 来证明多通道。
+M6.3a 的历史金丝雀边界是只读且不发送测试消息。M6.3c+d 已按 §15.4 的安全默认边界完成生产验证；未配置或启用 Telegram，也未制造生产 AlertEvent。未来启用 Telegram 仍是管理员单独授权的配置事件，不得把凭据发送到聊天、日志或工单。
 
 ## 9. M6.3a 本地验证（2026-07-28）
 
@@ -165,12 +165,14 @@ M6.3a 文档收尾已复核并修正历史缺口措辞。M6.3b 已由 codex 实�
 - 单元验证覆盖：钉钉/Telegram 适配器注册完整、飞书不能启用、组合去重/未知通道拒绝、同 sequence 两条 Delivery、冻结上下文、HTML 转义、固定 Telegram origin、远端错误脱敏、每通道测试路由与 Web 同源代理。
 - 真实 PostgreSQL CI 门覆盖：同事件钉钉失败与 Telegram 成功相互隔离、两条 Delivery sequence 一致、冻结上下文落库、Operation/Transition 零副作用，以及 Telegram 测试审计能够通过扩展后的约束并达到 succeeded/attempt_count=1。
 - 首次提交 `ece22d5` 后，真实 PostgreSQL Migrations/Recovery CI 发现原 revision 名超过 Alembic `version_num VARCHAR(32)` 限制；离线 SQL 只生成文本，未能发现真实写入失败。现已把 revision 缩短为 `0019_m6_multichannel_notify`，并新增遍历全部迁移、强制 revision 长度不超过 32 的本地回归门。
-- 当前修复后本地结果：API `238 passed, 11 skipped`，Web 88 项、Ruff、ESLint、Next.js production build、Agent Go test/vet、Compose 配置和 `0018 ↔ 0019` 双向离线 SQL 通过；Alembic 单 head `0019_m6_multichannel_notify`。revision 长度门已显式加入 Migrations workflow；真实 PostgreSQL Migrations/Recovery CI 必须在修复提交后重新转绿。
+- 修复后本地结果：API `238 passed, 11 skipped`，Web 88 项、Ruff、ESLint、Next.js production build、Agent Go test/vet、Compose 配置和 `0018 ↔ 0019` 双向离线 SQL 通过；Alembic 单 head `0019_m6_multichannel_notify`。revision 长度门已显式加入 Migrations workflow；修复提交 `1073969` 及文档提交 `5cd7bd9` 的 Migrations、Recovery、Web CI 均已转绿。
 
-### 15.4 生产金丝雀边界
+### 15.4 生产金丝雀计划与实际记录
 
 1. 先以 `NOTIFICATION_CHANNELS=dingtalk`、`NOTIFICATION_TESTS_ENABLED=false` 部署和迁移，核对 system-info commit/revision、schema current、配置 API 三通道目录、`/healthz` 最小响应，以及既有 ops/trans/AlertEvent/Delivery 计数。
 2. 用户在服务器本地配置 Telegram token/chat ID；不得在聊天或命令输出中展示。先保持通道选择仍为 dingtalk，确认 API 只报告 Telegram configured，不产生发送。
 3. 经再次授权改为 `NOTIFICATION_CHANNELS=dingtalk,telegram` 并临时开启测试消息；只向 Telegram 创建一条审计测试，核对 202→succeeded/attempt_count=1、群内恰好一条、同键重放 200 不重发、同窗口新键 429。
 4. 不通过伪造生产告警测试 Delivery；多通道失败隔离由真实 PostgreSQL CI 证明。金丝雀结束后恢复 `NOTIFICATION_TESTS_ENABLED=false`；是否保留 Telegram 启用和凭据由用户明确决定，默认回到仅钉钉。
 5. 核对 ops/trans、AlertEvent 与生产 NotificationDelivery 无非预期变化，API/页面/日志/数据库审计均不含 Webhook、token、chat ID、签名 URL 或远端响应正文。通过前不得标记 M6.3 完成。
+
+实际执行于 2026-07-29 完成：部署 `1073969`、迁移 `0018 → 0019` 和 postflight 全部通过；`system-info` 返回 commit `1073969`、revision `0019_m6_multichannel_notify`、`schema_current=true`。配置视图显示钉钉已实现/启用/配置，Telegram 已实现但未启用，飞书未实现；生产继续保持 `NOTIFICATION_CHANNELS=dingtalk` 与 `NOTIFICATION_TESTS_ENABLED=false`。既有 17 条 Delivery 与 25 条 AlertEvent 均完成模板字段和 `["dingtalk"]` 通道集合回填，ops/trans 保持 `14/89`。本次没有配置 Telegram 凭据、没有外部 Telegram 实发，也没有伪造生产告警；Telegram 适配器、测试审计和双通道失败隔离由真实 PostgreSQL CI 覆盖。该限制必须与“金丝雀通过”一并保留，不能把它描述为 Telegram 生产实发证明。

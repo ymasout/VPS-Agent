@@ -89,7 +89,7 @@ service worker 不调用 `cache.put()` 保存运行时响应，不存认证头�
 - **已关闭并通过审计：**`/mobile` 入口和底部导航不进入包含注册、同步、诊断触发或会话提交的页面。
 - **已关闭并通过审计：**service worker 在 hydration 早于或晚于 window load 时均尝试注册，失败不影响在线控制台。
 - **已关闭并通过审计：**审批默认禁用、离线禁用、显式核对后只发送现有空 POST；同源与管理令牌保护未改变。
-- **金丝雀发现、本地已修复，待 CI/重新部署：**standalone runtime 必须复制 `apps/web/public`；Ubuntu CI 必须真实构建/启动 Web 镜像并确认 `/sw.js`、`/offline.html`、`/pwa-icon.svg`、`/manifest.webmanifest` 均可读取。
+- **金丝雀发现并已关闭：**首轮 standalone runtime 未复制 `apps/web/public`；修复 `fa35eee` 已增加复制、Ubuntu 真实镜像 CI 和重新部署验证，`/sw.js`、`/offline.html`、`/pwa-icon.svg`、`/manifest.webmanifest` 均可读取。
 
 ### P2：兼容与后续增强
 
