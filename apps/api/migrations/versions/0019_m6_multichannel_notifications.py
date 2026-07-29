@@ -3,7 +3,7 @@
 import sqlalchemy as sa
 from alembic import context, op
 
-revision = "0019_m6_multichannel_notifications"
+revision = "0019_m6_multichannel_notify"
 down_revision = "0018_m6_notification_tests"
 branch_labels = None
 depends_on = None

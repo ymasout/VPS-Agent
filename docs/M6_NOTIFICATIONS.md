@@ -154,7 +154,7 @@ M6.3a 文档收尾已复核并修正历史缺口措辞。M6.3b 已由 codex 实�
 
 ### 15.2 Delivery 与模板冻结
 
-- 新迁移 `0019_m6_multichannel_notifications` 为 `alert_events` 增加冻结通道集合，为 `notification_deliveries` 增加非空 `template_key`、`template_version` 和有限 JSON `render_context`，并把测试审计通道约束扩大为 `dingtalk|telegram`。
+- 新迁移 `0019_m6_multichannel_notify` 为 `alert_events` 增加冻结通道集合，为 `notification_deliveries` 增加非空 `template_key`、`template_version` 和有限 JSON `render_context`，并把测试审计通道约束扩大为 `dingtalk|telegram`。
 - 同一 firing/resolved 逻辑转换只递增一次 `AlertEvent.notification_sequence`，随后为每个选定通道创建相同 sequence、相同模板版本、独立状态/尝试次数的 Delivery；一个通道失败不得修改另一通道。
 - 当前目录只有服务/VPS firing/resolved 四类 `v1` 模板。创建 Delivery 时冻结标题、详情、来源、机器与服务键；重试继续使用冻结上下文，不读取后来变化的事件文本。模板 key/version/type/target 任一不匹配都失败关闭。
 - 历史 Delivery 在 `0018 → 0019` 迁移中从对应 AlertEvent 回填 `v1` 与有限上下文。旧版应用内置的 schema head 是 `0018`，不会在 `0019` 数据库上静默启动；`0019 → 0018` downgrade 若存在 Telegram 测试审计、未终结的非钉钉 Delivery，或仍冻结多通道的活跃告警会明确拒绝，不会删除审计或丢弃生命周期意图来强行回退。应用回退与数据库回退仍是管理员单独授权事件。
@@ -164,7 +164,8 @@ M6.3a 文档收尾已复核并修正历史缺口措辞。M6.3b 已由 codex 实�
 - `POST /api/v1/notification-tests/telegram` 复用 M6.3b 管理认证、空正文、UUID 幂等、每通道固定窗口限速、最多一次、未知结果不重发和有限审计语义；只有通道已在 `NOTIFICATION_CHANNELS` 中显式启用且凭据完整时才能创建，通道目标完全由服务器配置决定。
 - 单元验证覆盖：钉钉/Telegram 适配器注册完整、飞书不能启用、组合去重/未知通道拒绝、同 sequence 两条 Delivery、冻结上下文、HTML 转义、固定 Telegram origin、远端错误脱敏、每通道测试路由与 Web 同源代理。
 - 真实 PostgreSQL CI 门覆盖：同事件钉钉失败与 Telegram 成功相互隔离、两条 Delivery sequence 一致、冻结上下文落库、Operation/Transition 零副作用，以及 Telegram 测试审计能够通过扩展后的约束并达到 succeeded/attempt_count=1。
-- 当前本地结果：API `237 passed, 11 skipped`，Web 88 项、Ruff、ESLint、Next.js production build、Agent Go test/vet、Compose 配置和 `0018 ↔ 0019` 双向离线 SQL 通过；Alembic 单 head `0019_m6_multichannel_notifications`。真实 PostgreSQL 门等待提交后的 Ubuntu CI。
+- 首次提交 `ece22d5` 后，真实 PostgreSQL Migrations/Recovery CI 发现原 revision 名超过 Alembic `version_num VARCHAR(32)` 限制；离线 SQL 只生成文本，未能发现真实写入失败。现已把 revision 缩短为 `0019_m6_multichannel_notify`，并新增遍历全部迁移、强制 revision 长度不超过 32 的本地回归门。
+- 当前修复后本地结果：API `238 passed, 11 skipped`，Web 88 项、Ruff、ESLint、Next.js production build、Agent Go test/vet、Compose 配置和 `0018 ↔ 0019` 双向离线 SQL 通过；Alembic 单 head `0019_m6_multichannel_notify`。revision 长度门已显式加入 Migrations workflow；真实 PostgreSQL Migrations/Recovery CI 必须在修复提交后重新转绿。
 
 ### 15.4 生产金丝雀边界
 

@@ -28,7 +28,7 @@
 ### 2.1 已存在的可靠性基础
 
 - 生产 Compose 由 Caddy、Web、API、PostgreSQL 16 和 Redis 组成；PostgreSQL、Redis 与 Caddy 数据使用命名卷。
-- Alembic 是当前 schema 演进唯一入口。生产现运行 `0018_m6_notification_tests`；M6.3c+d 本地代码为单 head `0019_m6_multichannel_notifications`。API 启动时校验数据库 revision，不自动迁移。
+- Alembic 是当前 schema 演进唯一入口。生产现运行 `0018_m6_notification_tests`；M6.3c+d 本地代码为单 head `0019_m6_multichannel_notify`。API 启动时校验数据库 revision，不自动迁移。
 - `deploy/control-plane-release.sh` 已分离 `preflight`、`migrate`、`reload-caddy` 和 `postflight`；`postflight` 会运行 schema check、数据库感知健康检查、Agent operation 路由和映射候选检查。
 - `preflight` 会生成 PostgreSQL custom-format `pg_dump` 和迁移 SQL 预览，备份目录/文件权限分别为 `0700`/`0600`，不自动删除备份。
 - Agent 通过 GitHub Release 发布 Linux amd64/arm64 静态二进制、安装器和 `SHA256SUMS`；安装器校验二进制、保留身份/策略，并由 systemd 托管。

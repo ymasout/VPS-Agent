@@ -37,6 +37,8 @@ jobs:
           cache: pip
           cache-dependency-path: apps/api/requirements-dev.txt
       - run: python -m pip install -r requirements-dev.txt
+      - name: Verify Alembic revision identifiers fit version_num
+        run: pytest -q tests/test_migration_revisions.py
       - name: Simulate the production create_all database
         run: python -m scripts.create_all_adoption_fixture create
       - name: Verify and adopt the unversioned schema
@@ -54,8 +56,8 @@ jobs:
           alembic -c alembic.ini downgrade 0018_m6_notification_tests:0017_m5_runbook_drafts --sql > /dev/null
       - name: Verify M6.3c/d offline SQL in both directions
         run: |
-          alembic -c alembic.ini upgrade 0018_m6_notification_tests:0019_m6_multichannel_notifications --sql > /dev/null
-          alembic -c alembic.ini downgrade 0019_m6_multichannel_notifications:0018_m6_notification_tests --sql > /dev/null
+          alembic -c alembic.ini upgrade 0018_m6_notification_tests:0019_m6_multichannel_notify --sql > /dev/null
+          alembic -c alembic.ini downgrade 0019_m6_multichannel_notify:0018_m6_notification_tests --sql > /dev/null
       - name: Verify M6.3 notification downgrade and incremental re-upgrade
         run: |
           alembic -c alembic.ini downgrade 0017_m5_runbook_drafts
