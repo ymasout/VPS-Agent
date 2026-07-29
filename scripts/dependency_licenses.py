@@ -27,6 +27,7 @@ APPROVED_LICENSES = {
     "BlueOak-1.0.0",
     "CC-BY-4.0",
     "ISC",
+    "LGPL-3.0-or-later",
     "MIT",
     "MIT AND Python-2.0",
     "MIT AND PSF-2.0",
