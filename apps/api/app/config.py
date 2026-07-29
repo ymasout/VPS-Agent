@@ -5,6 +5,8 @@ from functools import lru_cache
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .notification_catalog import NOTIFICATION_CHANNELS
+
 
 class Settings(BaseSettings):
     app_name: str = "VPS Agent Control Plane"
@@ -24,6 +26,9 @@ class Settings(BaseSettings):
     alert_pending_observations: int = 2
     dingtalk_webhook_url: str | None = None
     dingtalk_secret: str | None = None
+    telegram_bot_token: str | None = None
+    telegram_chat_id: str | None = None
+    notification_channels: str = "dingtalk"
     console_public_url: str = "http://localhost:3000"
     notification_timeout_seconds: float = 5.0
     notification_sending_stale_seconds: int = 120
@@ -93,6 +98,32 @@ class Settings(BaseSettings):
     skip_database_init: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @field_validator("notification_channels", mode="before")
+    @classmethod
+    def validate_notification_channels(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise ValueError("notification channels must be a comma-separated string")
+        channels = [item.strip().lower() for item in value.split(",") if item.strip()]
+        if not channels:
+            raise ValueError("at least one notification channel must be enabled")
+        if len(set(channels)) != len(channels):
+            raise ValueError("notification channels must not contain duplicates")
+        unknown = [channel for channel in channels if channel not in NOTIFICATION_CHANNELS]
+        if unknown:
+            raise ValueError(f"unsupported notification channel: {unknown[0]}")
+        reserved = [
+            channel for channel in channels if not NOTIFICATION_CHANNELS[channel].implemented
+        ]
+        if reserved:
+            raise ValueError(
+                f"notification channel is reserved but not implemented: {reserved[0]}"
+            )
+        return ",".join(channels)
+
+    @property
+    def enabled_notification_channels(self) -> tuple[str, ...]:
+        return tuple(self.notification_channels.split(","))
 
     @field_validator(
         "github_app_id",

@@ -325,6 +325,9 @@ class AlertEvent(Base):
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     observation_count: Mapped[int] = mapped_column(Integer, default=1)
     notification_sequence: Mapped[int] = mapped_column(Integer, default=0)
+    notification_channels: Mapped[list[str]] = mapped_column(
+        JSON, default=lambda: ["dingtalk"]
+    )
     detail: Mapped[str | None] = mapped_column(String(512), nullable=True)
     first_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -349,6 +352,9 @@ class NotificationDelivery(Base):
     notification_type: Mapped[str] = mapped_column(String(32))
     sequence: Mapped[int] = mapped_column(Integer)
     channel: Mapped[str] = mapped_column(String(32), default="dingtalk")
+    template_key: Mapped[str] = mapped_column(String(64))
+    template_version: Mapped[str] = mapped_column(String(32))
+    render_context: Mapped[dict] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)
     last_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -362,7 +368,10 @@ class NotificationDelivery(Base):
 class NotificationTestRequest(Base):
     __tablename__ = "notification_test_requests"
     __table_args__ = (
-        CheckConstraint("channel = 'dingtalk'", name="ck_notification_test_channel"),
+        CheckConstraint(
+            "channel IN ('dingtalk', 'telegram')",
+            name="ck_notification_test_channel",
+        ),
         CheckConstraint(
             "status IN ('pending', 'sending', 'succeeded', 'failed', 'delivery_outcome_unknown')",
             name="ck_notification_test_status",

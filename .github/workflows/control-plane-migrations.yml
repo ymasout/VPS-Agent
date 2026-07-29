@@ -52,7 +52,11 @@ jobs:
         run: |
           alembic -c alembic.ini upgrade 0017_m5_runbook_drafts:0018_m6_notification_tests --sql > /dev/null
           alembic -c alembic.ini downgrade 0018_m6_notification_tests:0017_m5_runbook_drafts --sql > /dev/null
-      - name: Verify M6.3b downgrade and incremental re-upgrade
+      - name: Verify M6.3c/d offline SQL in both directions
+        run: |
+          alembic -c alembic.ini upgrade 0018_m6_notification_tests:0019_m6_multichannel_notifications --sql > /dev/null
+          alembic -c alembic.ini downgrade 0019_m6_multichannel_notifications:0018_m6_notification_tests --sql > /dev/null
+      - name: Verify M6.3 notification downgrade and incremental re-upgrade
         run: |
           alembic -c alembic.ini downgrade 0017_m5_runbook_drafts
           alembic -c alembic.ini upgrade head
@@ -60,3 +64,5 @@ jobs:
           python -m scripts.create_all_adoption_fixture assert
       - name: Verify M6.3b notification test audit semantics
         run: pytest -q tests/test_m6_notification_tests_postgres.py
+      - name: Verify M6.3c/d multi-channel delivery semantics
+        run: pytest -q tests/test_m6_multichannel_postgres.py

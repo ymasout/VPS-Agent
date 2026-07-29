@@ -21,11 +21,12 @@ from .models import (
     ServiceInstance,
     ServiceStatus,
 )
-from .notifications import (
-    MAX_DELIVERY_ATTEMPTS,
+from .notification_catalog import (
+    IMPLEMENTED_NOTIFICATION_CHANNELS,
+    NOTIFICATION_CHANNEL_CATALOG,
     NOTIFICATION_TEMPLATE_CATALOG,
-    deliver_pending_notifications,
 )
+from .notifications import MAX_DELIVERY_ATTEMPTS, deliver_pending_notifications
 from .schema import current_revisions, expected_revisions
 from .schemas import (
     AgentDetail,
@@ -105,11 +106,20 @@ async def notification_configuration(
 ) -> NotificationConfiguration:
     """Return secret-free notification readiness for the self-hosted admin UI."""
 
-    webhook_configured = bool(settings.dingtalk_webhook_url)
+    enabled_channels = set(settings.enabled_notification_channels)
+    channel_configuration = {
+        "dingtalk": bool(settings.dingtalk_webhook_url),
+        "telegram": bool(settings.telegram_bot_token and settings.telegram_chat_id),
+        "feishu": False,
+    }
     console_links_https = urlsplit(settings.console_public_url).scheme == "https"
     issues: list[str] = []
-    if not webhook_configured:
+    if "dingtalk" in enabled_channels and not channel_configuration["dingtalk"]:
         issues.append("dingtalk_webhook_missing")
+    if "telegram" in enabled_channels and not settings.telegram_bot_token:
+        issues.append("telegram_bot_token_missing")
+    if "telegram" in enabled_channels and not settings.telegram_chat_id:
+        issues.append("telegram_chat_id_missing")
     if settings.app_env == "production" and not console_links_https:
         issues.append("console_public_url_not_https")
     return NotificationConfiguration(
@@ -122,20 +132,29 @@ async def notification_configuration(
         test_cooldown_seconds=settings.notification_test_cooldown_seconds,
         channels=[
             NotificationChannelInfo(
-                channel="dingtalk",
-                configured=webhook_configured,
-                signing_enabled=bool(settings.dingtalk_secret),
+                channel=definition.key,
+                implemented=definition.implemented,
+                enabled=definition.key in enabled_channels,
+                configured=channel_configuration[definition.key],
+                signing_enabled=(
+                    bool(settings.dingtalk_secret)
+                    if definition.key == "dingtalk"
+                    else None
+                ),
                 supports=["firing", "resolved"],
             )
+            for definition in NOTIFICATION_CHANNEL_CATALOG
         ],
         templates=[
             NotificationTemplateInfo(
-                key=key,
-                notification_type=notification_type,
-                target=target,
-                title=title,
+                key=definition.key,
+                version=definition.version,
+                notification_type=definition.notification_type,
+                target=definition.target,
+                title=definition.title,
+                supported_channels=list(IMPLEMENTED_NOTIFICATION_CHANNELS),
             )
-            for key, notification_type, target, title in NOTIFICATION_TEMPLATE_CATALOG
+            for definition in NOTIFICATION_TEMPLATE_CATALOG
         ],
         issues=issues,
     )
@@ -245,6 +264,7 @@ async def report_agent(
         received_at,
         online=True,
         offline_after_seconds=settings.agent_offline_after_seconds,
+        notification_channels=settings.enabled_notification_channels,
     )
     locked_agent.hostname = payload.hostname
     locked_agent.version = payload.version
@@ -262,6 +282,7 @@ async def report_agent(
         received_at,
         settings.alert_pending_observations,
         previous_services,
+        settings.enabled_notification_channels,
     )
     await reconcile_service_instance_keys(session, agent.id, payload, previous_services)
     session.add(
@@ -356,8 +377,7 @@ async def report_agent(
 
     await reconcile_operation_verification(session, locked_agent, payload, received_at, settings)
     await session.commit()
-    if settings.dingtalk_webhook_url:
-        background_tasks.add_task(deliver_pending_notifications, settings)
+    background_tasks.add_task(deliver_pending_notifications, settings)
     return ReportReceipt(received_at=received_at)
 
 

@@ -5,6 +5,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import Agent, AlertEvent, NotificationDelivery, ServiceStatus
+from .notification_catalog import (
+    CURRENT_NOTIFICATION_TEMPLATE_VERSION,
+    IMPLEMENTED_NOTIFICATION_CHANNELS,
+    template_key,
+)
 from .schemas import AgentReport, ServiceReport
 
 ACTIVE_STATUSES = ("pending", "firing", "acknowledged", "silenced")
@@ -28,14 +33,45 @@ def agent_availability_fingerprint(agent_id: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-def notification_delivery(event: AlertEvent, notification_type: str) -> NotificationDelivery:
+def notification_render_context(event: AlertEvent) -> dict[str, str | None]:
+    return {
+        "title": event.title,
+        "detail": event.detail or "无额外详情",
+        "source": event.source,
+        "agent_id": event.agent_id,
+        "service_kind": event.service_kind,
+        "service_key": event.service_key,
+    }
+
+
+def notification_deliveries(
+    event: AlertEvent,
+    notification_type: str,
+    channels: tuple[str, ...],
+) -> list[NotificationDelivery]:
+    frozen_channels = tuple(event.notification_channels or channels)
+    if not frozen_channels or len(set(frozen_channels)) != len(frozen_channels):
+        raise ValueError("notification channels must be non-empty and unique")
+    if any(
+        channel not in IMPLEMENTED_NOTIFICATION_CHANNELS
+        for channel in frozen_channels
+    ):
+        raise ValueError("unsupported notification channel")
     event.notification_sequence = (event.notification_sequence or 0) + 1
-    return NotificationDelivery(
-        event_id=event.id,
-        notification_type=notification_type,
-        sequence=event.notification_sequence,
-        channel="dingtalk",
-    )
+    selected_template = template_key(event.source, notification_type)
+    context = notification_render_context(event)
+    return [
+        NotificationDelivery(
+            event_id=event.id,
+            notification_type=notification_type,
+            sequence=event.notification_sequence,
+            channel=channel,
+            template_key=selected_template,
+            template_version=CURRENT_NOTIFICATION_TEMPLATE_VERSION,
+            render_context=dict(context),
+        )
+        for channel in frozen_channels
+    ]
 
 
 async def evaluate_service_alerts(
@@ -45,6 +81,7 @@ async def evaluate_service_alerts(
     observed_at: datetime,
     pending_observations: int,
     previous_services: list[ServiceStatus] | None = None,
+    notification_channels: tuple[str, ...] = ("dingtalk",),
 ) -> list[NotificationDelivery]:
     active_events = (
         await session.scalars(
@@ -96,6 +133,7 @@ async def evaluate_service_alerts(
                     severity="critical",
                     status=status,
                     observation_count=1,
+                    notification_channels=list(notification_channels),
                     detail=service.detail,
                     first_observed_at=observed_at,
                     last_observed_at=observed_at,
@@ -105,7 +143,9 @@ async def evaluate_service_alerts(
                 await session.flush()
                 by_fingerprint[fingerprint] = event
                 if status == "firing":
-                    deliveries.append(notification_delivery(event, "firing"))
+                    deliveries.extend(
+                        notification_deliveries(event, "firing", notification_channels)
+                    )
             else:
                 event.observation_count += 1
                 event.last_observed_at = observed_at
@@ -118,11 +158,15 @@ async def evaluate_service_alerts(
                 if silence_expired:
                     event.status = "firing"
                     event.silenced_until = None
-                    deliveries.append(notification_delivery(event, "firing"))
+                    deliveries.extend(
+                        notification_deliveries(event, "firing", notification_channels)
+                    )
                 elif event.status == "pending" and event.observation_count >= pending_observations:
                     event.status = "firing"
                     event.firing_at = observed_at
-                    deliveries.append(notification_delivery(event, "firing"))
+                    deliveries.extend(
+                        notification_deliveries(event, "firing", notification_channels)
+                    )
             continue
 
         if event is not None:
@@ -133,7 +177,9 @@ async def evaluate_service_alerts(
             event.silenced_until = None
             event.resolved_at = observed_at
             if previous_status in {"firing", "acknowledged", "silenced"}:
-                deliveries.append(notification_delivery(event, "resolved"))
+                deliveries.extend(
+                    notification_deliveries(event, "resolved", notification_channels)
+                )
 
     session.add_all(deliveries)
     return deliveries
@@ -146,6 +192,7 @@ async def evaluate_agent_availability(
     *,
     online: bool,
     offline_after_seconds: int,
+    notification_channels: tuple[str, ...] = ("dingtalk",),
 ) -> list[NotificationDelivery]:
     """复用 M2 事件状态机记录 Agent 失联与恢复，不引入第二套通知语义。"""
 
@@ -168,7 +215,9 @@ async def evaluate_agent_availability(
         event.resolved_at = observed_at
         event.detail = f"Agent 已恢复上报；恢复时间：{observed_at.isoformat()}"
         if previous_status in {"firing", "acknowledged", "silenced"}:
-            deliveries.append(notification_delivery(event, "resolved"))
+            deliveries.extend(
+                notification_deliveries(event, "resolved", notification_channels)
+            )
         session.add_all(deliveries)
         return deliveries
 
@@ -188,6 +237,7 @@ async def evaluate_agent_availability(
             severity="critical",
             status="firing",
             observation_count=1,
+            notification_channels=list(notification_channels),
             detail=detail,
             first_observed_at=observed_at,
             last_observed_at=observed_at,
@@ -195,7 +245,9 @@ async def evaluate_agent_availability(
         )
         session.add(event)
         await session.flush()
-        deliveries.append(notification_delivery(event, "firing"))
+        deliveries.extend(
+            notification_deliveries(event, "firing", notification_channels)
+        )
     else:
         event.observation_count += 1
         event.last_observed_at = observed_at
@@ -208,7 +260,9 @@ async def evaluate_agent_availability(
         if silence_expired:
             event.status = "firing"
             event.silenced_until = None
-            deliveries.append(notification_delivery(event, "firing"))
+            deliveries.extend(
+                notification_deliveries(event, "firing", notification_channels)
+            )
 
     session.add_all(deliveries)
     return deliveries

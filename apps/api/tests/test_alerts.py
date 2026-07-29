@@ -6,6 +6,7 @@ from app.alerts import (
     agent_availability_fingerprint,
     evaluate_agent_availability,
     evaluate_service_alerts,
+    notification_deliveries,
     service_is_problem,
 )
 from app.models import Agent, AlertEvent, ServiceStatus
@@ -233,6 +234,79 @@ def test_second_problem_observation_fires_once() -> None:
     assert current.observation_count == 2
     assert len(deliveries) == 1
     assert deliveries[0].notification_type == "firing"
+
+
+def test_multi_channel_deliveries_share_sequence_and_freeze_context() -> None:
+    observed_at = datetime.now(timezone.utc)
+    current = AlertEvent(
+        id="event-01",
+        agent_id="agent-01",
+        fingerprint="placeholder",
+        active_key="placeholder",
+        source="service",
+        service_kind="systemd",
+        service_key="api.service",
+        title="API failed",
+        severity="critical",
+        status="pending",
+        observation_count=1,
+        first_observed_at=observed_at,
+        last_observed_at=observed_at,
+    )
+    item = service("failed", False)
+    from app.alerts import service_fingerprint
+
+    current.fingerprint = service_fingerprint("agent-01", item)
+    current.active_key = current.fingerprint
+    session = session_with([current])
+
+    deliveries = asyncio.run(
+        evaluate_service_alerts(
+            session,
+            agent(),
+            report(item),
+            observed_at,
+            2,
+            notification_channels=("dingtalk", "telegram"),
+        )
+    )
+
+    assert [delivery.channel for delivery in deliveries] == ["dingtalk", "telegram"]
+    assert {delivery.sequence for delivery in deliveries} == {1}
+    assert {delivery.template_key for delivery in deliveries} == {"service_firing"}
+    assert {delivery.template_version for delivery in deliveries} == {"v1"}
+    assert all(delivery.render_context["detail"] == "service is failed" for delivery in deliveries)
+
+
+def test_active_event_keeps_its_original_channel_lifecycle() -> None:
+    observed_at = datetime.now(timezone.utc)
+    current = AlertEvent(
+        id="event-channel-freeze",
+        agent_id="agent-01",
+        fingerprint="channel-freeze",
+        source="service",
+        service_kind="systemd",
+        service_key="api.service",
+        title="API failed",
+        severity="critical",
+        status="resolved",
+        observation_count=2,
+        notification_sequence=1,
+        notification_channels=["dingtalk"],
+        detail="recovered",
+        first_observed_at=observed_at,
+        last_observed_at=observed_at,
+        resolved_at=observed_at,
+    )
+
+    deliveries = notification_deliveries(
+        current,
+        "resolved",
+        ("dingtalk", "telegram"),
+    )
+
+    assert [delivery.channel for delivery in deliveries] == ["dingtalk"]
+    assert deliveries[0].sequence == 2
 
 
 def test_healthy_observation_resolves_firing_event_and_notifies() -> None:

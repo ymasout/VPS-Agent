@@ -103,16 +103,19 @@ curl -u 'Caddy用户名:原始密码' -H "X-Admin-Token: $ADMIN_API_TOKEN" \
 
 `/agent-downloads/*` 是无需登录的 Agent Release 下载中转，仅允许固定的安装器、校验文件和 amd64/arm64 二进制。它用于目标 VPS 无法稳定连接 GitHub CDN 时从控制平面同域下载公开产物。
 
-## 钉钉告警
+## 多通道告警
 
-M2 首个通知通道使用钉钉自定义机器人。在目标群添加自定义机器人并启用加签后，将 Webhook 和加签密钥分别写入生产环境文件：
+默认仍仅启用 M2 的钉钉自定义机器人。M6.3c 增加 Telegram，并以服务端白名单组合通道：
 
 ```text
+NOTIFICATION_CHANNELS=dingtalk,telegram
 DINGTALK_WEBHOOK_URL=https://oapi.dingtalk.com/robot/send?access_token=...
 DINGTALK_SECRET=SEC...
+TELEGRAM_BOT_TOKEN=123456:...
+TELEGRAM_CHAT_ID=-100...
 ```
 
-Webhook 和密钥只注入 API 容器，不进入 Web 页面或 Agent。`ALERT_PENDING_OBSERVATIONS` 默认是 `2`，表示同一服务异常需要连续观察两次才从 Pending 进入 Firing 并发送通知。恢复通知只在已经进入 Firing、Acknowledged 或 Silenced 的事件明确恢复后生成。
+`NOTIFICATION_CHANNELS` 只允许内置的 `dingtalk`、`telegram` 及其组合；`feishu` 当前只保留适配位，启用会被配置校验拒绝。Telegram API 域名由代码固定，不能通过配置替换。所有凭据只注入 API 容器，不进入 Web 页面、Agent、数据库或备份。`ALERT_PENDING_OBSERVATIONS` 默认是 `2`，表示同一服务异常需要连续观察两次才从 Pending 进入 Firing 并发送通知。恢复通知只在已经进入 Firing、Acknowledged 或 Silenced 的事件明确恢复后生成。
 
 M6.3b 的管理员测试消息默认关闭。仅在受控验证窗口中设置：
 
@@ -121,4 +124,4 @@ NOTIFICATION_TESTS_ENABLED=true
 NOTIFICATION_TEST_COOLDOWN_SECONDS=60
 ```
 
-测试入口固定使用已配置的钉钉机器人和服务端模板，不接受 URL、收件人或消息正文。每条请求必须有 UUID 幂等键，数据库按固定窗口限速且最多尝试发送一次；验证后应按计划恢复 `NOTIFICATION_TESTS_ENABLED=false`。不要在命令输出或工单中打印完整 Webhook、签名 URL、access token 或 secret。
+测试入口固定使用已配置的钉钉或 Telegram 目标和服务端模板，不接受 URL、收件人或消息正文。每个通道独立使用 UUID 幂等键和数据库固定窗口限速，最多尝试发送一次；验证后应按计划恢复 `NOTIFICATION_TESTS_ENABLED=false`。不要在命令输出或工单中打印完整 Webhook、Telegram bot token、chat ID、签名 URL、access token 或 secret。

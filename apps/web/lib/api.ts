@@ -21,22 +21,26 @@ export type NotificationConfiguration = {
   test_messages_enabled: boolean;
   test_cooldown_seconds: number;
   channels: Array<{
-    channel: "dingtalk";
+    channel: "dingtalk" | "telegram" | "feishu";
+    implemented: boolean;
+    enabled: boolean;
     configured: boolean;
-    signing_enabled: boolean;
+    signing_enabled: boolean | null;
     supports: Array<"firing" | "resolved">;
   }>;
   templates: Array<{
     key: string;
+    version: string;
     notification_type: "firing" | "resolved";
     target: "service" | "agent";
     title: string;
+    supported_channels: Array<"dingtalk" | "telegram">;
   }>;
   issues: string[];
 };
 export type NotificationTest = {
   id: string;
-  channel: "dingtalk";
+  channel: "dingtalk" | "telegram";
   status: "pending" | "sending" | "succeeded" | "failed" | "delivery_outcome_unknown";
   attempt_count: number;
   error_code: string | null;

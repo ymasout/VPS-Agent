@@ -19,15 +19,19 @@ class SystemInfo(BaseModel):
 
 class NotificationTemplateInfo(BaseModel):
     key: str
+    version: str
     notification_type: Literal["firing", "resolved"]
     target: Literal["service", "agent"]
     title: str
+    supported_channels: list[Literal["dingtalk", "telegram"]]
 
 
 class NotificationChannelInfo(BaseModel):
-    channel: Literal["dingtalk"]
+    channel: Literal["dingtalk", "telegram", "feishu"]
+    implemented: bool
+    enabled: bool
     configured: bool
-    signing_enabled: bool
+    signing_enabled: bool | None
     supports: list[Literal["firing", "resolved"]]
 
 
@@ -46,7 +50,7 @@ class NotificationConfiguration(BaseModel):
 
 class NotificationTestView(BaseModel):
     id: str
-    channel: Literal["dingtalk"]
+    channel: Literal["dingtalk", "telegram"]
     status: Literal[
         "pending", "sending", "succeeded", "failed", "delivery_outcome_unknown"
     ]

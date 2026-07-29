@@ -63,6 +63,7 @@ def test_offline_reconciler_evaluates_locked_candidates(
         now,
         online=False,
         offline_after_seconds=90,
+        notification_channels=("dingtalk",),
     )
     session.commit.assert_awaited_once()
 

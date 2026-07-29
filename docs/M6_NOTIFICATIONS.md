@@ -1,13 +1,13 @@
 # M6.3 通知、模板与引导式配置设计
 
-当前状态：**M6.3a 已由 codex 实现、Claude 审计通过，提交 `19e829b` 推送至 main，并于 2026-07-28 通过生产金丝雀。M6.3b 已由 codex 实现、Claude 审计通过（无 P0/P1；P2-1 迁移 downgrade offline 守卫已修复），提交 `a4944fb` 推送至 main，三个 CI 全绿（含双向离线 SQL + 真实 PG 幂等/限速/零副作用门），并于 2026-07-28 通过两阶段生产金丝雀（功能关闭 403 + 临时开启发一条测试 succeeded/attempt_count=1 + 幂等重放 200 不重发 + 同窗口 429 + 还原，ops/trans 14/89 不变）。M6.3 整体未完成（M6.3c/d 待开始）。**
+当前状态：**M6.3a/b 已完成相应审计、CI 与生产金丝雀。M6.3c+d 已完成本地实现：Telegram 第二通道、飞书预留适配位、内置通道组合、每通道独立 Delivery、模板 `v1` 与冻结上下文；尚待独立审计、真实 PostgreSQL CI、提交和生产验证。生产仍运行 `a4944fb + 0018` 且只启用钉钉，M6.3 整体未完成。**
 
 ## 1. 当前基线
 
 - M2 已有钉钉自定义机器人通道，支持服务异常/恢复与 VPS 失联/恢复。
 - `notification_deliveries` 以 `(event_id, sequence, channel)` 去重；待发送、失败和陈旧 `sending` 可重试，单条最多尝试 3 次。
 - Webhook 与可选加签密钥只由环境变量注入 API；Web 和 Agent 不持有通知凭据。
-- 当前告警建单仍硬编码 `dingtalk`，没有第二通道、模板版本、测试消息审计或 Web 配置入口。
+- 生产当前告警建单仍运行只含 `dingtalk` 的 `a4944fb`；本地 M6.3c+d 已消除硬编码单通道，M6.3b 测试审计和 Web 配置入口均保留。
 
 ## 2. 目标
 
@@ -42,9 +42,9 @@
 ## 6. 阶段顺序
 
 1. **M6.3a（已完成）：**通知就绪状态、固定模板目录、引导配置页；只读、无迁移、无外部副作用。
-2. **M6.3b（当前）：**显式测试消息；固定钉钉通道和服务端模板、默认关闭、请求 UUID 幂等、数据库固定窗口限速、一次发送、有限审计；不复用生产 AlertEvent 伪造故障。
-3. **M6.3c：**第二通知通道；统一适配器、每通道独立 Delivery、配置校验与真实失败重试门。
-4. **M6.3d：**受限模板版本与通道选择；只允许服务端定义字段和安全渲染，不开放任意模板代码。
+2. **M6.3b（已完成）：**显式测试消息；固定钉钉通道和服务端模板、默认关闭、请求 UUID 幂等、数据库固定窗口限速、一次发送、有限审计；不复用生产 AlertEvent 伪造故障。
+3. **M6.3c（本地实现完成、待验证）：**Telegram 第二通知通道；适配器注册表、每通道独立 Delivery、配置校验和真实失败隔离门；飞书只保留不可启用的注册/测试位。
+4. **M6.3d（本地实现完成、待验证）：**受限模板 `v1`、通道白名单组合和冻结渲染上下文；只允许服务端定义字段和安全渲染，不开放任意模板代码。
 
 ## 7. 测试矩阵
 
@@ -55,7 +55,7 @@
 
 ## 8. 生产金丝雀边界
 
-需用户另行授权后才执行：部署目标 commit，核对 `/api/v1/system-info` 构建身份；用管理认证读取通知配置状态；确认 `/healthz` 仍最小；页面和 HTML/日志不含 Webhook/secret；不制造生产告警、不发送测试消息、不改现有通知或 M5 开关，Operation/Transition 计数保持不变。
+M6.3a 的历史金丝雀边界是只读且不发送测试消息。M6.3c+d 生产验证见 §15.4，仍需用户另行授权；不得把 Telegram 凭据发送到聊天、日志或工单，也不得制造生产 AlertEvent 来证明多通道。
 
 ## 9. M6.3a 本地验证（2026-07-28）
 
@@ -131,7 +131,7 @@ M6.3a 生产金丝雀在用户明确授权下执行并通过：
 
 ### 13.3 当前结论
 
-M6.3a 文档收尾已复核并修正历史缺口措辞。M6.3b 已由 codex 实现、Claude 审计通过（无 P0/P1；P2-1 迁移 downgrade offline 守卫已修复+验证），提交 `a4944fb` 推送至 main，三个 CI 全绿，并于 2026-07-28 通过两阶段生产金丝雀（见 §14）；生产现运行 `a4944fb` 与 schema `0018_m6_notification_tests`。M6.3 整体未完成（M6.3c 第二通道/M6.3d 模板版本待开始）。
+M6.3a 文档收尾已复核并修正历史缺口措辞。M6.3b 已由 codex 实现、Claude 审计通过（无 P0/P1；P2-1 迁移 downgrade offline 守卫已修复+验证），提交 `a4944fb` 推送至 main，三个 CI 全绿，并于 2026-07-28 通过两阶段生产金丝雀（见 §14）；生产现运行 `a4944fb` 与 schema `0018_m6_notification_tests`。该段记录的是 M6.3b 收尾时点，当时 M6.3c 第二通道与 M6.3d 模板版本尚未开始；当前进度以文首和 §15 为准。
 
 ## 14. M6.3b 生产金丝雀记录（2026-07-28）
 
@@ -142,3 +142,34 @@ M6.3a 文档收尾已复核并修正历史缺口措辞。M6.3b 已由 codex 实�
 - **P2 固定窗口边界**：因对话往返延迟，KEY1/2/3 跨分钟落不同窗口（16:10/16:12/16:16）各 202，符合设计 §13.2 P2 接受的相邻窗口边界行为；KEY4/KEY5 背靠背同窗口 -> key4 202 + key5 429，验证限速。
 - **零副作用**：ops/trans 前后 14/89 不变（测试不创建 Operation）；`notification_test_requests` 4 条 succeeded（KEY5 被 429 拦截不入库）；不污染 AlertEvent/NotificationDelivery。
 - M6.3b 功能已还原关闭（`NOTIFICATION_TESTS_ENABLED=false`），`a4944fb` 留作运行基线。
+
+## 15. M6.3c+d 多通道与版本化模板设计（2026-07-29）
+
+### 15.1 通道、秘密与组合边界
+
+- `NOTIFICATION_CHANNELS` 默认 `dingtalk`，只接受内置且已实现的 `dingtalk`、`telegram` 及无重复组合；空值、未知值和 `feishu` 都由 Settings 校验拒绝。飞书已进入通道目录但 `implemented=false`，且发送适配器注册表中没有飞书入口。
+- Telegram 只接受 API 容器环境中的 `TELEGRAM_BOT_TOKEN` 与 `TELEGRAM_CHAT_ID`；API origin 固定为 `https://api.telegram.org`，请求、Web 或模型不能覆盖。配置 API 只返回 implemented/enabled/configured 布尔值，绝不返回 token、chat ID、Webhook 或其片段。
+- 通道选择在 AlertEvent 创建时冻结并贯穿 firing/resolved 生命周期，避免中途启用产生“只恢复未告警”或中途禁用造成“告警后无恢复”；既有 Delivery 也保留创建时的通道意图。移除相应凭据可停止该通道扫描，恢复凭据前不会发送；不得通过 Web 或自然语言动态修改通道和秘密。
+- 生产通知和测试通知均只保存稳定错误码。HTTP 异常、签名 URL、Telegram token URL、远端 `errmsg/description` 不进入数据库、备份或应用日志。
+
+### 15.2 Delivery 与模板冻结
+
+- 新迁移 `0019_m6_multichannel_notifications` 为 `alert_events` 增加冻结通道集合，为 `notification_deliveries` 增加非空 `template_key`、`template_version` 和有限 JSON `render_context`，并把测试审计通道约束扩大为 `dingtalk|telegram`。
+- 同一 firing/resolved 逻辑转换只递增一次 `AlertEvent.notification_sequence`，随后为每个选定通道创建相同 sequence、相同模板版本、独立状态/尝试次数的 Delivery；一个通道失败不得修改另一通道。
+- 当前目录只有服务/VPS firing/resolved 四类 `v1` 模板。创建 Delivery 时冻结标题、详情、来源、机器与服务键；重试继续使用冻结上下文，不读取后来变化的事件文本。模板 key/version/type/target 任一不匹配都失败关闭。
+- 历史 Delivery 在 `0018 → 0019` 迁移中从对应 AlertEvent 回填 `v1` 与有限上下文。旧版应用内置的 schema head 是 `0018`，不会在 `0019` 数据库上静默启动；`0019 → 0018` downgrade 若存在 Telegram 测试审计、未终结的非钉钉 Delivery，或仍冻结多通道的活跃告警会明确拒绝，不会删除审计或丢弃生命周期意图来强行回退。应用回退与数据库回退仍是管理员单独授权事件。
+
+### 15.3 Telegram 测试与验证矩阵
+
+- `POST /api/v1/notification-tests/telegram` 复用 M6.3b 管理认证、空正文、UUID 幂等、每通道固定窗口限速、最多一次、未知结果不重发和有限审计语义；只有通道已在 `NOTIFICATION_CHANNELS` 中显式启用且凭据完整时才能创建，通道目标完全由服务器配置决定。
+- 单元验证覆盖：钉钉/Telegram 适配器注册完整、飞书不能启用、组合去重/未知通道拒绝、同 sequence 两条 Delivery、冻结上下文、HTML 转义、固定 Telegram origin、远端错误脱敏、每通道测试路由与 Web 同源代理。
+- 真实 PostgreSQL CI 门覆盖：同事件钉钉失败与 Telegram 成功相互隔离、两条 Delivery sequence 一致、冻结上下文落库、Operation/Transition 零副作用，以及 Telegram 测试审计能够通过扩展后的约束并达到 succeeded/attempt_count=1。
+- 当前本地结果：API `237 passed, 11 skipped`，Web 88 项、Ruff、ESLint、Next.js production build、Agent Go test/vet、Compose 配置和 `0018 ↔ 0019` 双向离线 SQL 通过；Alembic 单 head `0019_m6_multichannel_notifications`。真实 PostgreSQL 门等待提交后的 Ubuntu CI。
+
+### 15.4 生产金丝雀边界
+
+1. 先以 `NOTIFICATION_CHANNELS=dingtalk`、`NOTIFICATION_TESTS_ENABLED=false` 部署和迁移，核对 system-info commit/revision、schema current、配置 API 三通道目录、`/healthz` 最小响应，以及既有 ops/trans/AlertEvent/Delivery 计数。
+2. 用户在服务器本地配置 Telegram token/chat ID；不得在聊天或命令输出中展示。先保持通道选择仍为 dingtalk，确认 API 只报告 Telegram configured，不产生发送。
+3. 经再次授权改为 `NOTIFICATION_CHANNELS=dingtalk,telegram` 并临时开启测试消息；只向 Telegram 创建一条审计测试，核对 202→succeeded/attempt_count=1、群内恰好一条、同键重放 200 不重发、同窗口新键 429。
+4. 不通过伪造生产告警测试 Delivery；多通道失败隔离由真实 PostgreSQL CI 证明。金丝雀结束后恢复 `NOTIFICATION_TESTS_ENABLED=false`；是否保留 Telegram 启用和凭据由用户明确决定，默认回到仅钉钉。
+5. 核对 ops/trans、AlertEvent 与生产 NotificationDelivery 无非预期变化，API/页面/日志/数据库审计均不含 Webhook、token、chat ID、签名 URL 或远端响应正文。通过前不得标记 M6.3 完成。

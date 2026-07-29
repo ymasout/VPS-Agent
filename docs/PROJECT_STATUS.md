@@ -1,7 +1,7 @@
 # 项目状态
 
 最后同步：2026-07-28
-当前阶段：**M0–M5 已完成；M6.1、M6.2、M6.3a、M6.3b 已完成（生产金丝雀通过）；M6.3 整体未完成**
+当前阶段：**M0–M5 已完成；M6.1、M6.2、M6.3a、M6.3b 已完成；M6.3c+d 本地实现完成并待审计/CI/生产验证，M6.3 整体未完成**
 
 ## 1. 当前结论
 
@@ -312,7 +312,7 @@ M5.2.1 本地验收：API 157 项通过；Web 43 项、ESLint、生产构建、�
 
 ## 8. M6：自托管产品化
 
-状态：**进行中（M6.1、M6.2、M6.3a、M6.3b 已完成（生产金丝雀通过 2026-07-28）；M6.3 整体未完成；M6.4 + Web SSH 待开始）**
+状态：**进行中（M6.1、M6.2、M6.3a、M6.3b 已完成；M6.3c+d 本地实现完成并待审计/CI/生产验证；M6.3 整体未完成；M6.4 + Web SSH 待开始）**
 
 2026-07-26 完成 M6 第一轮发布、Compose、Alembic、备份/恢复、Agent 安装升级、版本/健康、Web 管理入口、CI 和发布资产审计。当前结论：
 
@@ -322,7 +322,7 @@ M5.2.1 本地验收：API 157 项通过；Web 43 项、ESLint、生产构建、�
 - API/Web Dockerfile 和生产 Compose 现要求显式 build version/40 位 commit/build time，缺失时只使用显眼假值或在生产设置校验中失败；受管理 system-info 返回实际/期望 revision，公开 `/healthz` 保持最小响应，Web 页脚不再硬编码版本。
 - API 测试入口已中性化工作区 GitHub 环境污染，且保留部分 GitHub 配置拒绝断言；从仓库根目录运行 212 项通过、9 项数据库门跳过。
 - Agent Release 已有双架构产物、SHA-256 和 systemd 安全配置，但升级没有 last-known-good 自动回退、发布者签名或控制平面兼容门。
-- 该 2026-07-26 审计时 Web 尚无 PWA/移动审批/更多通知；此历史缺口现已由 M6.2 和 M6.3a 部分关闭。团队协作仍未实现，M6.3b–d 仍在推进。
+- 该 2026-07-26 审计时 Web 尚无 PWA/移动审批/更多通知；此历史缺口现已由 M6.2 和 M6.3a/b 关闭主要入口，M6.3c+d 已完成本地实现并待验证。团队协作仍未实现。
 
 M6 顺序冻结为 M6.1 可恢复性与发布基础 → M6.2 PWA/移动只读与审批 → M6.3 通知/模板/引导配置 → M6.4 协作/开源评估；Web SSH 和限时高风险会话最后单独设计。第一纵向切片“可验证的控制平面 PostgreSQL 备份与离线恢复基础”已由 codex 实现并经 Claude 审计（无 P0/P1；P2-1 symlink 经 ubuntu CI 确认；P3 非阻断）：真实 PostgreSQL 16 完成迁移、种子数据、同快照备份、测试卷清空、空库恢复、schema check 和关键记录一致性；损坏包、伪造 commit、错误实例确认与非空目标均失败关闭。Web 69 项、Go test/vet、Ruff、build、Compose、Caddy 和 Alembic head 检查通过。已提交 `38b8d40` 推送至 main，CI `Control Plane Recovery` 通过。完整边界见 [M6_PRODUCTIZATION.md](./M6_PRODUCTIZATION.md)。
 
@@ -332,7 +332,9 @@ M6.2 金丝雀前后生产 `CONVERSATION_REPOSITORY_KNOWLEDGE_ENABLED=true` 与 
 
 2026-07-28 开始 M6.3 代码审计并完成首片本地实现。现有 M2 通知已具备钉钉 firing/resolved、事件序列去重、最多 3 次尝试和陈旧 sending 回收，但告警建单仍硬编码 `dingtalk`，配置只来自环境变量，Web 无秘密安全的就绪状态或引导入口。M6.3a 增加受管理认证保护的秘密不回显状态 API、与实际渲染共用的固定 4 类模板目录和只读引导配置页；不发送测试消息、不新增第二通道、迁移、Agent/M4/Operation 变更或外部写副作用。API 216 项、Web 84 项、Ruff、ESLint、Web production build、Go test/vet、Compose 配置和 Alembic 单 head 均通过；Claude 审计通过（无 P0/P1/P2），提交 `19e829b` 推送至 main，三个 CI（Recovery/Migrations/Web）全绿。2026-07-28 生产金丝雀通过：`/api/v1/system-info` commit=19e829b、`/api/v1/notification-configuration` 秘密不回显 ready=true（响应与页面 HTML 均不含 webhook/secret）、未带 admin token 401、ops/trans 14/89 不变。M6.3 整体未完成；截至 M6.3a 收尾时 M6.3b/c/d 尚未开始。详见 [M6_NOTIFICATIONS.md](./M6_NOTIFICATIONS.md)。
 
-同日完成 M6.3b 本地实现：首片冻结为默认关闭的钉钉固定测试消息，新增独立 `0018_m6_notification_tests` 审计表、严格请求 UUID 幂等、数据库固定窗口限速、最多一次发送和陈旧 sending 的未知结果终止语义。Web 只允许同源空正文请求，按钮默认需显式勾选；不接受 URL、收件人、消息正文或模型输入，不创建 AlertEvent/Operation。API 227 项、Web 87 项、Ruff、ESLint 和 Web production build 已通过；Claude 审计通过（无 P0/P1；P2-1 迁移 downgrade offline 守卫已修复），提交 `a4944fb` 推送至 main，三个 CI 全绿（含双向离线 SQL + 真实 PG 幂等/限速/零副作用门）。2026-07-28 两阶段生产金丝雀通过：Phase A 功能关闭 403 + 迁移 0018 + ops/trans 不变；Phase B 临时开启发一条测试 succeeded/attempt_count=1、幂等重放 200 不重发、同窗口新键 429、钉钉群收到 1 条；还原关闭 403，ops/trans 14/89 不变、独立审计表 4 条 succeeded（KEY5 被 429 拦截不入库）、不污染 AlertEvent/Delivery。M6.3 整体未完成（M6.3c/d 待开始）。
+同日完成 M6.3b 本地实现：首片冻结为默认关闭的钉钉固定测试消息，新增独立 `0018_m6_notification_tests` 审计表、严格请求 UUID 幂等、数据库固定窗口限速、最多一次发送和陈旧 sending 的未知结果终止语义。Web 只允许同源空正文请求，按钮默认需显式勾选；不接受 URL、收件人、消息正文或模型输入，不创建 AlertEvent/Operation。API 227 项、Web 87 项、Ruff、ESLint 和 Web production build 已通过；Claude 审计通过（无 P0/P1；P2-1 迁移 downgrade offline 守卫已修复），提交 `a4944fb` 推送至 main，三个 CI 全绿（含双向离线 SQL + 真实 PG 幂等/限速/零副作用门）。2026-07-28 两阶段生产金丝雀通过：Phase A 功能关闭 403 + 迁移 0018 + ops/trans 不变；Phase B 临时开启发一条测试 succeeded/attempt_count=1、幂等重放 200 不重发、同窗口新键 429、钉钉群收到 1 条；还原关闭 403，ops/trans 14/89 不变、独立审计表 4 条 succeeded（KEY5 被 429 拦截不入库）、不污染 AlertEvent/Delivery。该段记录的是 M6.3b 收尾时点，当时 M6.3c/d 尚未开始。
+
+2026-07-29 完成 M6.3c+d 本地实现：先修复生产通知把原始 HTTP 异常（可能含签名 Webhook/token）写入 `last_error` 的 P1，统一改为稳定错误码；新增 Telegram 固定官方端点、`NOTIFICATION_CHANNELS` 内置白名单组合、飞书“已注册但未实现”拒绝位、同一逻辑 sequence 的每通道独立 Delivery、`v1` 模板 key/version 和冻结渲染上下文。通道集合在 AlertEvent 创建时冻结并贯穿 firing/resolved 生命周期；Telegram 测试复用 M6.3b 空正文、UUID 幂等、每通道数据库限速、最多一次和有限审计链，且只有显式启用并完整配置的通道才能创建测试。迁移 head 本地演进为 `0019_m6_multichannel_notifications`，downgrade 对 Telegram 测试审计、未终结非钉钉 Delivery 和仍冻结多通道的活跃告警失败关闭；生产仍为 `a4944fb + 0018` 且只启用钉钉。API 237 项、Web 88 项、Ruff、ESLint、Web build、Agent Go test/vet、Compose 与双向离线迁移 SQL已通过；真实 PostgreSQL CI、独立审计、提交、推送和生产验证待执行。
 
 2026-07-27 M6.1 生产金丝雀通过：部署 `38b8d40`（注入 build version/commit/build time）+ postflight；`/api/v1/system-info` 返回 `commit_sha=38b8d40e76ea1c30497bbfa0f17d2b87aaa27977`、`version=0.6.1`、`schema_current=true`、`alembic_revision=["0017_m5_runbook_drafts"]`；`preflight` 生成原子备份包 `control-plane-pre-migration-20260727T131115Z`，`inspect` + 隔离空库 `restore` 成功，审计摘要 `schema_current=true`/`key_table_counts_match=true`/`active_operation_count=0`；恢复后 `ops=13/trans=81/agents=5` 与生产一致；生产 `ops/trans` 前后不变、日志无秘密、开关未变；隔离项目已清理，首份原子备份包保留（0700/0600）。M6.1 无 feature flag，`38b8d40` 留作运行基线。
 

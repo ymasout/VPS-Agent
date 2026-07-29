@@ -21,11 +21,10 @@ from .api import require_admin
 from .config import Settings, get_settings
 from .database import get_session, session_factory
 from .models import NotificationTestRequest
-from .notifications import send_dingtalk_payload
+from .notifications import send_dingtalk_payload, send_telegram_payload
 from .schemas import NotificationTestView
 
 router = APIRouter(prefix="/api/v1")
-TEST_CHANNEL = "dingtalk"
 ORGANIZATION_ID = "local"
 
 
@@ -76,6 +75,34 @@ def test_payload(request: NotificationTestRequest) -> dict[str, object]:
     }
 
 
+def telegram_test_payload(
+    request: NotificationTestRequest, settings: Settings
+) -> dict[str, object]:
+    return {
+        "chat_id": settings.telegram_chat_id,
+        "text": "\n".join(
+            [
+                "✅ VPS Agent 通知测试",
+                "类型：管理员显式测试消息",
+                "结果：如果你看到本消息，Telegram 通知链已连通",
+                f"审计 ID：{request.id}",
+                "本消息不会创建告警、诊断或运维操作",
+            ]
+        ),
+        "disable_web_page_preview": True,
+    }
+
+
+def channel_is_configured(channel: str, settings: Settings) -> bool:
+    if channel not in settings.enabled_notification_channels:
+        return False
+    if channel == "dingtalk":
+        return bool(settings.dingtalk_webhook_url)
+    if channel == "telegram":
+        return bool(settings.telegram_bot_token and settings.telegram_chat_id)
+    return False
+
+
 def delivery_error_code(error: Exception) -> str:
     if isinstance(error, httpx.TimeoutException):
         return "notification_test_timeout"
@@ -85,9 +112,12 @@ def delivery_error_code(error: Exception) -> str:
         return "notification_test_network_error"
     if isinstance(error, RuntimeError):
         message = str(error)
-        if message == "DingTalk webhook is not configured":
+        if message in {"DingTalk webhook is not configured", "Telegram is not configured"}:
             return "notification_channel_not_configured"
-        if message.startswith("DingTalk rejected notification"):
+        if message in {
+            "DingTalk rejected notification",
+            "Telegram rejected notification",
+        }:
             return "notification_test_rejected"
     if isinstance(error, ValueError):
         return "notification_test_invalid_response"
@@ -105,7 +135,7 @@ def delivery_failure_status(error: Exception) -> str:
 def to_view(request: NotificationTestRequest) -> NotificationTestView:
     return NotificationTestView(
         id=request.id,
-        channel="dingtalk",
+        channel=request.channel,
         status=request.status,
         attempt_count=request.attempt_count,
         error_code=request.error_code,
@@ -144,12 +174,22 @@ async def deliver_notification_test(request_id: str, settings: Settings) -> None
         request.started_at = now_utc()
         request.error_code = None
         await session.commit()
-        payload = test_payload(request)
+        channel = request.channel
+        payload = (
+            test_payload(request)
+            if channel == "dingtalk"
+            else telegram_test_payload(request, settings)
+        )
 
     error_code: str | None = None
     failure_status: str | None = None
     try:
-        await send_dingtalk_payload(settings, payload)
+        if channel == "dingtalk":
+            await send_dingtalk_payload(settings, payload)
+        elif channel == "telegram":
+            await send_telegram_payload(settings, payload)
+        else:
+            raise ValueError("unsupported notification test channel")
     except Exception as error:
         error_code = delivery_error_code(error)
         failure_status = delivery_failure_status(error)
@@ -247,11 +287,52 @@ async def create_notification_test(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> NotificationTestView:
+    return await create_notification_test_for_channel(
+        "dingtalk",
+        background_tasks,
+        response,
+        idempotency_key,
+        session,
+        settings,
+    )
+
+
+@router.post(
+    "/notification-tests/telegram",
+    response_model=NotificationTestView,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_admin), Depends(require_empty_body)],
+)
+async def create_telegram_notification_test(
+    background_tasks: BackgroundTasks,
+    response: Response,
+    idempotency_key: UUID = Header(alias="Idempotency-Key"),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> NotificationTestView:
+    return await create_notification_test_for_channel(
+        "telegram",
+        background_tasks,
+        response,
+        idempotency_key,
+        session,
+        settings,
+    )
+
+
+async def create_notification_test_for_channel(
+    channel: str,
+    background_tasks: BackgroundTasks,
+    response: Response,
+    idempotency_key: UUID,
+    session: AsyncSession,
+    settings: Settings,
+) -> NotificationTestView:
     client_request_id = str(idempotency_key)
     existing = await session.scalar(
         select(NotificationTestRequest).where(
             NotificationTestRequest.organization_id == ORGANIZATION_ID,
-            NotificationTestRequest.channel == TEST_CHANNEL,
+            NotificationTestRequest.channel == channel,
             NotificationTestRequest.client_request_id == client_request_id,
         )
     )
@@ -263,7 +344,7 @@ async def create_notification_test(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="notification tests are disabled",
         )
-    if not settings.dingtalk_webhook_url:
+    if not channel_is_configured(channel, settings):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="notification channel is not configured",
@@ -276,7 +357,7 @@ async def create_notification_test(
     window_request = await session.scalar(
         select(NotificationTestRequest).where(
             NotificationTestRequest.organization_id == ORGANIZATION_ID,
-            NotificationTestRequest.channel == TEST_CHANNEL,
+            NotificationTestRequest.channel == channel,
             NotificationTestRequest.rate_limit_window == window,
         )
     )
@@ -286,7 +367,7 @@ async def create_notification_test(
         )
     request = NotificationTestRequest(
         organization_id=ORGANIZATION_ID,
-        channel=TEST_CHANNEL,
+        channel=channel,
         client_request_id=client_request_id,
         rate_limit_window=window,
         status="pending",
@@ -303,7 +384,7 @@ async def create_notification_test(
         existing = await session.scalar(
             select(NotificationTestRequest).where(
                 NotificationTestRequest.organization_id == ORGANIZATION_ID,
-                NotificationTestRequest.channel == TEST_CHANNEL,
+                NotificationTestRequest.channel == channel,
                 NotificationTestRequest.client_request_id == client_request_id,
             )
         )
@@ -313,7 +394,7 @@ async def create_notification_test(
         window_request = await session.scalar(
             select(NotificationTestRequest).where(
                 NotificationTestRequest.organization_id == ORGANIZATION_ID,
-                NotificationTestRequest.channel == TEST_CHANNEL,
+                NotificationTestRequest.channel == channel,
                 NotificationTestRequest.rate_limit_window == window,
             )
         )

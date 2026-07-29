@@ -6,11 +6,15 @@ import type { NotificationTest } from "@/lib/api";
 const terminalStatuses = new Set(["succeeded", "failed", "delivery_outcome_unknown"]);
 
 export function NotificationTestPanel({
+  channel,
+  channelLabel,
   configured,
   enabled,
   cooldownSeconds,
   initialTests,
 }: {
+  channel: "dingtalk" | "telegram";
+  channelLabel: string;
   configured: boolean;
   enabled: boolean;
   cooldownSeconds: number;
@@ -54,7 +58,7 @@ export function NotificationTestPanel({
     setError("");
     requestId.current ??= crypto.randomUUID();
     try {
-      const response = await fetch("/console/notification-tests/dingtalk", {
+      const response = await fetch(`/console/notification-tests/${channel}`, {
         method: "POST",
         headers: { "Idempotency-Key": requestId.current },
       });
@@ -74,16 +78,16 @@ export function NotificationTestPanel({
 
   return (
     <section className="section notification-test-panel">
-      <div className="section-title"><h2>发送测试消息</h2><span>audited · one attempt</span></div>
+      <div className="section-title"><h2>{channelLabel} 测试消息</h2><span>audited · one attempt</span></div>
       <div className="notification-guide">
-        <p>固定发送一条不含事件、凭据或运维数据的钉钉测试消息。每个请求 UUID 幂等，数据库按 {cooldownSeconds} 秒固定窗口限速；发送结果只记录有限状态和稳定错误码。</p>
+        <p>固定发送一条不含事件、凭据或运维数据的 {channelLabel} 测试消息。每个请求 UUID 幂等，数据库按 {cooldownSeconds} 秒固定窗口限速；发送结果只记录有限状态和稳定错误码。</p>
         <label className="approval-check">
           <input
             type="checkbox"
             checked={acknowledged}
             onChange={(event) => setAcknowledged(event.target.checked)}
           />
-          <span>我确认现在向已配置的钉钉机器人发送一条测试消息。</span>
+          <span>我确认现在向已配置的 {channelLabel} 目标发送一条测试消息。</span>
         </label>
         <button
           className="approval-submit"
@@ -93,7 +97,7 @@ export function NotificationTestPanel({
         >
           {busy ? "发送并核对中…" : "发送一次测试消息"}
         </button>
-        {!configured && <p className="error-text">钉钉通道尚未配置，测试入口保持禁用。</p>}
+        {!configured && <p className="error-text">{channelLabel} 通道尚未配置，测试入口保持禁用。</p>}
         {!enabled && <p className="error-text">测试消息功能默认关闭；需通过服务器配置显式开启。</p>}
         {!online && <p className="error-text">当前离线，测试入口保持禁用。</p>}
         {error && <p className="error-text" role="alert">{error}</p>}

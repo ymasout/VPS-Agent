@@ -12,12 +12,20 @@ import pytest
 import app.notifications as notifications
 from app.config import Settings
 from app.models import AlertEvent, NotificationDelivery
+from app.notification_catalog import (
+    IMPLEMENTED_NOTIFICATION_CHANNELS,
+    NOTIFICATION_CHANNELS,
+)
 from app.notifications import (
+    NOTIFICATION_DELIVERY_ADAPTERS,
     deliver_notification,
     deliver_pending_notifications,
     dingtalk_payload,
+    notification_delivery_error_code,
     send_dingtalk_notification,
+    send_telegram_payload,
     signed_dingtalk_webhook,
+    telegram_payload,
 )
 
 
@@ -30,6 +38,12 @@ class SessionContext:
 
     async def __aexit__(self, *_: object) -> None:
         return None
+
+
+def test_adapter_registry_covers_implemented_channels_and_reserves_feishu() -> None:
+    assert set(NOTIFICATION_DELIVERY_ADAPTERS) == set(IMPLEMENTED_NOTIFICATION_CHANNELS)
+    assert NOTIFICATION_CHANNELS["feishu"].implemented is False
+    assert "feishu" not in NOTIFICATION_DELIVERY_ADAPTERS
 
 
 def event() -> AlertEvent:
@@ -125,13 +139,145 @@ def test_dingtalk_sender_accepts_success_and_rejects_api_error() -> None:
             transport=httpx.MockTransport(
                 lambda request: httpx.Response(
                     200,
-                    json={"errcode": 310000, "errmsg": "keywords not in content"},
+                    json={"errcode": 310000, "errmsg": "access_token=must-not-leak"},
                 )
             )
         )
         try:
-            with pytest.raises(RuntimeError, match="DingTalk rejected"):
+            with pytest.raises(RuntimeError) as captured:
                 await send_dingtalk_notification(settings, event(), "firing", error_client)
+            assert str(captured.value) == "DingTalk rejected notification"
+            assert "must-not-leak" not in str(captured.value)
+        finally:
+            await error_client.aclose()
+
+    asyncio.run(rejected())
+
+
+def test_delivery_failure_persists_only_stable_error_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(timezone.utc)
+    delivery = NotificationDelivery(
+        id="delivery-secret-error",
+        event_id="event-01",
+        notification_type="firing",
+        sequence=1,
+        channel="dingtalk",
+        status="pending",
+        attempt_count=0,
+        created_at=now,
+        updated_at=now,
+    )
+    session = AsyncMock()
+    session.scalar.return_value = delivery
+    session.get.return_value = event()
+    signed_request = httpx.Request(
+        "POST",
+        "https://oapi.dingtalk.com/robot/send"
+        "?access_token=must-not-leak&timestamp=123&sign=must-not-leak",
+    )
+    signed_response = httpx.Response(500, request=signed_request)
+    with pytest.raises(httpx.HTTPStatusError) as captured:
+        signed_response.raise_for_status()
+    remote_error = captured.value
+    sender = AsyncMock(side_effect=remote_error)
+    monkeypatch.setattr(notifications, "session_factory", lambda: SessionContext(session))
+    monkeypatch.setattr(notifications, "send_notification_delivery", sender)
+
+    asyncio.run(
+        deliver_notification(
+            delivery.id,
+            Settings(
+                dingtalk_webhook_url="https://example.test/robot",
+                skip_database_init=True,
+            ),
+        )
+    )
+
+    assert "must-not-leak" in str(remote_error)
+    assert notification_delivery_error_code(remote_error) == "notification_http_error"
+    assert delivery.status == "failed"
+    assert delivery.last_error == "notification_http_error"
+    assert "must-not-leak" not in delivery.last_error
+    assert session.commit.await_count == 2
+
+
+def test_telegram_payload_uses_frozen_context_and_escapes_html() -> None:
+    current_event = event()
+    delivery = NotificationDelivery(
+        id="delivery-telegram",
+        event_id=current_event.id,
+        notification_type="firing",
+        sequence=1,
+        channel="telegram",
+        template_key="service_firing",
+        template_version="v1",
+        render_context={
+            "title": "Frozen <title>",
+            "detail": "Frozen & detail",
+            "source": "service",
+            "agent_id": "agent-01",
+            "service_kind": "systemd",
+            "service_key": "api.service",
+        },
+    )
+    current_event.title = "mutated title"
+    current_event.detail = "mutated detail"
+
+    payload = telegram_payload(
+        delivery,
+        current_event,
+        Settings(
+            telegram_chat_id="-100123",
+            console_public_url="https://ops.example.com",
+            skip_database_init=True,
+        ),
+    )
+    serialized = str(payload)
+
+    assert payload["chat_id"] == "-100123"
+    assert "Frozen &lt;title&gt;" in serialized
+    assert "Frozen &amp; detail" in serialized
+    assert "mutated" not in serialized
+    assert "https://ops.example.com/events/event-01" in serialized
+
+
+def test_telegram_sender_uses_fixed_official_origin_and_hides_remote_error() -> None:
+    requests: list[httpx.Request] = []
+
+    def success(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    settings = Settings(
+        telegram_bot_token="123456:must-not-leak",
+        telegram_chat_id="-100123",
+        skip_database_init=True,
+    )
+    payload = {"chat_id": "-100123", "text": "fixed"}
+    client = httpx.AsyncClient(transport=httpx.MockTransport(success))
+    asyncio.run(send_telegram_payload(settings, payload, client))
+    asyncio.run(client.aclose())
+
+    assert len(requests) == 1
+    assert requests[0].url.host == "api.telegram.org"
+    assert requests[0].url.path == "/bot123456:must-not-leak/sendMessage"
+
+    async def rejected() -> None:
+        error_client = httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200,
+                    json={"ok": False, "description": "token=must-not-leak"},
+                )
+            )
+        )
+        try:
+            with pytest.raises(RuntimeError) as captured:
+                await send_telegram_payload(settings, payload, error_client)
+            assert str(captured.value) == "Telegram rejected notification"
+            assert "must-not-leak" not in str(captured.value)
         finally:
             await error_client.aclose()
 
@@ -156,7 +302,7 @@ def test_stale_sending_delivery_is_reclaimed_and_retried(monkeypatch: pytest.Mon
     session.get.return_value = event()
     sender = AsyncMock()
     monkeypatch.setattr(notifications, "session_factory", lambda: SessionContext(session))
-    monkeypatch.setattr(notifications, "send_dingtalk_notification", sender)
+    monkeypatch.setattr(notifications, "send_notification_delivery", sender)
     settings = Settings(
         dingtalk_webhook_url="https://example.test/robot",
         notification_sending_stale_seconds=120,
@@ -188,7 +334,7 @@ def test_fresh_sending_delivery_is_not_reclaimed(monkeypatch: pytest.MonkeyPatch
     session.scalar.return_value = delivery
     sender = AsyncMock()
     monkeypatch.setattr(notifications, "session_factory", lambda: SessionContext(session))
-    monkeypatch.setattr(notifications, "send_dingtalk_notification", sender)
+    monkeypatch.setattr(notifications, "send_notification_delivery", sender)
     settings = Settings(
         dingtalk_webhook_url="https://example.test/robot",
         notification_sending_stale_seconds=120,
