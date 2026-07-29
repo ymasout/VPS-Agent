@@ -1,4 +1,4 @@
-.PHONY: dev up down logs ps install check test api-test web-test agent-test recovery-test
+.PHONY: dev up down logs ps install check test api-test web-test agent-test recovery-test source-check license-check
 
 dev: up
 up:
@@ -26,3 +26,9 @@ agent-test:
 	cd apps/agent && go test ./...
 recovery-test:
 	sh deploy/tests/m6-recovery-integration.sh
+source-check:
+	python scripts/source_release.py check
+	python -m pytest apps/api/tests/test_source_release.py
+license-check:
+	python scripts/dependency_licenses.py --output dist/dependency-licenses.json
+	reuse lint

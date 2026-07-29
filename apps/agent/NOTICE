@@ -1,0 +1,6 @@
+VPS Agent
+Copyright 2026 YY Home
+
+The Agent component is licensed under the Apache License, Version 2.0.
+The current Go module uses only the Go standard library. Future third-party
+modules must be recorded by the repository dependency-license gate.

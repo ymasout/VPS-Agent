@@ -241,7 +241,7 @@
 4. **M6.1d 秘密与灾备运行手册**：配置/密钥清单、加密离机副本、恢复演练频率、RPO/RTO 和人工审计。
 5. **M6.2 PWA 与移动体验**：manifest/service worker/图标、移动只读事件与 M4 审批；不新增写权限。
 6. **M6.3 通知与引导式配置**：M6.3a/b 已完成生产验证；M6.3c+d 已完成（Telegram、内置通道组合、飞书预留适配位、独立 Delivery 和版本化冻结模板，生产金丝雀通过 2026-07-29）。完整边界见 [M6_NOTIFICATIONS.md](./M6_NOTIFICATIONS.md)。
-7. **M6.4 协作与开源评估**：第一轮设计审计已完成，代码尚未开始；先建立秘密安全源码发行门，再定义服务端可信 actor、只读角色和具名审批，最后完善正式发行。SaaS 继续冻结，完整计划见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)。
+7. **M6.4 协作与开源评估**：M6.4a 源码发行安全门、依赖许可证扫描和双许可证目录映射已完成本地实现，所有者权利声明已于 2026-07-30 记录，待独立审计、提交与 CI；再定义服务端可信 actor、只读角色和具名审批，最后完善正式发行。SaaS 继续冻结，完整计划见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)。
 8. **最后阶段：Web SSH/实时终端/限时高风险会话**，单独威胁建模和验收。
 
 ## 12. P0 / P1 / P2 风险清单

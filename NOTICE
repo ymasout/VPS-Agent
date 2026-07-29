@@ -1,0 +1,8 @@
+VPS Agent
+Copyright 2026 YY Home
+
+This monorepo contains an AGPL-3.0-only control plane and an Apache-2.0 Agent.
+See LICENSING.md and REUSE.toml for the exact file-level scope.
+
+Third-party components retain their own copyright and license terms. Generated
+dependency inventories are release evidence and do not relicense those components.

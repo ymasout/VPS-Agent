@@ -1,6 +1,6 @@
 # M6.4 协作与开源分发评估
 
-当前状态：**第一轮代码、认证、审计和发布资产评估已完成；M6.4 代码实现尚未开始。** 本文只冻结问题、边界、阶段顺序和候选切片，不代表已经具备团队账号、RBAC、开源许可证或正式控制平面发行版。
+当前状态：**M6.4a 已完成本地实现，所有者权利声明已于 2026-07-30 记录，待独立审计、提交和 CI；M6.4b–d 尚未开始。** 本文冻结问题、边界和阶段顺序；M6.4a 不代表已经具备团队账号、RBAC 或正式控制平面发行版。
 
 ## 1. 目标
 
@@ -31,7 +31,7 @@
 
 ### 3.2 开源与发布
 
-- 仓库没有 `LICENSE`、`SECURITY.md`、`CONTRIBUTING.md`、行为准则、Issue/PR 模板或第三方许可证清单。没有 LICENSE 时，代码不能被准确描述为开放源码授权。
+- 第一轮审计时仓库没有 `LICENSE`、`SECURITY.md`、`CONTRIBUTING.md`、行为准则、Issue/PR 模板或第三方许可证清单；M6.4a 已在本地工作区补齐这些资产，但提交和 CI 前仍不能把远端状态描述为已完成授权。
 - 根包和 Web 包均标记 `private=true`；Agent Go module 仍使用 `github.com/example/...` 占位路径。这不会阻止私有开发，但不满足正式公开发行标识。
 - 只有 Agent tag Release；控制平面没有不可变发行包、正式镜像发布、升级兼容清单或统一 changelog。
 - Agent Release 提供 SHA-256，但没有发布者签名、SLSA provenance 或 SBOM。GitHub Actions 使用主版本 tag，基础镜像和生产 Caddy/PostgreSQL/Redis 也使用可漂移 tag，尚未固定 digest。
@@ -130,12 +130,12 @@
 预计修改：
 
 - 新增法律/治理文档骨架；LICENSE 仅在用户明确选型后加入。
-- 新增固定源文件清单和源码包生成/检查脚本，只使用 Git tracked files。
+- 新增受控 Git 文件集合和源码包生成/检查脚本，只使用 Git tracked files。
 - 新增 GitHub Actions 分发检查：现有 API/Web/Agent 检查、secret scan、源码包 denylist、依赖与 SBOM 产出。
 - 修正公开坐标和安装文档中的占位描述，但不自动发布镜像或 Release。
 - 测试恶意 `.env`、私钥、数据库 dump、symlink、构建目录和未跟踪文件不会进入发行包。
 
-该切片不需要 Alembic 迁移或生产金丝雀；验收对象是 CI 生成的隔离发行候选。真正发布公开 Release、修改仓库可见性或选择许可证都需要用户单独明确授权。
+该切片不需要 Alembic 迁移或生产金丝雀；验收对象是 CI 生成的隔离发行候选。真正发布公开 Release 或再次修改仓库可见性仍需要用户单独明确授权；许可证范围已由用户在 2026-07-30 明确选择，但须先完成权利声明、审计、提交和 CI。
 
 ## 10. 测试矩阵
 
@@ -144,7 +144,7 @@
 - **审计：**请求者/审批者来自服务端、客户端 actor 字段 422、用户改名/禁用后历史快照不变、Operation/Transition 不丢失。
 - **M4：**具名 actor 之外的计划、确认、签名、nonce、过期、领取、执行、验证和回滚规则完全回归；maker-checker 策略并发下不可绕过。
 - **单实例：**所有数据继续固定 `organization_id=local`，不存在组织创建、选择或跨组织 API。
-- **发行：**干净 checkout 构建；源码包只含 tracked allowlist；秘密/备份/日志/缓存/symlink 负向门；SBOM、checksums、签名和 provenance 可验证。
+- **发行：**干净 checkout 构建；源码包只含通过 denylist 与秘密门的 tracked 文件；秘密/备份/日志/缓存/symlink 负向门；SBOM、checksums、签名和 provenance 可验证。
 - **许可证：**Python/Go/Node/容器依赖清单可重复生成，禁止项失败关闭。
 
 ## 11. 生产金丝雀边界
@@ -194,3 +194,13 @@
 2. **`ADMIN_API_TOKEN` 降级为 break-glass（M6.4b/c）**：团队模式引入独立 principal 后，共享 `ADMIN_API_TOKEN` 应降级为紧急 break-glass 入口。设计提到"legacy/break-glass"但未详述：需明确令牌轮换流程（从共享切到独立 principal 后如何撤销/轮换旧令牌）、每次 break-glass 使用的高优先级审计告警、以及"令牌泄露后如何在不锁死管理员的前提下撤销"。M6.4b 实现时补充恢复流程和锁死演练。
 
 3. **贡献者开发环境（M6.4d）**：M6.4d "贡献者能在干净 checkout 运行统一检查"隐含贡献者面向的开发环境文档。现有 `Makefile`/`compose.yaml` 存在但面向项目所有者。M6.4d 应确保贡献者指南覆盖：干净 checkout 的依赖安装（Python/Node/Go）、本地 Compose 启动、运行统一检查（API/Web/Agent/Compose/Ruff/ESLint）、以及贡献流程（分支、PR、CI 预期）。
+
+## 15. M6.4a 本地实现记录（2026-07-30）
+
+- 许可证决定冻结为目录级双许可证：控制平面、Web、文档及默认范围采用 `AGPL-3.0-only`；`apps/agent/**`、`scripts/install-agent.sh` 与 Agent Release workflow 采用 `Apache-2.0`。`REUSE.toml` 是机器可读的精确映射，`LICENSING.md` 是人类可读说明。
+- 新增 `scripts/source_release.py`：审计 tracked 与待审查的非忽略文件，但正式 archive 只由干净 committed `HEAD` 的 `git archive` 生成；拒绝运行环境、私钥/常见 token、备份、数据库、日志、缓存、构建目录和 symlink，产出 commit 绑定 manifest 与 SHA-256。
+- 新增 `scripts/dependency_licenses.py`：清点 Python、Node 和 Go 依赖，采用精确 SPDX 表达式白名单，未知或未批准项失败关闭；`BlueOak-1.0.0`、`ODC-By-1.0` 和 `Python-2.0` 只有在第三方通知存在时才能通过。
+- 新增固定 action commit 的 `Source Distribution` CI：干净 Ubuntu checkout 运行 Gitleaks、源码负向测试、Ruff、REUSE 3.3、依赖许可证门，并产出 review-only 源码包、checksum、manifest、源码 SPDX 和依赖清单；不会自动创建 Release、推送镜像或部署生产。
+- 技术来源审计见 `COPYRIGHT_PROVENANCE.md`。Git 历史只能证明提交身份与内容，不能证明雇佣成果归属、第三方转让或所有复制来源；项目所有者已于 2026-07-30 明确确认拥有或获授权许可全部项目原创内容、无已知冲突权利，并接受 `YY Home` 权利人名称与既定双许可证范围。该记录不是独立法律意见。
+- 只读 GitHub 核对发现仓库在本切片实施前已经是 Public，且当时没有已提交 LICENSE；本轮没有执行可见性变更。许可证、安全政策与 CI 未提交前，公开仓库仍处于待修复状态。
+- 本地门当前通过：源码候选检查 283 个文件、依赖许可证清单 421 项、REUSE 3.3 lint、源码负向测试和 Ruff。Gitleaks 扫描全部 81 个历史提交后命中 10 项，逐项确认均为文档凭据占位符、空私钥配置或固定测试标识，并以 commit/path/rule/line 指纹精确抑制；抑制后全历史扫描通过。独立审计发现首版 Python 清单错误扫描了解释器内所有包，导致结果随本地环境漂移；已改为从 `requirements-dev.txt`（含递归 `-r`）出发，按已安装 `Requires-Dist` 与 extras/marker 计算传递闭包，无关环境包不再进入清单；非 SPDX 长文本回退 classifier，常见非标准短名称只做精确规范化，未知项继续失败关闭。该 P1 修复待复审与 Ubuntu CI。最终数量以提交后的 CI 产物为准。

@@ -1,0 +1,11 @@
+# Audited false positives: documentation placeholders and fixed test identifiers.
+38b8d40e76ea1c30497bbfa0f17d2b87aaa27977:deploy/README.md:curl-auth-user:94
+84cb4a22d0721d1fc51f5aee1e8b910aed2a9004:apps/agent/internal/operation/operation_test.go:generic-api-key:28
+84cb4a22d0721d1fc51f5aee1e8b910aed2a9004:apps/api/tests/test_m4_operations.py:generic-api-key:83
+84cb4a22d0721d1fc51f5aee1e8b910aed2a9004:apps/api/tests/test_m4_operations.py:generic-api-key:295
+84cb4a22d0721d1fc51f5aee1e8b910aed2a9004:apps/api/tests/test_m4_operations.py:generic-api-key:335
+84cb4a22d0721d1fc51f5aee1e8b910aed2a9004:deploy/.env.production.example:generic-api-key:17
+84cb4a22d0721d1fc51f5aee1e8b910aed2a9004:docs/M4_OPERATIONS.md:generic-api-key:114
+7ce516e1326298e8a6d8cd9027dc1b44d989d025:apps/api/tests/test_alerts.py:generic-api-key:296
+7ce516e1326298e8a6d8cd9027dc1b44d989d025:apps/api/tests/test_m3_diagnostics.py:generic-api-key:224
+df48cd3019329a8d9fa51805d23485f0651abc03:docs/AGENT_INSTALLATION.md:curl-auth-user:28

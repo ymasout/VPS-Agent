@@ -1,0 +1,81 @@
+name: Source Distribution
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  source-distribution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan Git source for secrets
+        uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: apps/agent/go.mod
+
+      - name: Install dependency graphs and audit tools
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          python -m venv "$RUNNER_TEMP/api-deps"
+          "$RUNNER_TEMP/api-deps/bin/python" -m pip install --disable-pip-version-check \
+            -r apps/api/requirements-dev.txt
+          python -m venv "$RUNNER_TEMP/release-tools"
+          "$RUNNER_TEMP/release-tools/bin/python" -m pip install --disable-pip-version-check \
+            "reuse[charset-normalizer]==6.2.0"
+
+      - name: Validate release policy and negative cases
+        run: |
+          "$RUNNER_TEMP/api-deps/bin/python" scripts/source_release.py check
+          "$RUNNER_TEMP/api-deps/bin/python" -m pytest apps/api/tests/test_source_release.py
+          "$RUNNER_TEMP/api-deps/bin/python" -m ruff check \
+            scripts/source_release.py scripts/dependency_licenses.py \
+            apps/api/tests/test_source_release.py
+          "$RUNNER_TEMP/release-tools/bin/reuse" lint
+
+      - name: Build license inventory, source SBOM, and source archive
+        run: |
+          "$RUNNER_TEMP/api-deps/bin/python" scripts/dependency_licenses.py \
+            --output dist/dependency-licenses.json
+          "$RUNNER_TEMP/release-tools/bin/reuse" spdx --output dist/source.spdx
+          "$RUNNER_TEMP/api-deps/bin/python" scripts/source_release.py build \
+            --output-dir dist
+
+      - name: Upload review-only distribution candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: source-distribution-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            dist/dependency-licenses.json
+            dist/source.spdx
+            dist/source-release-manifest.json
+            dist/vps-agent-source-*.tar.gz
+            dist/vps-agent-source-*.tar.gz.sha256

@@ -312,7 +312,7 @@ M5.2.1 本地验收：API 157 项通过；Web 43 项、ESLint、生产构建、�
 
 ## 8. M6：自托管产品化
 
-状态：**进行中（M6.1、M6.2、M6.3 已完成（生产金丝雀通过）；M6.4 已完成第一轮设计审计、代码待开始；Web SSH 待开始）**
+状态：**进行中（M6.1、M6.2、M6.3 已完成（生产金丝雀通过）；M6.4a 已本地实现且所有者权利声明已记录、待独立审计/CI；Web SSH 待开始）**
 
 2026-07-26 完成 M6 第一轮发布、Compose、Alembic、备份/恢复、Agent 安装升级、版本/健康、Web 管理入口、CI 和发布资产审计。当前结论：
 
@@ -336,7 +336,11 @@ M6.2 金丝雀前后生产 `CONVERSATION_REPOSITORY_KNOWLEDGE_ENABLED=true` 与 
 
 2026-07-29 完成 M6.3c+d 本地实现：先修复生产通知把原始 HTTP 异常（可能含签名 Webhook/token）写入 `last_error` 的 P1，统一改为稳定错误码；新增 Telegram 固定官方端点、`NOTIFICATION_CHANNELS` 内置白名单组合、飞书“已注册但未实现”拒绝位、同一逻辑 sequence 的每通道独立 Delivery、`v1` 模板 key/version 和冻结渲染上下文。通道集合在 AlertEvent 创建时冻结并贯穿 firing/resolved 生命周期；Telegram 测试复用 M6.3b 空正文、UUID 幂等、每通道数据库限速、最多一次和有限审计链，且只有显式启用并完整配置的通道才能创建测试。首次提交 `ece22d5` 后，真实 PostgreSQL Migrations/Recovery CI 发现 revision 字符串超过 Alembic `version_num VARCHAR(32)` 的 P0；已缩短 head 为 `0019_m6_multichannel_notify` 并新增全迁移 revision 长度回归门，API 本地 `238 passed, 11 skipped`。downgrade 对 Telegram 测试审计、未终结非钉钉 Delivery 和仍冻结多通道的活跃告警失败关闭；实现完成时生产仍为 `a4944fb + 0018` 且只启用钉钉。修复后提交 `1073969` 推送至 main，三个 CI 全绿（含真实 PG 多通道隔离测试 + revision 长度门）；Claude 审计通过（无 P0/P1；P0 revision 长度已修复）。2026-07-29 生产金丝雀通过：部署 `1073969` + 迁移 0019 + postflight；system-info commit=1073969/revision=0019/schema_current=true；notification-configuration 多通道视图（dingtalk impl+enabled+configured / telegram impl+!enabled / feishu !implemented）；ops/trans 14/89 不变；既有 17 deliveries + 25 alert_events 全部 backfill 模板字段+`["dingtalk"]` 通道集。Telegram 未配置、未启用、未实发；适配器与双通道隔离由真实 PG CI 覆盖，不能把本次金丝雀描述为 Telegram 生产实发证明。M6.3 完成。
 
-同日完成 M6.4 第一轮协作/开源评估，代码尚未开始。当前 Caddy Basic Auth 与 `ADMIN_API_TOKEN` 均为共享管理员边界，API 没有 Principal/RBAC，Operation `requested_by` 固定为 `local-admin` 且确认 `confirmed_by` 来自请求正文，因此不能把现状描述为可信团队审计。仓库没有 LICENSE、SECURITY、CONTRIBUTING、第三方许可证清单、控制平面正式发行、SBOM 或签名/provenance；Agent 只有 SHA-256，Actions 和基础镜像仍以可漂移 tag 为主。M6.4 顺序冻结为：秘密安全源码发行门 → 服务端可信 actor/只读角色 → 具名 M4 审批 → 正式发行收尾；SaaS、多租户、公开注册和 Web SSH 继续冻结。详见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)。
+同日完成 M6.4 第一轮协作/开源评估；在该审计时点代码尚未开始。当前 Caddy Basic Auth 与 `ADMIN_API_TOKEN` 均为共享管理员边界，API 没有 Principal/RBAC，Operation `requested_by` 固定为 `local-admin` 且确认 `confirmed_by` 来自请求正文，因此不能把现状描述为可信团队审计。审计时仓库没有 LICENSE、SECURITY、CONTRIBUTING、第三方许可证清单、控制平面正式发行、SBOM 或签名/provenance；Agent 只有 SHA-256，Actions 和基础镜像仍以可漂移 tag 为主。M6.4 顺序冻结为：秘密安全源码发行门 → 服务端可信 actor/只读角色 → 具名 M4 审批 → 正式发行收尾；SaaS、多租户、公开注册和 Web SSH 继续冻结。详见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)。
+
+2026-07-30 完成 M6.4a 本地实现：新增 AGPL-3.0-only 默认范围与 Apache-2.0 Agent 范围、REUSE 3.3 目录映射、NOTICE/第三方通知、安全与贡献政策；源码候选只从 Git 索引生成，拒绝运行环境、密钥、备份、数据库、日志、缓存和 symlink，并产出 commit 绑定的 archive、manifest 与 SHA-256；依赖门清点 Python/Node/Go 并仅接受精确许可证表达式，REUSE 生成源码 SPDX。GitHub Actions 固定到 action commit，在干净 Ubuntu checkout 执行 Gitleaks、负向测试、依赖许可证、REUSE 和发行候选构建。技术来源审计仅发现 `YY Home` 的 80 个提交和 `root` 的 1 个 `.gitignore` 提交；所有者同日明确确认拥有或已获授权许可全部项目原创内容、无已知冲突权利，并接受以 `YY Home` 为权利人名称及既定双许可证范围。独立审计、提交与 CI 尚未完成，因此 M6.4a 仍不得标记完成。只读核对还发现 GitHub 仓库在本次实现前已是 Public；本轮未修改可见性，先补许可证与安全门。
+
+同日独立审计发现 M6.4a 首版 Python 许可证清单读取当前解释器全部 distributions，污染环境中的无关包会改变结果并可能令 CI 失败（P1）。修复后以 `requirements-dev.txt` 及递归引用为根，按已安装元数据的 `Requires-Dist`、extras 和 marker 计算传递闭包；非项目包不再进入清单，长许可证正文回退 classifier，常见非标准名称仅精确映射到 SPDX，未知/双重含糊条款仍失败关闭。新增闭包隔离、extra、嵌套 requirements 与许可证规范化测试；污染环境和干净 API venv 均生成 43 个 Python + 378 个 Node 依赖并通过。修复仍待独立复审和 Ubuntu CI。
 
 2026-07-27 M6.1 生产金丝雀通过：部署 `38b8d40`（注入 build version/commit/build time）+ postflight；`/api/v1/system-info` 返回 `commit_sha=38b8d40e76ea1c30497bbfa0f17d2b87aaa27977`、`version=0.6.1`、`schema_current=true`、`alembic_revision=["0017_m5_runbook_drafts"]`；`preflight` 生成原子备份包 `control-plane-pre-migration-20260727T131115Z`，`inspect` + 隔离空库 `restore` 成功，审计摘要 `schema_current=true`/`key_table_counts_match=true`/`active_operation_count=0`；恢复后 `ops=13/trans=81/agents=5` 与生产一致；生产 `ops/trans` 前后不变、日志无秘密、开关未变；隔离项目已清理，首份原子备份包保留（0700/0600）。M6.1 无 feature flag，`38b8d40` 留作运行基线。
 

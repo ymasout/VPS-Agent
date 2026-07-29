@@ -1,0 +1,17 @@
+version = 1
+
+[[annotations]]
+path = "**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 YY Home"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+[[annotations]]
+path = [
+  "apps/agent/**",
+  "scripts/install-agent.sh",
+  ".github/workflows/release-agent.yml",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 YY Home"
+SPDX-License-Identifier = "Apache-2.0"
