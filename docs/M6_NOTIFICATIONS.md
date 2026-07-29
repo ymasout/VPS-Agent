@@ -1,6 +1,6 @@
 # M6.3 通知、模板与引导式配置设计
 
-当前状态：**M6.3a/b 已完成相应审计、CI 与生产金丝雀。M6.3c+d 已完成本地实现：Telegram 第二通道、飞书预留适配位、内置通道组合、每通道独立 Delivery、模板 `v1` 与冻结上下文；尚待独立审计、真实 PostgreSQL CI、提交和生产验证。生产仍运行 `a4944fb + 0018` 且只启用钉钉，M6.3 整体未完成。**
+当前状态：**M6.3a/b/c+d 均已完成审计、CI 与生产金丝雀。M6.3c+d 提交 `ece22d5`+`1073969`（P0 revision 长度超 varchar(32) 已修复），三个 CI 全绿，2026-07-29 通过生产金丝雀（迁移 0019 + 多通道视图 + backfill + 零副作用；telegram 实发留待启用时验证，CI 已覆盖适配器）。M6.3 完成。**
 
 ## 1. 当前基线
 
@@ -81,7 +81,7 @@ M6.3a 生产金丝雀在用户明确授权下执行并通过：
 - `GET /api/v1/notification-configuration`（受管理认证）返回 `ready=true`、`channels=[dingtalk configured+signing_enabled]`、4 模板、`issues=[]`；未带 admin token -> 401。
 - 秘密不泄露：API 响应与 `/settings/notifications` 页面 HTML 均不含 webhook URL/access_token/secret（grep `access_token|oapi.dingtalk|webhook/send` 无命中；页面无 `<input>/<form>`）。
 - 零副作用：生产 ops/trans 前后 `14/89` 不变（只读，无测试发送/外部消息）。
-- M6.3a 无 feature flag（只读 always-on），`19e829b` 留作运行基线；M6.3 整体未完成。
+- M6.3a 无 feature flag（只读 always-on），`19e829b` 留作运行基线。M6.3c+d 生产金丝雀通过 2026-07-29（§15.4）；M6.3 完成。
 
 ## 12. M6.3b 测试消息设计
 
