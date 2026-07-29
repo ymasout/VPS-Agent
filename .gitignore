@@ -14,3 +14,4 @@ dist/
 bin/
 .DS_Store
 .env.production
+*.sarif
