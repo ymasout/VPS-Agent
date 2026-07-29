@@ -146,7 +146,10 @@ def validate_repository(root: Path = ROOT) -> dict[str, object]:
 def ensure_clean(root: Path = ROOT) -> None:
     status = run_git("status", "--porcelain=v1", root=root).decode("utf-8").strip()
     if status:
-        raise ReleaseCheckError("source archive requires a clean committed worktree")
+        raise ReleaseCheckError(
+            "source archive requires a clean committed worktree; "
+            "uncommitted changes:\n" + status
+        )
 
 
 def build_archive(output_dir: Path, root: Path = ROOT) -> dict[str, object]:
