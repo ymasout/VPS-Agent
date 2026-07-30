@@ -128,6 +128,7 @@ export default async function ServerPage({
       <DeploymentPlanPanel
         candidates={deploymentCandidates}
         focusServiceKey={focusServiceKey || undefined}
+        namedAuthorization={process.env.PRINCIPAL_WRITE_AUTHORIZATION_ENABLED === "true"}
       />
     </main>
   );

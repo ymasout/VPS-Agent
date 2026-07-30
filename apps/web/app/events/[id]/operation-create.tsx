@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function OperationCreate({ eventId, diagnosticId }: { eventId: string; diagnosticId?: string }) {
+export function OperationCreate({ eventId, diagnosticId, namedAuthorization = false }: { eventId: string; diagnosticId?: string; namedAuthorization?: boolean }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -11,7 +11,7 @@ export function OperationCreate({ eventId, diagnosticId }: { eventId: string; di
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/console/operations", {
+      const response = await fetch(namedAuthorization ? "/api/v1/operations" : "/console/operations", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ event_id: eventId, diagnostic_id: diagnosticId ?? null, action_type: "docker_restart" }),

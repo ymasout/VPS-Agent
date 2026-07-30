@@ -8,7 +8,7 @@ import { operationApprovalSummary } from "./operation-approval";
 
 const active = new Set(["queued", "claimed", "running", "verifying"]);
 
-export function OperationPanel({ operation }: { operation: Operation }) {
+export function OperationPanel({ operation, namedAuthorization = false }: { operation: Operation; namedAuthorization?: boolean }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -48,7 +48,11 @@ export function OperationPanel({ operation }: { operation: Operation }) {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`/console/deployment-operations/${operation.id}/rollback`, { method: "POST" });
+      const response = await fetch(namedAuthorization ? `/api/v1/deployment-operations/${operation.id}/rollback` : `/console/deployment-operations/${operation.id}/rollback`, {
+        method: "POST",
+        headers: namedAuthorization ? { "content-type": "application/json" } : undefined,
+        body: namedAuthorization ? JSON.stringify({ expires_in_seconds: 300 }) : undefined,
+      });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail ?? "创建回滚计划失败");
       router.push(`/operations/${payload.id}`);
@@ -68,12 +72,17 @@ export function OperationPanel({ operation }: { operation: Operation }) {
       : null;
   const isPlanOnly = isDeploy && plan.permanently_non_executable === true;
   const isRollback = isDeploy && Boolean(operation.rollback_of);
+  const requestedPrincipal = operation.requested_principal_snapshot;
+  const requesterLabel = requestedPrincipal
+    ? String(requestedPrincipal.display_name ?? requestedPrincipal.principal_id ?? operation.requested_by)
+    : operation.requested_by;
   const approval = operationApprovalSummary(operation);
   const canCreateRollback = isDeploy && !isRollback && plan.plan_version === "m4.2b-executable-v1" && operation.status === "failed" && operation.started_at !== null;
   if (isPlanOnly) return <>
     <section className="hero compact detail-head event-head">
       <div className="status"><span /> PLAN ONLY</div>
       <h1>只读部署计划 · {String(service.name ?? "服务")}</h1>
+      <p>请求者：{requesterLabel} · {operation.authorization_mode}</p>
       <p>{String(machine.name ?? machine.hostname ?? "机器")} · {String(service.environment ?? "环境未知")} · {operation.risk_level} risk</p>
       <p className="section-copy">此 M4.2a 快照永久不可确认、排队或执行。M4.2b 必须重新创建可执行计划。</p>
     </section>
@@ -86,6 +95,7 @@ export function OperationPanel({ operation }: { operation: Operation }) {
     <section className="hero compact detail-head event-head">
       <div className={`status ${operation.status === "succeeded" ? "" : "offline"}`}><span /> {operation.status}</div>
       <h1>{isRollback ? "显式回滚" : isDeploy ? "受控部署" : "安全重启"} · {String(service.name ?? "服务")}</h1>
+      <p>请求者：{requesterLabel} · {operation.authorization_mode}</p>
       <p>{String(machine.name ?? machine.hostname ?? "机器")} · {String(service.environment ?? "环境未知")} · {operation.risk_level} risk</p>
       {conversationSource && (
         <p className="section-copy">
@@ -117,13 +127,15 @@ export function OperationPanel({ operation }: { operation: Operation }) {
         </div>
         <p className="approval-warning">创建计划不等于确认。确认后服务端仍会检查状态与有效期，签发任务，并等待 Agent 执行和独立健康验证；不会自动回滚。</p>
         {!online && <p className="approval-offline" role="alert">当前离线。审批不会排队，请恢复网络并重新核对最新状态。</p>}
-        <label className="approval-check">
+        {namedAuthorization ? (
+          <p className="approval-offline" role="status">M6.4c2 具名计划已启用；具名确认将在 c3 启用，当前不可执行。</p>
+        ) : <><label className="approval-check">
           <input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} />
           <span>我已核对目标、动作、风险和有效期，并确认这是本次独立人工授权。</span>
         </label>
         <button className="approval-submit" type="button" onClick={confirm} disabled={loading || !acknowledged || !online}>
           {loading ? "确认中…" : `确认并签发${approval.action}任务`}
-        </button>
+        </button></>}
         {error && <p className="mapping-error" role="alert">{error}</p>}
       </section>
     )}

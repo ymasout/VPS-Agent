@@ -1,5 +1,6 @@
 import secrets
 from datetime import datetime, timedelta, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, or_, select
@@ -22,7 +23,13 @@ from .models import (
     ServiceInstance,
     ServiceStatus,
 )
-from .principal import observe_operation_approve, observe_operation_plan
+from .principal import (
+    OPERATION_PLAN,
+    Principal,
+    authorize_operation_confirmation,
+    authorize_operation_plan,
+    authorize_operation_read,
+)
 from .redaction import redact_text, truncate_lines, truncate_utf8
 from .schemas import (
     AgentReport,
@@ -208,18 +215,21 @@ async def operation_view(session: AsyncSession, operation: Operation) -> Operati
             )
         ).all()
     )
-    return OperationView(
-        **{
+    values = {
             field: getattr(operation, field)
             for field in OperationView.model_fields
             if field != "transitions"
-        },
+        }
+    values["authorization_mode"] = operation.authorization_mode or "legacy"
+    return OperationView(
+        **values,
         transitions=[
             OperationTransitionView(
                 from_status=item.from_status,
                 to_status=item.to_status,
                 actor_type=item.actor_type,
                 actor_id=item.actor_id,
+                actor_principal_snapshot=item.actor_principal_snapshot,
                 reason=item.reason,
                 details=item.details,
                 created_at=item.created_at,
@@ -227,6 +237,28 @@ async def operation_view(session: AsyncSession, operation: Operation) -> Operati
             for item in timeline
         ],
     )
+
+
+def plan_actor(principal: Principal | None) -> dict:
+    if principal is None:
+        return {
+            "requested_by": "local-admin",
+            "requested_principal_snapshot": None,
+            "authorization_mode": "legacy",
+            "actor_type": "admin",
+            "actor_id": "local-admin",
+            "actor_principal_snapshot": None,
+        }
+    operation_snapshot = principal.snapshot(OPERATION_PLAN)
+    transition_snapshot = principal.snapshot(OPERATION_PLAN)
+    return {
+        "requested_by": principal.id,
+        "requested_principal_snapshot": operation_snapshot,
+        "authorization_mode": "named",
+        "actor_type": "principal",
+        "actor_id": principal.id,
+        "actor_principal_snapshot": transition_snapshot,
+    }
 
 
 def require_executable_action(operation: Operation) -> None:
@@ -346,6 +378,7 @@ async def build_restart_plan(
     *,
     expires_in_seconds: int,
     source_metadata: dict | None = None,
+    requester: Principal | None = None,
 ) -> Operation:
     """Build one restart plan while preserving the M4 prechecks and state ceiling."""
 
@@ -372,6 +405,7 @@ async def build_restart_plan(
     }
     if conversation_source is not None:
         plan_snapshot["conversation_source"] = conversation_source
+    actor = plan_actor(requester)
     operation = Operation(
         organization_id=source_metadata.get(
             "organization_id",
@@ -386,7 +420,9 @@ async def build_restart_plan(
         action_type=RESTART_ACTION,
         status="planned",
         active_key=f"{instance.id}:write",
-        requested_by="local-admin",
+        requested_by=actor["requested_by"],
+        requested_principal_snapshot=actor["requested_principal_snapshot"],
+        authorization_mode=actor["authorization_mode"],
         risk_level="medium",
         impact_summary="单个非关键 Docker 服务会短暂中断并重新启动。",
         plan_snapshot=plan_snapshot,
@@ -409,8 +445,9 @@ async def build_restart_plan(
                 operation_id=operation.id,
                 from_status=None,
                 to_status="planned",
-                actor_type="admin",
-                actor_id="local-admin",
+                actor_type=actor["actor_type"],
+                actor_id=actor["actor_id"],
+                actor_principal_snapshot=actor["actor_principal_snapshot"],
                 reason=source_metadata.get("reason", "restart plan requested"),
                 details=source_metadata.get("transition_details", {"source": "web"}),
             )
@@ -562,12 +599,12 @@ async def run_rollback_prechecks(
     "/operations",
     response_model=OperationView,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(observe_operation_plan), Depends(require_admin)],
 )
 async def create_operation(
     payload: OperationPlanCreate,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    requester: Annotated[Principal | None, Depends(authorize_operation_plan)] = None,
 ) -> OperationView:
     if payload.action_type != RESTART_ACTION:
         raise HTTPException(status_code=422, detail="unsupported operation action")
@@ -580,6 +617,7 @@ async def create_operation(
             diagnostic,
             settings,
             expires_in_seconds=payload.expires_in_seconds,
+            requester=requester,
         )
     except IntegrityError as error:
         await session.rollback()
@@ -593,12 +631,12 @@ async def create_operation(
     "/deployment-plans",
     response_model=OperationView,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(observe_operation_plan), Depends(require_admin)],
 )
 async def create_deployment_plan(
     payload: DeploymentPlanCreate,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    requester: Annotated[Principal | None, Depends(authorize_operation_plan)] = None,
 ) -> OperationView:
     """Persist an M4.2a snapshot which is permanently non-executable."""
 
@@ -659,13 +697,16 @@ async def create_deployment_plan(
             status_code=409,
             detail="deployment plan rejected: " + ", ".join(failed),
         )
+    actor = plan_actor(requester)
     operation = Operation(
         instance_id=instance.id,
         agent_id=agent.id,
         action_type=DEPLOY_ACTION,
         status="planned",
         active_key=None,
-        requested_by="local-admin",
+        requested_by=actor["requested_by"],
+        requested_principal_snapshot=actor["requested_principal_snapshot"],
+        authorization_mode=actor["authorization_mode"],
         risk_level="medium",
         impact_summary="Read-only deployment preview; this plan can never execute.",
         plan_snapshot={
@@ -706,8 +747,9 @@ async def create_deployment_plan(
             operation_id=operation.id,
             from_status=None,
             to_status="planned",
-            actor_type="admin",
-            actor_id="local-admin",
+            actor_type=actor["actor_type"],
+            actor_id=actor["actor_id"],
+            actor_principal_snapshot=actor["actor_principal_snapshot"],
             reason="read-only deployment plan created",
             details={"plan_only": True, "executable": False},
         )
@@ -760,12 +802,12 @@ async def update_deploy_policy(
     "/deployment-operations",
     response_model=OperationView,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(observe_operation_plan), Depends(require_admin)],
 )
 async def create_deployment_operation(
     payload: DeploymentPlanCreate,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    requester: Annotated[Principal | None, Depends(authorize_operation_plan)] = None,
 ) -> OperationView:
     current_time = now_utc()
     instance = await session.get(ServiceInstance, payload.instance_id)
@@ -783,13 +825,16 @@ async def create_deployment_operation(
         raise HTTPException(
             status_code=409, detail="deployment operation rejected: " + ", ".join(failed)
         )
+    actor = plan_actor(requester)
     operation = Operation(
         instance_id=instance.id,
         agent_id=agent.id,
         action_type=DEPLOY_ACTION,
         status="planned",
         active_key=f"{instance.id}:write",
-        requested_by="local-admin",
+        requested_by=actor["requested_by"],
+        requested_principal_snapshot=actor["requested_principal_snapshot"],
+        authorization_mode=actor["authorization_mode"],
         risk_level="high",
         impact_summary="单个非关键 Compose 服务将以同仓库的不可变镜像摘要重建。",
         current_digest=candidate.current_digest,
@@ -835,8 +880,9 @@ async def create_deployment_operation(
                     operation_id=operation.id,
                     from_status=None,
                     to_status="planned",
-                    actor_type="admin",
-                    actor_id="local-admin",
+                    actor_type=actor["actor_type"],
+                    actor_id=actor["actor_id"],
+                    actor_principal_snapshot=actor["actor_principal_snapshot"],
                     reason="controlled deployment requested",
                     details={"plan_version": DEPLOY_PLAN_VERSION},
                 )
@@ -859,6 +905,7 @@ async def build_rollback_plan(
     *,
     expires_in_seconds: int,
     source_metadata: dict | None = None,
+    requester: Principal | None = None,
 ) -> Operation:
     """Build one rollback plan through the production-validated M4.2c path."""
 
@@ -905,6 +952,7 @@ async def build_rollback_plan(
     }
     if conversation_source is not None:
         plan_snapshot["conversation_source"] = conversation_source
+    actor = plan_actor(requester)
     operation = Operation(
         organization_id=source_metadata.get("organization_id", source.organization_id),
         instance_id=instance.id,
@@ -915,7 +963,9 @@ async def build_rollback_plan(
         action_type=DEPLOY_ACTION,
         status="planned",
         active_key=f"{instance.id}:write",
-        requested_by="local-admin",
+        requested_by=actor["requested_by"],
+        requested_principal_snapshot=actor["requested_principal_snapshot"],
+        authorization_mode=actor["authorization_mode"],
         risk_level="high",
         impact_summary="显式回滚失败的 Compose 部署，恢复原计划冻结的旧镜像摘要。",
         current_digest=source.target_digest,
@@ -947,8 +997,9 @@ async def build_rollback_plan(
                 operation_id=operation.id,
                 from_status=None,
                 to_status="planned",
-                actor_type="admin",
-                actor_id="local-admin",
+                actor_type=actor["actor_type"],
+                actor_id=actor["actor_id"],
+                actor_principal_snapshot=actor["actor_principal_snapshot"],
                 reason=source_metadata.get("reason", "explicit rollback requested"),
                 details=transition_details,
             )
@@ -963,13 +1014,13 @@ async def build_rollback_plan(
     "/deployment-operations/{operation_id}/rollback",
     response_model=OperationView,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(observe_operation_plan), Depends(require_admin)],
 )
 async def create_rollback_operation(
     operation_id: str,
     payload: OperationRollbackCreate,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    requester: Annotated[Principal | None, Depends(authorize_operation_plan)] = None,
 ) -> OperationView:
     source = await session.scalar(
         select(Operation).where(Operation.id == operation_id).with_for_update()
@@ -982,6 +1033,7 @@ async def create_rollback_operation(
             source,
             settings,
             expires_in_seconds=payload.expires_in_seconds,
+            requester=requester,
         )
     except IntegrityError as error:
         await session.rollback()
@@ -994,7 +1046,7 @@ async def create_rollback_operation(
 @router.post(
     "/operations/{operation_id}/confirm",
     response_model=OperationView,
-    dependencies=[Depends(observe_operation_approve), Depends(require_admin)],
+    dependencies=[Depends(authorize_operation_confirmation)],
 )
 async def confirm_operation(
     operation_id: str,
@@ -1084,7 +1136,11 @@ async def confirm_operation(
     return await operation_view(session, operation)
 
 
-@router.get("/operations/{operation_id}", response_model=OperationView)
+@router.get(
+    "/operations/{operation_id}",
+    response_model=OperationView,
+    dependencies=[Depends(authorize_operation_read)],
+)
 async def get_operation(
     operation_id: str, session: AsyncSession = Depends(get_session)
 ) -> OperationView:

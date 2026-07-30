@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager, suppress
 import structlog
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from .api import router
 from .config import get_settings
@@ -16,7 +16,7 @@ from .github import router as github_router
 from .logging import configure_logging
 from .m3 import router as m3_router
 from .maintenance import control_plane_maintenance_loop
-from .models import ManagedService, RegistrationToken, ServiceInstance
+from .models import ManagedService, Operation, RegistrationToken, ServiceInstance
 from .notification_tests import router as notification_tests_router
 from .operations import router as operations_router
 from .releases import router as releases_router
@@ -34,6 +34,24 @@ async def lifespan(_: FastAPI):
     if not settings.skip_database_init:
         async with engine.connect() as connection:
             await verify_database_current(connection)
+        if settings.principal_write_authorization_enabled:
+            async with session_factory() as session:
+                legacy_operation = await session.scalar(
+                    select(Operation.id)
+                    .where(
+                        Operation.status.in_(("awaiting_confirmation", "queued")),
+                        or_(
+                            Operation.authorization_mode != "named",
+                            Operation.requested_principal_snapshot.is_(None),
+                        ),
+                    )
+                    .limit(1)
+                )
+                if legacy_operation is not None:
+                    raise RuntimeError(
+                        "principal write authorization requires no legacy awaiting or "
+                        "queued operations"
+                    )
     if settings.dev_agent_registration_token and not settings.skip_database_init:
         async with session_factory() as session:
             token_hash = hash_token(settings.dev_agent_registration_token)

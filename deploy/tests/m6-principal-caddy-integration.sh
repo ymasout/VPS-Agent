@@ -73,6 +73,7 @@ assert_write_trusted() {
     response="$(curl --fail --silent --request POST --user "$user:$password" \
         --header 'Origin: https://ops.example.test' \
         --header 'Sec-Fetch-Site: same-origin' \
+        --header 'Content-Type: application/json' \
         --header 'X-VPS-Agent-Principal-Id: forged' \
         --header 'X-VPS-Agent-Principal-Source: forged' \
         --header 'X-VPS-Agent-Principal-Proxy-Token: forged' \
@@ -84,6 +85,7 @@ assert_write_trusted() {
     printf '%s' "$response" | grep --fixed-strings "\"write_token\": \"$write_token\"" >/dev/null
     printf '%s' "$response" | grep --fixed-strings '"origin": "https://ops.example.test"' >/dev/null
     printf '%s' "$response" | grep --fixed-strings '"sec_fetch_site": "same-origin"' >/dev/null
+    printf '%s' "$response" | grep --fixed-strings '"content_type": "application/json"' >/dev/null
 }
 
 assert_write_stripped() {

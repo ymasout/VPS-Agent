@@ -1,5 +1,6 @@
 import hashlib
 import json
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import ValidationError
@@ -7,7 +8,6 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .api import require_admin
 from .config import Settings, get_settings
 from .conversation import ORGANIZATION_ID, scoped_event
 from .database import get_session
@@ -28,7 +28,7 @@ from .operations import (
     build_rollback_plan,
     is_rollback_source,
 )
-from .principal import observe_operation_plan
+from .principal import Principal, authorize_operation_plan
 from .schemas import (
     ConversationAnswer,
     ConversationOperationCandidate,
@@ -91,18 +91,21 @@ async def _operation_view(
             )
         ).all()
     )
-    return OperationView(
-        **{
+    values = {
             field: getattr(operation, field)
             for field in OperationView.model_fields
             if field != "transitions"
-        },
+        }
+    values["authorization_mode"] = operation.authorization_mode or "legacy"
+    return OperationView(
+        **values,
         transitions=[
             OperationTransitionView(
                 from_status=item.from_status,
                 to_status=item.to_status,
                 actor_type=item.actor_type,
                 actor_id=item.actor_id,
+                actor_principal_snapshot=item.actor_principal_snapshot,
                 reason=item.reason,
                 details=item.details,
                 created_at=item.created_at,
@@ -471,7 +474,6 @@ def _same_handoff(
     "/events/{event_id}/conversation/turns/{turn_id}/restart-plan",
     response_model=OperationView,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(observe_operation_plan), Depends(require_admin)],
 )
 async def create_conversation_restart_plan(
     event_id: str,
@@ -479,6 +481,7 @@ async def create_conversation_restart_plan(
     payload: ConversationRestartPlanCreate,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    requester: Annotated[Principal | None, Depends(authorize_operation_plan)] = None,
 ) -> OperationView:
     event = await scoped_event(session, event_id, ORGANIZATION_ID)
     if not settings.conversation_operation_handoff_enabled:
@@ -547,6 +550,7 @@ async def create_conversation_restart_plan(
             settings,
             expires_in_seconds=payload.expires_in_seconds,
             source_metadata=source,
+            requester=requester,
         )
     except IntegrityError as error:
         await session.rollback()
@@ -582,7 +586,6 @@ async def create_conversation_restart_plan(
     "/events/{event_id}/conversation/turns/{turn_id}/rollback-plan",
     response_model=OperationView,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(observe_operation_plan), Depends(require_admin)],
 )
 async def create_conversation_rollback_plan(
     event_id: str,
@@ -590,6 +593,7 @@ async def create_conversation_rollback_plan(
     payload: ConversationRollbackPlanCreate,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    requester: Annotated[Principal | None, Depends(authorize_operation_plan)] = None,
 ) -> OperationView:
     event = await scoped_event(session, event_id, ORGANIZATION_ID)
     if not settings.conversation_operation_handoff_enabled:
@@ -668,6 +672,7 @@ async def create_conversation_rollback_plan(
             settings,
             expires_in_seconds=payload.expires_in_seconds,
             source_metadata=source,
+            requester=requester,
         )
     except IntegrityError as error:
         await session.rollback()

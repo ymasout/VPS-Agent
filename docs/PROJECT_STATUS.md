@@ -312,7 +312,7 @@ M5.2.1 本地验收：API 157 项通过；Web 43 项、ESLint、生产构建、�
 
 ## 8. M6：自托管产品化
 
-状态：**进行中（M6.1、M6.2、M6.3、M6.4a、M6.4b、M6.4c1 已完成（生产金丝雀通过 2026-07-30）；c2/c3 待开始；Web SSH 待开始）**
+状态：**进行中（M6.1、M6.2、M6.3、M6.4a、M6.4b、M6.4c1 已完成（生产金丝雀通过 2026-07-30）；c2 本地已实现待独立审计/CI；c3/Web SSH 待开始）**
 
 2026-07-26 完成 M6 第一轮发布、Compose、Alembic、备份/恢复、Agent 安装升级、版本/健康、Web 管理入口、CI 和发布资产审计。当前结论：
 
@@ -351,6 +351,8 @@ M6.4a 随后以 `ed4e584` 提交，并按 CI 失败证据完成三轮收敛：`3
 同日完成 M6.4c 代码前审计与设计。当前 M4 全部计划入口仍把 `requested_by`/首条 Transition actor 写死为 `local-admin`，确认端点仍接受正文 `confirmed_by`，Web 确认代理仍持共享 `ADMIN_API_TOKEN`，生产 Caddy 也只有一个 Basic Auth 用户；因此不能直接把 M6.4b read token 或单用户 Principal 升级为具名写授权。冻结方案使用独立且不注入 Web 的 write token、至少两个不同 Caddy subject 到稳定 Principal ID 的部署绑定、`operation:read/plan/approve` 精确路由矩阵、Operation/Transition 不可变 actor 快照和行锁 maker-checker；选定 M4 写请求改为浏览器同源直达 Caddy→API，feature off 保留 legacy，break-glass 默认关闭并具有独立原因/请求键/高优先级审计。计划新增 `0020_m6_named_approval`，不修改 Agent/M4 任务签名与状态机；实施拆为 c1 写上下文 shadow、c2 具名计划、c3 具名确认。完整威胁模型、迁移、测试和金丝雀边界见 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)。本段只完成设计，不含代码、提交、生产凭据或 Operation 变更。
 
 随后完成 M6.4c1 本地实现：严格 JSON 角色绑定与稳定 UUID Principal、独立且不进入 Web 的 write token、admin/operator/approver 三组 Caddy 凭据、方法+路径精确匹配的 7 个 M4 POST shadow、部署配置 preflight，以及 `0020_m6_named_approval` actor snapshot schema。所有 shadow 依赖仍继续执行原 `require_admin`，只记录有限 would-allow/would-deny，不改变任何 M4 允许/拒绝结果、actor、确认正文、签名、nonce 或状态机。API `282 passed, 12 skipped`；Web `95 passed`、lint/build；Agent test/vet、Ruff、单 head、0020 双向离线 SQL、Compose config 和部署预检通过。Docker Desktop 恢复后，真实 Caddy 多用户/7 路由/header 隔离、真实 PostgreSQL 16 全迁移、备份→隔离恢复→schema check，以及具名快照 downgrade fail-closed（`1 passed`）均通过；同时修复 Windows Git Bash 测试挂载和 Recovery fixture 的新 Caddy 必填变量。当前未提交、未部署，生产仍为 `d847a7d + 0019`、flags OFF；push 后 Ubuntu CI 仍需全绿。已提交 `48263db`+`d6a9528` 推送至 main，四个 CI 全绿。2026-07-30 两阶段 shadow 生产金丝雀通过：Phase A flags OFF 部署迁移 0020 + Caddy 三组凭据 + 无回归；Phase B shadow operator/approver `/principal` 稳定 ID/角色/capability + 伪造 header 被 Caddy 覆盖 + write token 不泄露 + ops/trans 14/89 不变；Phase C 还原 403。生产现运行 `d6a9528 + 0020`，flags OFF。
+
+2026-07-31 完成 M6.4c2 本地实现与验证：`operation:plan` 只接入冻结的六条计划 POST，operator 创建的 Operation 与首条 Transition 写入稳定 Principal 快照；`operation:read` 只接入单 Operation GET，operator/approver 可读。Web 在 enforcement 模式改为浏览器同源直达 Caddy→API，API 校验 Origin、Fetch Metadata、JSON 和独立 write token；对应 legacy Web 管理代理失败关闭。c3 尚未实现，因此确认 API/页面在 enforcement 模式返回 409 且不显示执行控件；启动还会拒绝带 legacy awaiting/queued Operation 的模式切换。无迁移，head 保持 0020；API `291 passed, 13 skipped`、Web `98 passed`、lint/build、Ruff、Go test/vet、Compose config、真实 Caddy 与临时 PostgreSQL 16 两项具名审计测试通过。当前未提交、未运行 CI、未部署，生产仍为 `d6a9528 + 0020`、flags OFF。
 
 2026-07-27 M6.1 生产金丝雀通过：部署 `38b8d40`（注入 build version/commit/build time）+ postflight；`/api/v1/system-info` 返回 `commit_sha=38b8d40e76ea1c30497bbfa0f17d2b87aaa27977`、`version=0.6.1`、`schema_current=true`、`alembic_revision=["0017_m5_runbook_drafts"]`；`preflight` 生成原子备份包 `control-plane-pre-migration-20260727T131115Z`，`inspect` + 隔离空库 `restore` 成功，审计摘要 `schema_current=true`/`key_table_counts_match=true`/`active_operation_count=0`；恢复后 `ops=13/trans=81/agents=5` 与生产一致；生产 `ops/trans` 前后不变、日志无秘密、开关未变；隔离项目已清理，首份原子备份包保留（0700/0600）。M6.1 无 feature flag，`38b8d40` 留作运行基线。
 

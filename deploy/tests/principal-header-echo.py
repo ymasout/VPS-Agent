@@ -13,6 +13,7 @@ class Handler(BaseHTTPRequestHandler):
                 "write_token": self.headers.get("X-VPS-Agent-Principal-Write-Token"),
                 "origin": self.headers.get("Origin"),
                 "sec_fetch_site": self.headers.get("Sec-Fetch-Site"),
+                "content_type": self.headers.get("Content-Type"),
                 "path": self.path,
             },
             sort_keys=True,

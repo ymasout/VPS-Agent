@@ -149,6 +149,13 @@ API 和 Web 后，`/api/v1/principal` 应显示稳定 ID、实际角色、有限
 `write_authorization_mode=shadow`。精确 M4 POST 只产生 `principal.write_shadow` 决策日志；
 原有 `ADMIN_API_TOKEN` 仍是唯一写授权，Operation actor、确认正文和状态机均不变。
 
+M6.4c2 本地实现允许在独立审计、CI 和部署授权后临时设置
+`PRINCIPAL_READ_AUTHORIZATION_ENABLED=true` 与
+`PRINCIPAL_WRITE_AUTHORIZATION_ENABLED=true`。该开关必须同时注入 API 与 Web，部署 preflight
+会拒绝两者不一致。开启后仅冻结的六条计划 POST 由 operator 通过浏览器同源直达 API；旧
+Web 计划代理和确认入口返回 409。c3 完成前不得把具名计划投入执行，部署前还必须确认不存在
+legacy `awaiting_confirmation`/`queued` Operation。生产当前仍保持该开关为 `false`。
+
 write token 只进入 Caddy/API，不能进入 Web、浏览器、Agent、日志或响应。Agent、webhook、
 下载、健康、Web 及非 allowlist API 路径都会清除该 header。c1 验证结束后关闭 write context
 并重建容器；不要把 shadow 描述为写 RBAC 已启用。

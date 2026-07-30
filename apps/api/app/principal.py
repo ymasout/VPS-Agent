@@ -2,6 +2,7 @@ import re
 import secrets
 from dataclasses import dataclass
 from typing import Literal
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import structlog
@@ -14,6 +15,9 @@ PRINCIPAL_ID_HEADER = b"x-vps-agent-principal-id"
 PRINCIPAL_SOURCE_HEADER = b"x-vps-agent-principal-source"
 PRINCIPAL_TOKEN_HEADER = b"x-vps-agent-principal-proxy-token"
 PRINCIPAL_WRITE_TOKEN_HEADER = b"x-vps-agent-principal-write-token"
+ORIGIN_HEADER = b"origin"
+FETCH_SITE_HEADER = b"sec-fetch-site"
+CONTENT_TYPE_HEADER = b"content-type"
 
 SYSTEM_READ = "system:read"
 FLEET_READ = "fleet:read"
@@ -41,6 +45,17 @@ class Principal:
     capabilities: frozenset[str]
     authorization_mode: Literal["shadow", "read_enforced"]
     write_authorization_mode: Literal["disabled", "shadow", "enforced"]
+
+    def snapshot(self, capability: str) -> dict:
+        return {
+            "principal_id": self.id,
+            "display_name": self.display_name,
+            "auth_source": self.auth_source,
+            "auth_subject": self.auth_subject,
+            "organization_id": self.organization_id,
+            "roles": list(self.roles),
+            "capability_used": capability,
+        }
 
 
 def valid_admin_token(supplied: str | None, settings: Settings) -> bool:
@@ -168,8 +183,97 @@ def resolve_write_principal(request: Request, settings: Settings) -> Principal:
         authorization_mode=(
             "read_enforced" if settings.principal_read_authorization_enabled else "shadow"
         ),
-        write_authorization_mode="shadow",
+        write_authorization_mode=(
+            "enforced" if settings.principal_write_authorization_enabled else "shadow"
+        ),
     )
+
+
+def _expected_origin(settings: Settings) -> str:
+    parsed = urlsplit(settings.console_public_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="principal_write_origin_not_configured",
+        )
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def validate_same_origin_write(request: Request, settings: Settings) -> None:
+    origin = _single_header(request, ORIGIN_HEADER)
+    fetch_site = _single_header(request, FETCH_SITE_HEADER)
+    content_type = _single_header(request, CONTENT_TYPE_HEADER)
+    if not secrets.compare_digest(origin, _expected_origin(settings)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="invalid_write_origin",
+        )
+    if fetch_site != "same-origin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="invalid_write_fetch_metadata",
+        )
+    if content_type.split(";", 1)[0].strip().lower() != "application/json":
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="invalid_write_content_type",
+        )
+
+
+async def authorize_operation_plan(
+    request: Request,
+    x_admin_token: str | None = Header(default=None),
+    settings: Settings = Depends(get_settings),
+) -> Principal | None:
+    if not settings.principal_write_authorization_enabled:
+        await observe_operation_plan(request, settings)
+        if not valid_admin_token(x_admin_token, settings):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="invalid admin token",
+            )
+        return None
+    validate_same_origin_write(request, settings)
+    principal = resolve_write_principal(request, settings)
+    if OPERATION_PLAN not in principal.capabilities:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="principal_capability_denied",
+        )
+    return principal
+
+
+async def authorize_operation_confirmation(
+    request: Request,
+    x_admin_token: str | None = Header(default=None),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    if settings.principal_write_authorization_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="principal_confirmation_not_available",
+        )
+    await observe_operation_approve(request, settings)
+    if not valid_admin_token(x_admin_token, settings):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid admin token",
+        )
+
+
+async def authorize_operation_read(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> Principal | None:
+    if not settings.principal_write_authorization_enabled:
+        return None
+    principal = resolve_principal(request, settings)
+    if OPERATION_READ not in principal.capabilities:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="principal_capability_denied",
+        )
+    return principal
 
 
 def observe_write_capability(capability: str):

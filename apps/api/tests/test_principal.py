@@ -8,6 +8,7 @@ from app.api import router as api_router
 from app.config import Settings
 from app.conversation_operations import router as conversation_operations_router
 from app.m3 import router as m3_router
+from app.operations import plan_actor
 from app.operations import router as operations_router
 from app.principal import (
     EVENT_READ,
@@ -16,6 +17,9 @@ from app.principal import (
     OPERATION_PLAN,
     OPERATION_READ,
     SYSTEM_READ,
+    authorize_operation_confirmation,
+    authorize_operation_plan,
+    authorize_operation_read,
     observe_operation_approve,
     observe_operation_plan,
     require_event_read,
@@ -23,6 +27,7 @@ from app.principal import (
     require_system_read,
     resolve_principal,
     resolve_write_principal,
+    validate_same_origin_write,
 )
 
 TOKEN = "test-only-" + ("x" * 32)
@@ -92,6 +97,29 @@ def write_shadow_settings() -> Settings:
         principal_write_proxy_token=WRITE_TOKEN,
         principal_role_bindings_json=role_bindings(),
     )
+
+
+def write_enforced_settings() -> Settings:
+    return Settings(
+        skip_database_init=True,
+        console_public_url="https://ops.example.com",
+        principal_context_enabled=True,
+        principal_read_authorization_enabled=True,
+        principal_proxy_token=TOKEN,
+        principal_viewer_ids="admin,ops-alice,ops-bob",
+        principal_write_context_enabled=True,
+        principal_write_authorization_enabled=True,
+        principal_write_proxy_token=WRITE_TOKEN,
+        principal_role_bindings_json=role_bindings(),
+    )
+
+
+def named_write_headers(user_id: str = "ops-alice") -> list[tuple[bytes, bytes]]:
+    return trusted_write_headers(user_id) + [
+        (b"origin", b"https://ops.example.com"),
+        (b"sec-fetch-site", b"same-origin"),
+        (b"content-type", b"application/json"),
+    ]
 
 
 def test_principal_configuration_is_default_off_and_fail_closed() -> None:
@@ -199,7 +227,7 @@ def test_write_context_configuration_is_fail_closed() -> None:
         Settings(**base)
     with pytest.raises(ValueError, match="differ from read token"):
         Settings(**base, principal_write_proxy_token=TOKEN)
-    with pytest.raises(ValueError, match="not available in M6.4c1"):
+    with pytest.raises(ValueError, match="requires principal read authorization"):
         Settings(
             **base,
             principal_write_proxy_token=WRITE_TOKEN,
@@ -308,6 +336,127 @@ def test_write_shadow_observation_never_changes_legacy_route_result() -> None:
         )
         is None
     )
+
+
+def test_named_plan_authorization_accepts_only_operator_and_snapshots_identity() -> None:
+    settings = write_enforced_settings()
+    principal = asyncio.run(
+        authorize_operation_plan(
+            request_with_headers(named_write_headers()), None, settings
+        )
+    )
+    assert principal is not None
+    assert principal.id == OPERATOR_ID
+    assert principal.write_authorization_mode == "enforced"
+    assert principal.snapshot(OPERATION_PLAN) == {
+        "principal_id": OPERATOR_ID,
+        "display_name": "Alice",
+        "auth_source": "caddy_basic",
+        "auth_subject": "ops-alice",
+        "organization_id": "local",
+        "roles": ["operator"],
+        "capability_used": OPERATION_PLAN,
+    }
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            authorize_operation_plan(
+                request_with_headers(named_write_headers("ops-bob")), None, settings
+            )
+        )
+    assert error.value.status_code == 403
+    assert error.value.detail == "principal_capability_denied"
+
+
+def test_named_plan_actor_uses_the_same_immutable_snapshot_for_operation_and_transition() -> None:
+    principal = resolve_write_principal(
+        request_with_headers(trusted_write_headers()), write_enforced_settings()
+    )
+    actor = plan_actor(principal)
+    assert actor["authorization_mode"] == "named"
+    assert actor["requested_by"] == OPERATOR_ID
+    assert actor["actor_type"] == "principal"
+    assert actor["actor_id"] == OPERATOR_ID
+    assert actor["requested_principal_snapshot"] == actor["actor_principal_snapshot"]
+    assert actor["requested_principal_snapshot"] is not actor["actor_principal_snapshot"]
+
+
+@pytest.mark.parametrize(
+    ("headers", "status_code", "detail"),
+    [
+        (trusted_write_headers(), 401, "invalid_principal_context"),
+        (
+            named_write_headers() + [(b"origin", b"https://ops.example.com")],
+            401,
+            "invalid_principal_context",
+        ),
+        (
+            [
+                (name, b"https://evil.example" if name == b"origin" else value)
+                for name, value in named_write_headers()
+            ],
+            403,
+            "invalid_write_origin",
+        ),
+        (
+            [
+                (name, b"cross-site" if name == b"sec-fetch-site" else value)
+                for name, value in named_write_headers()
+            ],
+            403,
+            "invalid_write_fetch_metadata",
+        ),
+        (
+            [
+                (name, b"text/plain" if name == b"content-type" else value)
+                for name, value in named_write_headers()
+            ],
+            415,
+            "invalid_write_content_type",
+        ),
+    ],
+)
+def test_named_write_metadata_fails_closed(
+    headers: list[tuple[bytes, bytes]], status_code: int, detail: str
+) -> None:
+    with pytest.raises(HTTPException) as error:
+        validate_same_origin_write(
+            request_with_headers(headers), write_enforced_settings()
+        )
+    assert error.value.status_code == status_code
+    assert error.value.detail == detail
+
+
+def test_c2_confirmation_is_unavailable_and_operation_read_is_role_limited() -> None:
+    settings = write_enforced_settings()
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            authorize_operation_confirmation(
+                request_with_headers(named_write_headers("ops-bob")), None, settings
+            )
+        )
+    assert error.value.status_code == 409
+    assert error.value.detail == "principal_confirmation_not_available"
+
+    operator = asyncio.run(
+        authorize_operation_read(
+            request_with_headers(trusted_headers("ops-alice")), settings
+        )
+    )
+    approver = asyncio.run(
+        authorize_operation_read(
+            request_with_headers(trusted_headers("ops-bob")), settings
+        )
+    )
+    assert operator is not None and operator.id == OPERATOR_ID
+    assert approver is not None and approver.id == APPROVER_ID
+    with pytest.raises(HTTPException) as denied:
+        asyncio.run(
+            authorize_operation_read(
+                request_with_headers(trusted_headers("admin")), settings
+            )
+        )
+    assert denied.value.status_code == 403
     assert (
         asyncio.run(
             observe_operation_approve(
@@ -412,35 +561,40 @@ def test_capability_dependencies_are_attached_only_to_the_five_frozen_get_routes
     }
 
 
-def test_write_shadow_dependencies_are_attached_only_to_frozen_post_routes() -> None:
-    shadow_dependencies = {observe_operation_plan, observe_operation_approve}
+def test_operation_dependencies_are_attached_only_to_frozen_routes() -> None:
+    operation_dependencies = {
+        authorize_operation_plan,
+        authorize_operation_confirmation,
+        authorize_operation_read,
+    }
     actual: dict[tuple[str, str], set] = {}
     for route in [*operations_router.routes, *conversation_operations_router.routes]:
         dependencies = {
             item.call
             for item in route.dependant.dependencies
-            if item.call in shadow_dependencies
+            if item.call in operation_dependencies
         }
         for method in route.methods or set():
             if dependencies:
                 actual[(route.path, method)] = dependencies
 
     assert actual == {
-        ("/api/v1/operations", "POST"): {observe_operation_plan},
-        ("/api/v1/deployment-plans", "POST"): {observe_operation_plan},
-        ("/api/v1/deployment-operations", "POST"): {observe_operation_plan},
+        ("/api/v1/operations", "POST"): {authorize_operation_plan},
+        ("/api/v1/deployment-plans", "POST"): {authorize_operation_plan},
+        ("/api/v1/deployment-operations", "POST"): {authorize_operation_plan},
         ("/api/v1/deployment-operations/{operation_id}/rollback", "POST"): {
-            observe_operation_plan
+            authorize_operation_plan
         },
         (
             "/api/v1/events/{event_id}/conversation/turns/{turn_id}/restart-plan",
             "POST",
-        ): {observe_operation_plan},
+        ): {authorize_operation_plan},
         (
             "/api/v1/events/{event_id}/conversation/turns/{turn_id}/rollback-plan",
             "POST",
-        ): {observe_operation_plan},
+        ): {authorize_operation_plan},
         ("/api/v1/operations/{operation_id}/confirm", "POST"): {
-            observe_operation_approve
+            authorize_operation_confirmation
         },
+        ("/api/v1/operations/{operation_id}", "GET"): {authorize_operation_read},
     }

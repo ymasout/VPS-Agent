@@ -19,9 +19,11 @@ const reasonLabels: Record<string, string> = {
 export function DeploymentPlanPanel({
   candidates,
   focusServiceKey,
+  namedAuthorization = false,
 }: {
   candidates: DeploymentCandidate[];
   focusServiceKey?: string;
+  namedAuthorization?: boolean;
 }) {
   const [targets, setTargets] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState("");
@@ -37,7 +39,9 @@ export function DeploymentPlanPanel({
     setError("");
     try {
       const executable = candidate.deploy_capable && deployEnabled[candidate.service_key];
-      const response = await fetch(executable ? "/console/deployment-operations" : "/console/deployment-plans", {
+      const legacyPath = executable ? "/console/deployment-operations" : "/console/deployment-plans";
+      const namedPath = executable ? "/api/v1/deployment-operations" : "/api/v1/deployment-plans";
+      const response = await fetch(namedAuthorization ? namedPath : legacyPath, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

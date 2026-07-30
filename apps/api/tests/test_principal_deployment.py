@@ -66,6 +66,20 @@ def test_principal_deployment_keeps_write_token_out_of_web() -> None:
         validate_principal_deployment(document)
 
 
+def test_principal_deployment_requires_api_web_enforcement_parity() -> None:
+    document = deployment_config()
+    document["services"]["api"]["environment"][
+        "PRINCIPAL_WRITE_AUTHORIZATION_ENABLED"
+    ] = "true"
+    with pytest.raises(PrincipalDeploymentError, match="flags must match"):
+        validate_principal_deployment(document)
+
+    document["services"]["web"]["environment"][
+        "PRINCIPAL_WRITE_AUTHORIZATION_ENABLED"
+    ] = "true"
+    validate_principal_deployment(document)
+
+
 def test_disabled_context_still_requires_three_distinct_caddy_credentials() -> None:
     document = deployment_config()
     document["services"]["api"]["environment"][

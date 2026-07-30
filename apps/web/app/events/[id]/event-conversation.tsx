@@ -31,12 +31,14 @@ export function EventConversationPanel({
   operationCandidates = [],
   operationTimeline,
   deploymentHref = null,
+  namedAuthorization = false,
 }: {
   initial: EventConversation;
   unavailable?: boolean;
   operationCandidates?: ConversationOperationCandidate[];
   operationTimeline?: ConversationOperationTimeline;
   deploymentHref?: string | null;
+  namedAuthorization?: boolean;
 }) {
   const router = useRouter();
   const [turns, setTurns] = useState(initial.turns);
@@ -136,7 +138,7 @@ export function EventConversationPanel({
     const errorLabel = actionType === "docker_restart" ? "安全重启" : "显式回滚";
     try {
       const response = await fetch(
-        `/console/events/${initial.event_id}/conversation/turns/${turnId}/${path}`,
+        `${namedAuthorization ? "/api/v1" : "/console"}/events/${initial.event_id}/conversation/turns/${turnId}/${path}`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },

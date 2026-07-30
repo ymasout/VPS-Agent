@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { POST } from "./route";
 
-afterEach(() => { vi.unstubAllGlobals(); delete process.env.ADMIN_API_TOKEN; });
+afterEach(() => { vi.unstubAllGlobals(); delete process.env.ADMIN_API_TOKEN; delete process.env.PRINCIPAL_WRITE_AUTHORIZATION_ENABLED; });
 
 describe("operation plan proxy", () => {
   it("keeps admin authority server-side and forwards only to the control plane", async () => {
@@ -21,6 +21,20 @@ describe("operation plan proxy", () => {
     vi.stubGlobal("fetch", internalFetch);
     const request = new NextRequest("https://ops.example.com/console/operations", { method: "POST", headers: { host: "ops.example.com", origin: "https://evil.example", "content-type": "application/json" }, body: "{}" });
     expect((await POST(request)).status).toBe(403);
+    expect(internalFetch).not.toHaveBeenCalled();
+  });
+
+  it("fails closed instead of using the legacy admin proxy during named authorization", async () => {
+    process.env.ADMIN_API_TOKEN = "server-secret";
+    process.env.PRINCIPAL_WRITE_AUTHORIZATION_ENABLED = "true";
+    const internalFetch = vi.fn();
+    vi.stubGlobal("fetch", internalFetch);
+    const request = new NextRequest("https://ops.example.com/console/operations", {
+      method: "POST",
+      headers: { host: "ops.example.com", origin: "https://ops.example.com" },
+    });
+    const response = await POST(request);
+    expect(response.status).toBe(409);
     expect(internalFetch).not.toHaveBeenCalled();
   });
 });

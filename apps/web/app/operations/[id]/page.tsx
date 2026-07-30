@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getOperation } from "@/lib/api";
+import { getPrincipalForwardHeaders } from "@/lib/principal";
 import { notFound } from "next/navigation";
 import { OperationPanel } from "./operation-panel";
 
@@ -7,7 +8,20 @@ export const dynamic = "force-dynamic";
 
 export default async function OperationPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const namedAuthorization = process.env.PRINCIPAL_WRITE_AUTHORIZATION_ENABLED === "true";
   let operation;
-  try { operation = await getOperation(id); } catch { notFound(); }
-  return <main><Link className="back" href={operation.source_event_id ? `/events/${operation.source_event_id}` : "/"}>← 返回</Link><OperationPanel operation={operation} /></main>;
+  try {
+    const principalHeaders = await getPrincipalForwardHeaders();
+    operation = await getOperation(id, principalHeaders ?? undefined);
+  } catch {
+    notFound();
+  }
+  return (
+    <main>
+      <Link className="back" href={operation.source_event_id ? `/events/${operation.source_event_id}` : "/"}>
+        ← 返回
+      </Link>
+      <OperationPanel operation={operation} namedAuthorization={namedAuthorization} />
+    </main>
+  );
 }

@@ -258,8 +258,11 @@ class Settings(BaseSettings):
             raise ValueError("principal read authorization requires principal context")
         if self.principal_write_authorization_enabled and not self.principal_write_context_enabled:
             raise ValueError("principal write authorization requires principal write context")
-        if self.principal_write_authorization_enabled:
-            raise ValueError("principal write authorization is not available in M6.4c1")
+        if (
+            self.principal_write_authorization_enabled
+            and not self.principal_read_authorization_enabled
+        ):
+            raise ValueError("principal write authorization requires principal read authorization")
         if self.principal_write_context_enabled and not self.principal_context_enabled:
             raise ValueError("principal write context requires principal context")
         if self.principal_context_enabled:

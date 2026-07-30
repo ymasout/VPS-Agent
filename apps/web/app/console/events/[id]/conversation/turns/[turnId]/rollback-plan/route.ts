@@ -9,6 +9,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; turnId: string }> },
 ) {
+  if (process.env.PRINCIPAL_WRITE_AUTHORIZATION_ENABLED === "true") return NextResponse.json({ detail: "named operation plans must use the direct API route" }, { status: 409 });
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
   const protocol =
     request.headers.get("x-forwarded-proto") ?? request.nextUrl.protocol.replace(":", "");

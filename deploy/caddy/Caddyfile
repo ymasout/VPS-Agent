@@ -29,7 +29,7 @@
 		}
 	}
 
-	# M6.4c1 only observes trusted write identity. Existing API admin authorization remains authoritative.
+	# Frozen M6.4c write routes receive an independently authenticated Principal context.
 	@principal_write {
 		method POST
 		path_regexp principal_write_path ^/api/v1/(operations|deployment-plans|deployment-operations|deployment-operations/[^/]+/rollback|operations/[^/]+/confirm|events/[^/]+/conversation/turns/[^/]+/(restart|rollback)-plan)$

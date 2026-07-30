@@ -558,6 +558,7 @@ class OperationTransitionView(BaseModel):
     to_status: str
     actor_type: str
     actor_id: str | None
+    actor_principal_snapshot: dict | None
     reason: str | None
     details: dict
     created_at: datetime
@@ -574,6 +575,9 @@ class OperationView(BaseModel):
     status: str
     requested_by: str
     confirmed_by: str | None
+    requested_principal_snapshot: dict | None
+    confirmed_principal_snapshot: dict | None
+    authorization_mode: Literal["legacy", "named", "break_glass"]
     risk_level: str
     impact_summary: str
     plan_snapshot: dict

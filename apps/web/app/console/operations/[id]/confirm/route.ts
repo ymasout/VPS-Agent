@@ -2,6 +2,7 @@ import { isSameOrigin } from "../../../../../lib/registration";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  if (process.env.PRINCIPAL_WRITE_AUTHORIZATION_ENABLED === "true") return NextResponse.json({ detail: "principal confirmation is not available before M6.4c3" }, { status: 409 });
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
   const protocol = request.headers.get("x-forwarded-proto") ?? request.nextUrl.protocol.replace(":", "");
   if (!isSameOrigin(request.headers.get("origin"), host, protocol)) return NextResponse.json({ detail: "invalid request origin" }, { status: 403 });

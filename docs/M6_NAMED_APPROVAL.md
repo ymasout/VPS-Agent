@@ -1,6 +1,6 @@
 # M6.4c 角色授权与具名 M4 审批设计
 
-当前状态：**M6.4c1 已由 codex 实现、Claude 审计通过（无 P0/P1/P2），提交 `48263db`+`d6a9528` 推送至 main，四个 CI 全绿，并于 2026-07-30 通过两阶段 shadow 生产金丝雀；M6.4c2/c3 尚未实现。** M6.4b 已于 2026-07-30 通过独立审计、
+当前状态：**M6.4c1 已由 codex 实现、Claude 审计通过（无 P0/P1/P2），提交 `48263db`+`d6a9528` 推送至 main，四个 CI 全绿，并于 2026-07-30 通过两阶段 shadow 生产金丝雀；M6.4c2 已完成本地实现与验证、待独立审计/CI/授权金丝雀，c3 尚未实现。** M6.4b 已于 2026-07-30 通过独立审计、
 四条 CI 与两阶段生产只读金丝雀；生产运行 `d6a9528`、Alembic head
 `0020_m6_named_approval`，Principal 两个开关已还原关闭。M6.4c 会改变 M4 写路径
 的身份、授权和审计契约，必须单独实现、审计、迁移验证并取得生产金丝雀授权。
@@ -389,3 +389,30 @@ Ruff、单 head、0020 双向离线 SQL、Compose config、部署配置预检通
 - **Phase A（flags OFF）**：部署 `d6a9528` + 迁移 0019->0020（加 actor snapshot 列）+ Caddy 三组凭据 + 新 env vars；system-info commit=d6a9528/revision=0020/schema_current=true；ops/trans 14/89 不变；`/healthz` 最小；operator/approver 可登录（200）。
 - **Phase B（b1 shadow）**：开 `PRINCIPAL_CONTEXT_ENABLED`+`PRINCIPAL_WRITE_CONTEXT_ENABLED`；admin `/principal`=`caddy-basic:admin`/viewer/write_shadow；operator `/principal`=`local:50afb0f6-...`/operator/capabilities 含 operation:plan+operation:read；approver `/principal`=`local:3be51886-...`/approver/capabilities 含 operation:approve+operation:read；**伪造 `X-VPS-Agent-Principal-Id: forged-attacker` + operator 登录，API 仍看到 `local:50afb0f6-...`**（Caddy 覆盖生产实证）；响应不含 write token；ops/trans 不变。
 - **Phase C（还原）**：两 flag 还原 false；`/principal` 403。`d6a9528` 留作运行基线（flags OFF = legacy 行为）。
+
+## 20. M6.4c2 本地实现记录（2026-07-31）
+
+本切片未新增 migration，Alembic head 仍为 `0020_m6_named_approval`。已实现：
+
+- `operation:plan` 只接入冻结的六条计划 POST；enforcement 开启时仅 operator 可用，
+  approver/viewer、缺失或伪造上下文均失败关闭。每个 Operation 和首条 Transition 写入同源、
+  不含 token 的稳定 Principal 快照，`authorization_mode=named`。
+- 每条可执行计划仍只到 `awaiting_confirmation`（预检失败则 `failed`），不生成 nonce、签名或
+  Agent task；永久不可执行的 M4.2a preview 仍保持 `planned`。
+- `operation:read` 只接入 `GET /api/v1/operations/{id}`，仅 operator/approver 可读；未改其他
+  GET、POST、policy、cancel、Agent、签名或 Operation 状态机。
+- Web 在 enforcement 开启时将六条计划请求改为浏览器同源直达 Caddy→API，Web 只接收非秘密
+  开关，不接收 write token；对应 legacy `/console/...` 管理代理先于读取 `ADMIN_API_TOKEN`
+  失败关闭。API 严格验证唯一 Origin、`Sec-Fetch-Site: same-origin` 与 JSON Content-Type。
+- c3 尚未实现，因此 API 与 Web 确认入口在 enforcement 模式明确返回 409，页面不显示确认
+  checkbox/执行按钮；启动时若存在 legacy `awaiting_confirmation`/`queued` Operation 则拒绝
+  开启 c2，避免旧计划跨授权模式执行。
+- Operation 响应增加有限 actor snapshot 与 authorization mode，用于显示具名请求者；不返回
+  proxy token、角色绑定全集、密码哈希或管理令牌。部署 preflight 额外要求 API/Web
+  enforcement flag 一致。
+
+本地验证：API `291 passed, 13 skipped`；Web `98 passed`、ESLint、production build；Ruff、
+Go test/vet、Compose config 与 `git diff --check` 通过。Docker Desktop 真实 Caddy 多用户、
+七路由覆盖/header 隔离通过；临时 PostgreSQL 16 完成 schema check，并通过真实具名计划
+`awaiting_confirmation`、actor snapshot、无 nonce/签名及 0020 downgrade fail-closed 两项测试。
+当前生产仍为 `d6a9528 + 0020`、Principal flags OFF；以上状态不代表 c2 已提交、CI 或生产验证。
