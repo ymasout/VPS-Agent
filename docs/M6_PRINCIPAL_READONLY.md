@@ -1,6 +1,6 @@
 # M6.4b 可信 Principal 与有限只读角色
 
-当前状态：**b1+b2 已完成本地实现与本地验证，等待独立审计、提交后 Ubuntu CI 和经授权的两阶段只读金丝雀。** M6.4a 已于 2026-07-30 以
+当前状态：**b1+b2 已由 codex 实现、Claude 审计通过（无 P0/P1/P2），提交 `4c19a45`+`d847a7d` 推送至 main，四个 CI 全绿（含真实 Caddy 集成测试），并于 2026-07-30 通过两阶段只读生产金丝雀。** M6.4a 已于 2026-07-30 以
 `714da5a` 完成四条 CI 验证；M6.4b 只建立可信 Principal 上下文和有限的
 只读 capability，不改变任何写权限、M4 actor、Agent 协议或生产数据模型。
 
@@ -249,5 +249,13 @@ M6.4b 计划**不新增 Alembic 迁移**，head 保持
 - 本地 API 定向测试、Ruff、Web 95 项、ESLint、production build、Compose config 与
   `git diff --check` 已通过；本机 Docker daemon 未运行，真实 Caddy 覆盖/清除测试已加入
   Control Plane Web CI，必须在提交后 Ubuntu CI 通过后才能进入金丝雀。
-- 未新增 Alembic 迁移，head 仍为 `0019_m6_multichannel_notify`。当前不提交、不推送、
-  不部署；M6.4b 仍未完成。
+- 未新增 Alembic 迁移，head 仍为 `0019_m6_multichannel_notify`。已提交推送并部署；M6.4b 生产金丝雀通过 2026-07-30（见 §16）。
+
+## 16. 生产金丝雀记录（2026-07-30）
+
+两阶段只读金丝雀在用户明确授权下执行并通过：
+
+- **Phase A（flags OFF）**：部署 `d847a7d` + Caddy 新配置（header 覆盖/清除）+ 新 env vars；system-info commit=d847a7d/revision=0019；`/principal` 403（context off）；ops/trans 14/89 不变；`/healthz` 最小。
+- **Phase B（b1 shadow）**：开 `PRINCIPAL_CONTEXT_ENABLED=true`；`/api/v1/principal` 返回 `id=caddy-basic:admin`、`auth_source=caddy_basic`、`authorization_mode=shadow`、`capabilities=[event:read,fleet:read,system:read]`；**发送伪造 `X-VPS-Agent-Principal-Id: forged-attacker` + valid Basic Auth，API 仍看到 `caddy-basic:admin`**（Caddy 覆盖生产实证）；响应不含 proxy token；ops/trans 不变。
+- **Phase C（b2 read-enforced）**：开 `PRINCIPAL_READ_AUTHORIZATION_ENABLED=true`；mode=read_enforced；`/agents` 200、`/events` 200（Basic Auth 注入 principal，capability 通过，无需 admin token）；无 Basic Auth -> 401；`/healthz` 200；ops/trans 不变。
+- **Phase D（还原）**：两 flag 还原 false；`/principal` 403。`d847a7d` 留作运行基线（flags OFF = legacy 行为）。

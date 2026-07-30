@@ -312,7 +312,7 @@ M5.2.1 本地验收：API 157 项通过；Web 43 项、ESLint、生产构建、�
 
 ## 8. M6：自托管产品化
 
-状态：**进行中（M6.1、M6.2、M6.3、M6.4a 已完成；M6.4b 本地实现待审计/CI/金丝雀；Web SSH 待开始）**
+状态：**进行中（M6.1、M6.2、M6.3、M6.4a、M6.4b 已完成（生产金丝雀通过 2026-07-30）；Web SSH 待开始）**
 
 2026-07-26 完成 M6 第一轮发布、Compose、Alembic、备份/恢复、Agent 安装升级、版本/健康、Web 管理入口、CI 和发布资产审计。当前结论：
 
@@ -346,7 +346,7 @@ M6.4a 随后以 `ed4e584` 提交，并按 CI 失败证据完成三轮收敛：`3
 
 同日完成 M6.4b 代码前设计。当前多数只读 GET 在 API 内没有独立认证，依赖外层 Caddy Basic Auth；Web 再经内部网络读取 API，因此不能直接信任浏览器身份 header。首片拆为 b1/b2：b1 由 Caddy 覆盖 authenticated user/header 并注入仅服务间共享 token，Web/API 常量时间验证后构造固定 `local` 的 Principal shadow；b2 只对 system/fleet/event 的明确 GET 执行有限 read capability。两个 flag 默认关闭；无迁移、不修改任何写权限、M4 actor/状态机或 Agent。完整威胁模型、测试与金丝雀边界见 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md)。
 
-随后连续完成 M6.4b1+b2 本地实现：Caddy 对认证后的 Web/管理 API 覆盖 Principal ID/source/proxy-token，对 Agent、GitHub webhook、下载和 `/healthz` 清除这些 header；Web 只在 server-only helper 常量时间验证 token 后向 API 转发，API 再验证唯一 header、固定 source、token、用户名格式和部署 allowlist。`/principal` 只返回有限 shadow/read-enforced 视图；`system:read`、`fleet:read`、`event:read` 只挂到冻结的 5 个 GET，开关关闭时保持旧行为，所有 POST、写代理、M4 actor/状态机和 Agent 均未修改。未新增迁移，head 保持 `0019_m6_multichannel_notify`。本地 API 定向测试、Ruff、Web 95 项、ESLint、production build、Compose config 和 diff check 已通过；真实 Caddy 覆盖/清除集成门已加入 Web CI，尚待独立审计、提交后 Ubuntu CI 与经授权金丝雀，因此 M6.4b 尚未完成。
+随后连续完成 M6.4b1+b2 本地实现：Caddy 对认证后的 Web/管理 API 覆盖 Principal ID/source/proxy-token，对 Agent、GitHub webhook、下载和 `/healthz` 清除这些 header；Web 只在 server-only helper 常量时间验证 token 后向 API 转发，API 再验证唯一 header、固定 source、token、用户名格式和部署 allowlist。`/principal` 只返回有限 shadow/read-enforced 视图；`system:read`、`fleet:read`、`event:read` 只挂到冻结的 5 个 GET，开关关闭时保持旧行为，所有 POST、写代理、M4 actor/状态机和 Agent 均未修改。未新增迁移，head 保持 `0019_m6_multichannel_notify`。本地 API 定向测试、Ruff、Web 95 项、ESLint、production build、Compose config 和 diff check 已通过；真实 Caddy 覆盖/清除集成门已加入 Web CI。Claude 审计通过（无 P0/P1/P2），提交 `4c19a45`+`d847a7d` 推送至 main，四个 CI 全绿（含真实 Caddy 集成测试）。2026-07-30 两阶段只读生产金丝雀通过：Phase A flags OFF 无回归；Phase B shadow `/principal` 返回 `caddy-basic:admin`、伪造 header 被 Caddy 覆盖（生产实证）、token 不泄露、ops/trans 14/89 不变；Phase C read-enforced 5 GET 可访问（principal capability）、无 Basic Auth 401、`/healthz` 200、ops/trans 不变；Phase D 还原 403。
 
 2026-07-27 M6.1 生产金丝雀通过：部署 `38b8d40`（注入 build version/commit/build time）+ postflight；`/api/v1/system-info` 返回 `commit_sha=38b8d40e76ea1c30497bbfa0f17d2b87aaa27977`、`version=0.6.1`、`schema_current=true`、`alembic_revision=["0017_m5_runbook_drafts"]`；`preflight` 生成原子备份包 `control-plane-pre-migration-20260727T131115Z`，`inspect` + 隔离空库 `restore` 成功，审计摘要 `schema_current=true`/`key_table_counts_match=true`/`active_operation_count=0`；恢复后 `ops=13/trans=81/agents=5` 与生产一致；生产 `ops/trans` 前后不变、日志无秘密、开关未变；隔离项目已清理，首份原子备份包保留（0700/0600）。M6.1 无 feature flag，`38b8d40` 留作运行基线。
 
