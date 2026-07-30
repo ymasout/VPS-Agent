@@ -52,6 +52,8 @@ adopt_database() {
 
 preflight() {
     dc config --quiet
+    dc config --format json | dc run --rm -T --no-deps api \
+        python -m app.principal_deployment
     dc run --rm --no-deps caddy caddy validate --config /etc/caddy/cfg/Caddyfile
 
     timestamp=$(date -u +%Y%m%dT%H%M%SZ)

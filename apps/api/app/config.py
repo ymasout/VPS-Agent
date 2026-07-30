@@ -1,11 +1,67 @@
+import json
 import re
+import unicodedata
 from datetime import datetime, timezone
 from functools import lru_cache
+from typing import Literal, cast
+from uuid import UUID
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .notification_catalog import NOTIFICATION_CHANNELS
+
+
+class PrincipalRoleBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    auth_source: Literal["caddy_basic"]
+    auth_subject: str
+    principal_id: str
+    display_name: str
+    roles: tuple[Literal["operator", "approver"], ...]
+
+    @field_validator("auth_subject")
+    @classmethod
+    def validate_auth_subject(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._@-]{0,127}", value):
+            raise ValueError("principal auth subject is invalid")
+        return value
+
+    @field_validator("principal_id")
+    @classmethod
+    def validate_principal_id(cls, value: str) -> str:
+        prefix, separator, raw_uuid = value.partition(":")
+        if prefix != "local" or separator != ":":
+            raise ValueError("principal id must use the local UUID namespace")
+        try:
+            parsed = UUID(raw_uuid)
+        except ValueError as error:
+            raise ValueError("principal id must use the local UUID namespace") from error
+        if parsed.version != 4 or str(parsed) != raw_uuid:
+            raise ValueError("principal id must contain a canonical UUIDv4")
+        return value
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, value: str) -> str:
+        if value != value.strip() or not 1 <= len(value) <= 128:
+            raise ValueError("principal display name is invalid")
+        if any(unicodedata.category(character).startswith("C") for character in value):
+            raise ValueError("principal display name is invalid")
+        return value
+
+    @field_validator("roles", mode="before")
+    @classmethod
+    def validate_roles(
+        cls, value: object
+    ) -> tuple[Literal["operator", "approver"], ...]:
+        if not isinstance(value, list | tuple):
+            raise ValueError("principal roles must be an array")
+        value = tuple(value)
+        if len(value) != 1 or value[0] not in {"operator", "approver"}:
+            raise ValueError("principal must have exactly one write role")
+        return cast(tuple[Literal["operator", "approver"], ...], value)
 
 
 class Settings(BaseSettings):
@@ -23,6 +79,10 @@ class Settings(BaseSettings):
     principal_read_authorization_enabled: bool = False
     principal_proxy_token: SecretStr | None = None
     principal_viewer_ids: str = ""
+    principal_write_context_enabled: bool = False
+    principal_write_authorization_enabled: bool = False
+    principal_write_proxy_token: SecretStr | None = None
+    principal_role_bindings_json: tuple[PrincipalRoleBinding, ...] = ()
     dev_agent_registration_token: str | None = None
     agent_offline_after_seconds: int = Field(default=90, ge=30, le=3600)
     agent_availability_scan_interval_seconds: int = Field(default=30, ge=5, le=300)
@@ -131,6 +191,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "principal_proxy_token",
+        "principal_write_proxy_token",
         "github_app_id",
         "github_app_private_key_base64",
         "github_app_installation_id",
@@ -163,10 +224,44 @@ class Settings(BaseSettings):
     def principal_viewers(self) -> tuple[str, ...]:
         return tuple(item for item in self.principal_viewer_ids.split(",") if item)
 
+    @field_validator("principal_role_bindings_json", mode="before")
+    @classmethod
+    def validate_principal_role_bindings_json(cls, value: object) -> object:
+        if value in (None, ""):
+            return ()
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError as error:
+                raise ValueError("principal role bindings must be valid JSON") from error
+        if not isinstance(value, list | tuple):
+            raise ValueError("principal role bindings must be a JSON array")
+        return tuple(value)
+
+    @property
+    def principal_role_bindings(self) -> tuple[PrincipalRoleBinding, ...]:
+        return self.principal_role_bindings_json
+
+    def principal_role_binding(self, auth_subject: str) -> PrincipalRoleBinding | None:
+        return next(
+            (
+                binding
+                for binding in self.principal_role_bindings
+                if binding.auth_subject == auth_subject
+            ),
+            None,
+        )
+
     @model_validator(mode="after")
     def validate_diagnostic_timing(self) -> "Settings":
         if self.principal_read_authorization_enabled and not self.principal_context_enabled:
             raise ValueError("principal read authorization requires principal context")
+        if self.principal_write_authorization_enabled and not self.principal_write_context_enabled:
+            raise ValueError("principal write authorization requires principal write context")
+        if self.principal_write_authorization_enabled:
+            raise ValueError("principal write authorization is not available in M6.4c1")
+        if self.principal_write_context_enabled and not self.principal_context_enabled:
+            raise ValueError("principal write context requires principal context")
         if self.principal_context_enabled:
             token = (
                 self.principal_proxy_token.get_secret_value()
@@ -177,6 +272,36 @@ class Settings(BaseSettings):
                 raise ValueError("principal proxy token must be a non-placeholder secret")
             if not self.principal_viewers:
                 raise ValueError("at least one principal viewer id is required")
+        subjects = [binding.auth_subject for binding in self.principal_role_bindings]
+        principal_ids = [binding.principal_id for binding in self.principal_role_bindings]
+        if len(subjects) != len(set(subjects)):
+            raise ValueError("principal role binding subjects must be unique")
+        if len(principal_ids) != len(set(principal_ids)):
+            raise ValueError("principal role binding ids must be unique")
+        if self.principal_write_context_enabled:
+            write_token = (
+                self.principal_write_proxy_token.get_secret_value()
+                if self.principal_write_proxy_token is not None
+                else ""
+            )
+            read_token = (
+                self.principal_proxy_token.get_secret_value()
+                if self.principal_proxy_token is not None
+                else ""
+            )
+            if len(write_token) < 32 or write_token.lower().startswith(
+                ("replace_", "change-me")
+            ):
+                raise ValueError(
+                    "principal write proxy token must be a non-placeholder secret"
+                )
+            if write_token == read_token:
+                raise ValueError("principal write proxy token must differ from read token")
+            roles = {binding.roles[0] for binding in self.principal_role_bindings}
+            if roles != {"operator", "approver"}:
+                raise ValueError(
+                    "principal write context requires distinct operator and approver bindings"
+                )
         if self.app_env == "production":
             if self.control_plane_instance_id == "unset-instance" or (
                 self.control_plane_instance_id.startswith("replace_")

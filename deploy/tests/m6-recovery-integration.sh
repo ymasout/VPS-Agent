@@ -30,6 +30,10 @@ CONTROL_PLANE_COMMIT_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 CONTROL_PLANE_BUILD_TIME=2026-07-26T00:00:00Z
 CADDY_ADMIN_USER=test
 CADDY_ADMIN_PASSWORD_HASH=unused
+CADDY_OPERATOR_USER=test-operator
+CADDY_OPERATOR_PASSWORD_HASH=unused-operator
+CADDY_APPROVER_USER=test-approver
+CADDY_APPROVER_PASSWORD_HASH=unused-approver
 POSTGRES_DB=vps_agent
 POSTGRES_USER=vps_agent
 POSTGRES_PASSWORD=m6_recovery_test
@@ -98,7 +102,7 @@ fi
 
 wrong_revision="$TEST_ROOT/wrong-revision-package"
 cp -R "$package" "$wrong_revision"
-sed -i 's/0019_m6_multichannel_notify/0018_m6_notification_tests/g' \
+sed -i 's/0020_m6_named_approval/0019_m6_multichannel_notify/g' \
     "$wrong_revision/manifest.json"
 (
     cd "$wrong_revision"

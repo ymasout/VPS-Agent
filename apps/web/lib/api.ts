@@ -17,9 +17,10 @@ export type Principal = {
   display_name: string;
   auth_source: "caddy_basic";
   organization_id: "local";
-  roles: ["viewer"];
-  capabilities: Array<"system:read" | "fleet:read" | "event:read">;
+  roles: Array<"viewer" | "operator" | "approver">;
+  capabilities: Array<"system:read" | "fleet:read" | "event:read" | "operation:read" | "operation:plan" | "operation:approve">;
   authorization_mode: "shadow" | "read_enforced";
+  write_authorization_mode: "disabled" | "shadow" | "enforced";
 };
 export type PrincipalForwardHeaders = Record<string, string>;
 export type NotificationConfiguration = {

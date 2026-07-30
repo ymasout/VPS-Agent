@@ -22,6 +22,7 @@ from .models import (
     ServiceInstance,
     ServiceStatus,
 )
+from .principal import observe_operation_approve, observe_operation_plan
 from .redaction import redact_text, truncate_lines, truncate_utf8
 from .schemas import (
     AgentReport,
@@ -561,7 +562,7 @@ async def run_rollback_prechecks(
     "/operations",
     response_model=OperationView,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(observe_operation_plan), Depends(require_admin)],
 )
 async def create_operation(
     payload: OperationPlanCreate,
@@ -592,7 +593,7 @@ async def create_operation(
     "/deployment-plans",
     response_model=OperationView,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(observe_operation_plan), Depends(require_admin)],
 )
 async def create_deployment_plan(
     payload: DeploymentPlanCreate,
@@ -759,7 +760,7 @@ async def update_deploy_policy(
     "/deployment-operations",
     response_model=OperationView,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(observe_operation_plan), Depends(require_admin)],
 )
 async def create_deployment_operation(
     payload: DeploymentPlanCreate,
@@ -962,7 +963,7 @@ async def build_rollback_plan(
     "/deployment-operations/{operation_id}/rollback",
     response_model=OperationView,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(observe_operation_plan), Depends(require_admin)],
 )
 async def create_rollback_operation(
     operation_id: str,
@@ -993,7 +994,7 @@ async def create_rollback_operation(
 @router.post(
     "/operations/{operation_id}/confirm",
     response_model=OperationView,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(observe_operation_approve), Depends(require_admin)],
 )
 async def confirm_operation(
     operation_id: str,

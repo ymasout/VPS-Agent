@@ -35,7 +35,7 @@ def test_system_info_is_managed_and_health_stays_minimal() -> None:
         "commit_sha": "unknown-build",
         "build_time": "unknown-build-time",
         "alembic_revision": [],
-        "expected_alembic_revision": ["0019_m6_multichannel_notify"],
+        "expected_alembic_revision": ["0020_m6_named_approval"],
         "schema_current": False,
     }
     assert health.json() == {"status": "ok", "service": "api"}

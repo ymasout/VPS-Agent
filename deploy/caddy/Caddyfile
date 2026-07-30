@@ -11,6 +11,7 @@
 			header_up -X-VPS-Agent-Principal-Id
 			header_up -X-VPS-Agent-Principal-Source
 			header_up -X-VPS-Agent-Principal-Proxy-Token
+			header_up -X-VPS-Agent-Principal-Write-Token
 		}
 	}
 
@@ -24,6 +25,26 @@
 			header_up -X-VPS-Agent-Principal-Id
 			header_up -X-VPS-Agent-Principal-Source
 			header_up -X-VPS-Agent-Principal-Proxy-Token
+			header_up -X-VPS-Agent-Principal-Write-Token
+		}
+	}
+
+	# M6.4c1 only observes trusted write identity. Existing API admin authorization remains authoritative.
+	@principal_write {
+		method POST
+		path_regexp principal_write_path ^/api/v1/(operations|deployment-plans|deployment-operations|deployment-operations/[^/]+/rollback|operations/[^/]+/confirm|events/[^/]+/conversation/turns/[^/]+/(restart|rollback)-plan)$
+	}
+	handle @principal_write {
+		basic_auth {
+			{$CADDY_ADMIN_USER} {$CADDY_ADMIN_PASSWORD_HASH}
+			{$CADDY_OPERATOR_USER} {$CADDY_OPERATOR_PASSWORD_HASH}
+			{$CADDY_APPROVER_USER} {$CADDY_APPROVER_PASSWORD_HASH}
+		}
+		reverse_proxy api:8000 {
+			header_up X-VPS-Agent-Principal-Id {http.auth.user.id}
+			header_up X-VPS-Agent-Principal-Source caddy_basic
+			header_up X-VPS-Agent-Principal-Proxy-Token {$PRINCIPAL_PROXY_TOKEN}
+			header_up X-VPS-Agent-Principal-Write-Token {$PRINCIPAL_WRITE_PROXY_TOKEN}
 		}
 	}
 
@@ -32,11 +53,14 @@
 	handle @control_api {
 		basic_auth {
 			{$CADDY_ADMIN_USER} {$CADDY_ADMIN_PASSWORD_HASH}
+			{$CADDY_OPERATOR_USER} {$CADDY_OPERATOR_PASSWORD_HASH}
+			{$CADDY_APPROVER_USER} {$CADDY_APPROVER_PASSWORD_HASH}
 		}
 		reverse_proxy api:8000 {
 			header_up X-VPS-Agent-Principal-Id {http.auth.user.id}
 			header_up X-VPS-Agent-Principal-Source caddy_basic
 			header_up X-VPS-Agent-Principal-Proxy-Token {$PRINCIPAL_PROXY_TOKEN}
+			header_up -X-VPS-Agent-Principal-Write-Token
 		}
 	}
 
@@ -44,11 +68,14 @@
 	handle {
 		basic_auth {
 			{$CADDY_ADMIN_USER} {$CADDY_ADMIN_PASSWORD_HASH}
+			{$CADDY_OPERATOR_USER} {$CADDY_OPERATOR_PASSWORD_HASH}
+			{$CADDY_APPROVER_USER} {$CADDY_APPROVER_PASSWORD_HASH}
 		}
 		reverse_proxy web:3000 {
 			header_up X-VPS-Agent-Principal-Id {http.auth.user.id}
 			header_up X-VPS-Agent-Principal-Source caddy_basic
 			header_up X-VPS-Agent-Principal-Proxy-Token {$PRINCIPAL_PROXY_TOKEN}
+			header_up -X-VPS-Agent-Principal-Write-Token
 		}
 	}
 }

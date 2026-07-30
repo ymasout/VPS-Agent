@@ -16,7 +16,17 @@ for name in (
 ):
     os.environ[name] = ""
 
-for name in ("PRINCIPAL_CONTEXT_ENABLED", "PRINCIPAL_READ_AUTHORIZATION_ENABLED"):
+for name in (
+    "PRINCIPAL_CONTEXT_ENABLED",
+    "PRINCIPAL_READ_AUTHORIZATION_ENABLED",
+    "PRINCIPAL_WRITE_CONTEXT_ENABLED",
+    "PRINCIPAL_WRITE_AUTHORIZATION_ENABLED",
+):
     os.environ[name] = "false"
-for name in ("PRINCIPAL_PROXY_TOKEN", "PRINCIPAL_VIEWER_IDS"):
+for name in (
+    "PRINCIPAL_PROXY_TOKEN",
+    "PRINCIPAL_VIEWER_IDS",
+    "PRINCIPAL_WRITE_PROXY_TOKEN",
+):
     os.environ[name] = ""
+os.environ["PRINCIPAL_ROLE_BINDINGS_JSON"] = "[]"

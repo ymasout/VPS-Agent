@@ -1,6 +1,6 @@
 # M6.4 协作与开源分发评估
 
-当前状态：**M6.4a 已完成（`714da5a`，四条 CI 全绿，无生产金丝雀）；M6.4b 已完成本地实现与本地验证、待独立审计/提交后 CI/经授权金丝雀；M6.4c–d 尚未开始。** M6.4a 不代表已经具备团队账号、RBAC 或正式控制平面发行版。
+当前状态：**M6.4a 已完成（`714da5a`，四条 CI 全绿，无生产金丝雀）；M6.4b 已完成独立审计、四条 CI 和两阶段生产只读金丝雀；M6.4c 设计审计通过，c1 本地已实现、待代码审计/CI/金丝雀，c2/c3 尚未实现；M6.4d 尚未开始。** 当前状态仍不代表已经具备团队写授权、全站 RBAC 或正式控制平面发行版。
 
 ## 1. 目标
 
@@ -105,7 +105,7 @@
 - 从干净 Git 索引生成源码包；CI 验证不含 `.env`、密钥、数据库、备份、恢复审计、本机构建或缓存文件。
 - 增加 secret scan、依赖许可证清单、SBOM 和已有三条 CI 聚合门；先不发布控制平面镜像。
 
-### M6.4b：可信 actor 基础（只读落地）
+### M6.4b：可信 actor 基础（只读落地，已完成）
 
 - 定义服务端 `Principal` 和 capability 表，不接受请求 body 中的 actor。
 - 在明确列出的只读管理端点和有限身份展示中传播 server-derived actor；默认 feature flag 关闭，legacy 单管理员模式继续工作。
@@ -118,6 +118,7 @@
 - 服务端逐路由执行 capability 校验；先 viewer/read-only，再 operation plan，最后 operation approve。
 - `requested_by`、`confirmed_by` 和 Transition actor 全部由 principal 派生并保存不可变快照；移除客户端 `confirmed_by`。
 - 如启用 maker-checker，服务端拒绝同一 principal 自批；不得自动找人、自动审批或超时后降级为共享管理员。
+- 冻结设计见 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)：独立 write token 不进入 Web，稳定 Principal 绑定和 actor 快照保留历史，实施按 c1 shadow → c2 具名计划 → c3 具名确认分门推进。
 
 ### M6.4d：正式发行与协作收尾
 
@@ -127,19 +128,18 @@
 
 ## 9. 当前纵向切片
 
-M6.4a 已完成。**M6.4b1 + M6.4b2：可信 Principal shadow 与有限只读
-capability** 已连续完成本地实现与本地验证，但仍必须分别完成独立审计、提交后 CI 和
-经授权金丝雀：
+M6.4a/b 已完成。当前切片为 **M6.4c：角色授权与具名 M4 审批**；设计审计已通过，c1
+写身份 shadow 已完成本地实现与验证、待代码审计/CI/金丝雀，c2/c3 尚未实现。原有单
+Caddy 用户、共享 `ADMIN_API_TOKEN`、正文 `confirmed_by` 和硬编码
+`local-admin` 不能提供可信 maker-checker。M6.4c 分为：
 
-1. b1 由 Caddy 覆盖认证用户名和内部 proxy token，Web/API 验证后构造固定
-   `organization_id=local` 的 Principal；只提供有限 `/principal` 状态和 shadow
-   展示，不改变现有允许/拒绝结果。
-2. b2 仅把 `system:read`、`fleet:read`、`event:read` 接入明确列出的 GET 路由；
-   flag 关闭时完全兼容，开启时缺失或伪造身份失败关闭。
+1. c1：至少两个独立认证 subject、稳定 Principal 角色绑定、独立 Caddy/API write token、
+   actor snapshot migration 与 write-context shadow；
+2. c2：只让 operator 对精确 M4 入口创建具名冻结计划，approver/viewer 失败关闭；
+3. c3：只让不同 approver 确认，API 行锁事务拒绝同人自批并保留现有 M4 全链。
 
-M6.4b 不新增迁移，不更改写代理、`ADMIN_API_TOKEN`、M4 actor/状态机或 Agent。
-它也不宣称当前单 Caddy 用户已形成多人协作。完整实现边界见
-[M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md)。
+完整边界见 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)。该设计不新增 SaaS、
+用户注册、OIDC、Agent 协议、自动确认/执行/回滚或 Web SSH。
 
 ## 10. 测试矩阵
 
@@ -154,8 +154,8 @@ M6.4b 不新增迁移，不更改写代理、`ADMIN_API_TOKEN`、M4 actor/状态
 ## 11. 生产金丝雀边界
 
 - M6.4a 源码分发门已以 CI-only 方式完成，没有部署生产、创建正式 Release 或改变仓库可见性。
-- M6.4b 首轮只允许 default-off、只读 principal shadow 记录；不得改变现有写权限判断或 M4 actor。
-- M6.4c 写路径需要独立两级金丝雀：先证明 viewer/operator 不能确认，再由具名 approver 对一条低影响计划完成既有 M4 全链；操作者身份必须由服务端证据核对。
+- M6.4b 已完成只读生产验证，验证后 flags 已还原关闭；其 read token 不得在 M6.4c 复用为写 actor 证明。
+- M6.4c 写路径按 c1/c2/c3 分阶段金丝雀：c1 只验证具名写身份 shadow 与伪造覆盖；c2 验证具名 operator 创建低影响计划且 viewer/approver 不能创建；c3 先证明 requester 自批和 viewer/operator 确认均被拒绝，再由不同具名 approver 完成既有 M4 全链。所有 actor 必须由服务端 Principal 证据核对。
 - 金丝雀不得删除共享紧急入口，除非新身份路径、恢复流程和锁死演练均已通过；紧急入口的每次使用必须形成高优先级审计。
 - 任何正式 Release、镜像推送或生产身份切换均需用户单独明确授权；仓库与许可证已在 M6.4a 公开落地。
 
@@ -193,7 +193,7 @@ M6.4b 不新增迁移，不更改写代理、`ADMIN_API_TOKEN`、M4 actor/状态
 
 以下为独立设计审计提出的实现 watch-item，非设计缺口，但 M6.4b/c/d 实现时必须处理：
 
-1. **`confirmed_by` 移除是 confirm 端点契约变更（M6.4c）**：M4.1/M5.3 金丝雀使用了 body `{"confirmed_by":"local-admin"}`（由 Web 代理注入）。M6.4c 移除客户端 `confirmed_by` 改为 principal 派生时，需明确 legacy 兼容路径：是硬切（新版本不接受 body 字段）还是过渡期接受后忽略并记录 deprecation 审计。Web 代理 `/console/operations/{id}/confirm` 的 body 注入逻辑需同步修改。实现时必须在 M6.4c 威胁建模中覆盖。
+1. **`confirmed_by` 移除是 confirm 端点契约变更（M6.4c）**：M4.1/M5.3 金丝雀使用了 body `{"confirmed_by":"local-admin"}`（由 Web 代理注入）。冻结设计已选择开关隔离的过渡：feature OFF 时保留 legacy 契约；enforcement ON 时 confirmation 只接受空 body，客户端 actor 字段必须拒绝，身份仅由 Principal 派生，同时禁用 Web 管理代理对该写路由的 token/body 注入。外部 legacy 客户端的废弃窗口必须在实施文档中明确。
 
 2. **`ADMIN_API_TOKEN` 降级为 break-glass（M6.4c）**：M6.4b 按冻结边界继续保留现有 legacy 管理入口，不能在只读首片中改名或改变语义。M6.4c 引入具名写授权时，才需明确令牌轮换流程、每次 break-glass 使用的高优先级审计告警，以及"令牌泄露后如何在不锁死管理员的前提下撤销"，并完成恢复与锁死演练。
 
@@ -211,10 +211,24 @@ M6.4b 不新增迁移，不更改写代理、`ADMIN_API_TOKEN`、M4 actor/状态
 - `ed4e584` 提交后按 CI 证据完成三轮修复：`3d62f28` 精确抑制新增测试中的两项合成 PEM；`8122dc8` 审核批准 sharp Linux 平台包的 `LGPL-3.0-or-later`；`0a47a15` 增加 clean-worktree 有限诊断；`714da5a` 忽略 Gitleaks 生成的 `results.sarif`。
 - 最终 `714da5a` 的 Recovery、Migrations、Web、Source Distribution 四条 CI 全绿。Source Distribution 验证 Gitleaks、源码候选 283 文件、REUSE 278/278、依赖 421 包零拒绝、SPDX SBOM 和 archive build。该切片不含 API、数据库、Agent 或生产运行变更，无需生产金丝雀；M6.4a 完成。
 
-## 16. M6.4b 本地实现交接
+## 16. M6.4b 完成记录
 
-M6.4b 已按代码前审计与冻结设计完成本地实现，完整边界与本地验证记录见
-[M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md)。实现保持可信 Principal shadow
-→ 有限 GET capability 的顺序；两个开关默认关闭，无迁移，不修改写代理、M4 actor/状态机
-或 Agent。真实 Caddy header 覆盖/清除门已加入 Web CI，当前仍待独立审计、提交后 CI 与
-经授权的两阶段只读金丝雀，不得提前标记完成或跨过 M6.4c 修改写权限。
+M6.4b 已按可信 Principal shadow → 有限 GET capability 的顺序完成。代码
+`4c19a45` + Gitleaks 修复 `d847a7d` 已推送 main，四条 CI 全绿并包含真实 Caddy
+header 覆盖/清除门。2026-07-30 两阶段生产只读金丝雀实证 `caddy-basic:admin`、
+shadow/read-enforced、伪造 header 被覆盖、有限 GET 成功且 ops/trans 14/89 不变；验证后
+flags 已还原关闭。完整证据见 [M6_PRINCIPAL_READONLY.md §16](./M6_PRINCIPAL_READONLY.md#16-生产金丝雀记录2026-07-30)。
+
+## 17. M6.4c 设计交接
+
+M6.4c 不能直接复用 M6.4b 的共享 read token 或现有 Web 管理代理。冻结设计采用独立且不
+注入 Web 的 write token、稳定 Principal 绑定、具名 actor 快照、精确
+`operation:read/plan/approve` 路由和默认 maker-checker，并把 legacy/break-glass 明确
+隔离。计划 migration 为 `0020_m6_named_approval`；Agent 任务协议和 M4 状态机不变。
+完整设计见 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)。
+
+M6.4c1 已按冻结设计落地严格角色绑定、独立 write token、三组 Caddy 凭据、精确 7 路由
+shadow、`0020_m6_named_approval` actor snapshot schema 和部署 preflight。本地 API/Web、
+Ruff、双向离线 SQL、Compose、发行检查、真实 Caddy 和真实 PostgreSQL 恢复/downgrade 门
+均通过，仍待 Ubuntu CI。c1 未切换 Web 写代理、未执行 capability 拒绝、未改变 actor/
+确认正文或 M4 状态机。

@@ -9,13 +9,13 @@ M5.3.1 会话到 M4 安全重启计划的显式交接已完成生产计划级+�
 M5.4 单 Agent/单服务上下文只读会话已完成本地实现与真实 PostgreSQL 验收，生产金丝雀通过 2026-07-26；两个 scope 的可信根、威胁模型和验收边界见 [M5.4_CONTEXT_CONVERSATION.md](./M5.4_CONTEXT_CONVERSATION.md)。
 M5.5–M5.7 已完成本地实现与真实 PostgreSQL 验收：组织级 Fleet 只读会话使用先持久化的不可变聚合快照；事件洞察提供确定性历史/相似事件与显式反馈；Runbook 只保存不可执行草稿并对失效 citation 显示墓碑。三片共用既有 Provider、引用、脱敏和组织隔离框架，独立迁移与开关均默认关闭；生产金丝雀通过 2026-07-26。详细边界见 [M5_COMPLETION_PLAN.md](./M5_COMPLETION_PLAN.md)。
 M6.1 首片（可验证的控制平面备份与离线恢复基础）已由 codex 实现、Claude 审计通过，提交 `38b8d40` 推送至 main，并于 2026-07-27 通过生产金丝雀。自托管发布、运行版本身份、备份/恢复边界、威胁模型和分阶段顺序见 [M6_PRODUCTIZATION.md](./M6_PRODUCTIZATION.md)。
-M6.4a 双许可证与源码发行门已于 2026-07-30 完成：`714da5a` 的四条 CI 全绿，源码包、依赖许可证和 SPDX 均为 review-only 资产，不改变运行时。M6.4b 可信 Principal 与有限只读角色已完成默认关闭的本地实现与本地验证，仍待独立审计、提交后 CI 和经授权金丝雀，见 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md)。
+M6.4a 双许可证与源码发行门已于 2026-07-30 完成：`714da5a` 的四条 CI 全绿，源码包、依赖许可证和 SPDX 均为 review-only 资产，不改变运行时。M6.4b 可信 Principal 与有限只读角色已完成独立审计、四条 CI 和两阶段生产只读金丝雀；生产运行 `d847a7d` 且 flags 已还原关闭，见 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md)。M6.4c 设计审计通过；c1 写身份 shadow 已完成本地实现与验证，待代码审计、CI 和金丝雀，见 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)。
 
 ## 1. 产品与部署边界
 
 - 产品形态：自托管、单实例、面向个人和小团队的 Web/PWA 运维控制台。
 - 当前租户模型：所有资源固定使用 `organization_id = local`，不实现 SaaS、多租户、用户注册、RBAC 或计费。
-- M6.4 设计审计确认：当前 Caddy Basic Auth 和 `ADMIN_API_TOKEN` 都是共享管理员边界，不能提供可信具名 actor；`organization_id=local` 继续只是单实例一致性字段。M6.4b 计划先以默认关闭的 Caddy→Web/API 可信 header 覆盖和服务间 token 构造 Principal shadow，再只保护有限 GET；不能信任裸客户端 header，且不改变写权限或 M4 状态机。详见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md) 与 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md)。
+- M6.4b 已证明 Caddy 可覆盖伪造 Principal header，并只对有限 GET 执行 read capability；其共享 read token 不能作为写 actor 证明。M6.4c 设计要求独立、仅 Caddy/API 持有的 write token、至少两个独立认证 subject、稳定 Principal 绑定、服务端 actor 快照和 maker-checker；Web 不持有 write token，也不能继续用共享管理令牌代理选定 M4 写路由。`organization_id=local` 继续只是单实例边界。详见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)、[M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md) 与 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)。
 - 控制平面应与关键被控业务分开部署，并具备独立备份能力。
 - Agent 只建立出站 HTTPS/WSS 连接，不要求 VPS 开放新的入站管理端口。
 - 浏览器不保存 SSH 私钥、Agent 密钥或其他服务器凭据，也不直接访问 VPS。
@@ -270,11 +270,12 @@ flowchart LR
 | 缓存/队列 | Redis | 简化异步任务、重试和去重 |
 | 本地编排 | Docker Compose | 一致启动 Web、API、Agent 和基础设施 |
 | Agent 网络 | 主动出站 | 减少 VPS 暴露面，不分发 SSH 私钥到浏览器 |
-| M6.4b Principal（本地实现，待审计/CI/金丝雀） | Caddy 身份 + 服务间 token，先 shadow 后有限 GET | 防止浏览器 header 伪造，同时避免在首片引入密码/session/OIDC 与写授权 |
+| M6.4b Principal（已完成） | Caddy 身份 + 服务间 read token，先 shadow 后有限 GET | 防止浏览器 header 伪造，同时不把只读证明升级为写授权 |
+| M6.4c 具名 M4（c1 本地已实现） | 多 Principal + Caddy/API 专用 write token + actor 快照 schema；c2/c3 再接授权与 maker-checker | c1 仅 shadow、不改变 M4 写结果；完整边界见专门设计 |
 
 ## 10. 明确延后能力
 
 - M3 后续：文件日志和同步任务可靠性增强；Docker 自动发现、Web 单服务确认、Agent 可用性、GitHub/systemd 隔离闭环、真实仓库诊断引用与 `http_json` Provider 受控生产调用均已完成验证。
 - M4 后续扩展：拉取源码/构建、受限清理。重启、部署和回滚已生产验证。
 - M5 已完成：全局/上下文对话、仓库知识、诊断历史、反馈、Runbook 草稿与只读复盘均已通过生产金丝雀；GitHub 写和会话部署交接仍为后续独立扩展。
-- M6：M6.1–M6.3 与 M6.4a 已完成；M6.4b Principal/有限只读角色本地实现完成、待审计/CI/金丝雀，M6.4c 具名写授权和 M6.4d 正式制品随后实施；Web SSH/高风险会话最后单独设计。
+- M6：M6.1–M6.3 与 M6.4a/b 已完成；M6.4c1 本地已实现、待审计/CI/金丝雀，c2/c3 尚未实现，M6.4d 正式制品随后实施；Web SSH/高风险会话最后单独设计。

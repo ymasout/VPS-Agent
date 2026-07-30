@@ -124,6 +124,35 @@ PRINCIPAL_VIEWER_IDS=<CADDY_ADMIN_USER 的精确值>
 环境变量修改不会仅靠 Caddy reload 自动进入现有容器。proxy token 不得复用管理令牌、
 Operation 签名密钥或未来 M6.4c 的具名写授权证明。
 
+## M6.4c1 多 Principal 写身份 shadow
+
+M6.4c1 只观察具名写身份，不改变任何 M4 允许/拒绝结果。部署配置必须先准备三个不同的
+Caddy 用户和密码哈希（legacy admin、operator、approver）；部署 preflight 会拒绝重复用户、
+重复哈希、Caddy 用户与角色绑定不一致，以及 write token 进入 Web：
+
+```text
+CADDY_OPERATOR_USER=ops-operator
+CADDY_OPERATOR_PASSWORD_HASH=<独立密码的 Caddy bcrypt 哈希>
+CADDY_APPROVER_USER=ops-approver
+CADDY_APPROVER_PASSWORD_HASH=<另一独立密码的 Caddy bcrypt 哈希>
+PRINCIPAL_WRITE_CONTEXT_ENABLED=false
+PRINCIPAL_WRITE_AUTHORIZATION_ENABLED=false
+PRINCIPAL_WRITE_PROXY_TOKEN=
+PRINCIPAL_ROLE_BINDINGS_JSON=[]
+```
+
+经审计、CI 和部署授权后，c1 shadow 只临时开启
+`PRINCIPAL_CONTEXT_ENABLED=true` 与 `PRINCIPAL_WRITE_CONTEXT_ENABLED=true`，分别配置不同的
+高熵 read/write token，并把 operator/approver Caddy subject 绑定到两个不可复用的
+`local:<UUIDv4>`。`PRINCIPAL_WRITE_AUTHORIZATION_ENABLED` 必须保持 `false`。重建 Caddy、
+API 和 Web 后，`/api/v1/principal` 应显示稳定 ID、实际角色、有限 operation capability 和
+`write_authorization_mode=shadow`。精确 M4 POST 只产生 `principal.write_shadow` 决策日志；
+原有 `ADMIN_API_TOKEN` 仍是唯一写授权，Operation actor、确认正文和状态机均不变。
+
+write token 只进入 Caddy/API，不能进入 Web、浏览器、Agent、日志或响应。Agent、webhook、
+下载、健康、Web 及非 allowlist API 路径都会清除该 header。c1 验证结束后关闭 write context
+并重建容器；不要把 shadow 描述为写 RBAC 已启用。
+
 `/agent-downloads/*` 是无需登录的 Agent Release 下载中转，仅允许固定的安装器、校验文件和 amd64/arm64 二进制。它用于目标 VPS 无法稳定连接 GitHub CDN 时从控制平面同域下载公开产物。
 
 ## 多通道告警

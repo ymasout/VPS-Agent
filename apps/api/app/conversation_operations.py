@@ -28,6 +28,7 @@ from .operations import (
     build_rollback_plan,
     is_rollback_source,
 )
+from .principal import observe_operation_plan
 from .schemas import (
     ConversationAnswer,
     ConversationOperationCandidate,
@@ -470,7 +471,7 @@ def _same_handoff(
     "/events/{event_id}/conversation/turns/{turn_id}/restart-plan",
     response_model=OperationView,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(observe_operation_plan), Depends(require_admin)],
 )
 async def create_conversation_restart_plan(
     event_id: str,
@@ -581,7 +582,7 @@ async def create_conversation_restart_plan(
     "/events/{event_id}/conversation/turns/{turn_id}/rollback-plan",
     response_model=OperationView,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(observe_operation_plan), Depends(require_admin)],
 )
 async def create_conversation_rollback_plan(
     event_id: str,

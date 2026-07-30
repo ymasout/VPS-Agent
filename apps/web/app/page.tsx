@@ -56,7 +56,7 @@ export default async function Home() {
         <div className="eyebrow"><span /> M1 · FLEET</div>
         <h1>机器<span>可见</span></h1>
         <p>{fleet.total} 台 VPS · {fleet.online} 台在线 · organization: local</p>
-        {principal && <p>Principal: {principal.display_name} · viewer · {principal.authorization_mode === "shadow" ? "shadow，当前权限未改变" : "有限只读授权已生效"}</p>}
+        {principal && <p>Principal: {principal.display_name} · {principal.id} · {principal.roles.join(", ")} · {principal.write_authorization_mode === "shadow" ? "写身份 shadow，写权限未改变" : principal.authorization_mode === "shadow" ? "shadow，当前权限未改变" : "有限只读授权已生效"}</p>}
         <Link className="back" href="/agent">进入全局 Fleet 只读会话 →</Link>
       </section>
       <RegistrationPanel operationKeyId={process.env.AGENT_OPERATION_KEY_ID} operationPublicKey={process.env.AGENT_OPERATION_PUBLIC_KEY_BASE64} />

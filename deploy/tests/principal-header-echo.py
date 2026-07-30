@@ -4,12 +4,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 class Handler(BaseHTTPRequestHandler):
-    def do_GET(self) -> None:
+    def respond(self) -> None:
         body = json.dumps(
             {
                 "id": self.headers.get("X-VPS-Agent-Principal-Id"),
                 "source": self.headers.get("X-VPS-Agent-Principal-Source"),
                 "token": self.headers.get("X-VPS-Agent-Principal-Proxy-Token"),
+                "write_token": self.headers.get("X-VPS-Agent-Principal-Write-Token"),
+                "origin": self.headers.get("Origin"),
+                "sec_fetch_site": self.headers.get("Sec-Fetch-Site"),
                 "path": self.path,
             },
             sort_keys=True,
@@ -19,6 +22,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def do_GET(self) -> None:
+        self.respond()
+
+    def do_POST(self) -> None:
+        self.respond()
 
     def log_message(self, _format: str, *_args: object) -> None:
         return

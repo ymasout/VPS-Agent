@@ -22,9 +22,19 @@ class PrincipalView(BaseModel):
     display_name: str
     auth_source: Literal["caddy_basic"]
     organization_id: Literal["local"]
-    roles: list[Literal["viewer"]]
-    capabilities: list[Literal["system:read", "fleet:read", "event:read"]]
+    roles: list[Literal["viewer", "operator", "approver"]]
+    capabilities: list[
+        Literal[
+            "system:read",
+            "fleet:read",
+            "event:read",
+            "operation:read",
+            "operation:plan",
+            "operation:approve",
+        ]
+    ]
     authorization_mode: Literal["shadow", "read_enforced"]
+    write_authorization_mode: Literal["disabled", "shadow", "enforced"]
 
 
 class NotificationTemplateInfo(BaseModel):

@@ -115,6 +115,7 @@ async def principal_view(principal: Principal = Depends(current_principal)) -> P
         roles=list(principal.roles),
         capabilities=sorted(principal.capabilities),
         authorization_mode=principal.authorization_mode,
+        write_authorization_mode=principal.write_authorization_mode,
     )
 
 
