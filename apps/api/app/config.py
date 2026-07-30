@@ -2,7 +2,7 @@ import re
 from datetime import datetime, timezone
 from functools import lru_cache
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .notification_catalog import NOTIFICATION_CHANNELS
@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     control_plane_version: str = "unset"
     control_plane_commit_sha: str = "unknown-build"
     control_plane_build_time: str = "unknown-build-time"
+    principal_context_enabled: bool = False
+    principal_read_authorization_enabled: bool = False
+    principal_proxy_token: SecretStr | None = None
+    principal_viewer_ids: str = ""
     dev_agent_registration_token: str | None = None
     agent_offline_after_seconds: int = Field(default=90, ge=30, le=3600)
     agent_availability_scan_interval_seconds: int = Field(default=30, ge=5, le=300)
@@ -126,6 +130,7 @@ class Settings(BaseSettings):
         return tuple(self.notification_channels.split(","))
 
     @field_validator(
+        "principal_proxy_token",
         "github_app_id",
         "github_app_private_key_base64",
         "github_app_installation_id",
@@ -134,11 +139,44 @@ class Settings(BaseSettings):
         mode="before",
     )
     @classmethod
-    def empty_github_values_are_unset(cls, value: object) -> object:
+    def empty_optional_secret_values_are_unset(cls, value: object) -> object:
         return None if value == "" else value
+
+    @field_validator("principal_viewer_ids", mode="before")
+    @classmethod
+    def validate_principal_viewer_ids(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise ValueError("principal viewer ids must be a comma-separated string")
+        viewer_ids = [item.strip() for item in value.split(",") if item.strip()]
+        if len(set(viewer_ids)) != len(viewer_ids):
+            raise ValueError("principal viewer ids must not contain duplicates")
+        invalid = [
+            viewer_id
+            for viewer_id in viewer_ids
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._@-]{0,127}", viewer_id)
+        ]
+        if invalid:
+            raise ValueError("principal viewer id is invalid")
+        return ",".join(viewer_ids)
+
+    @property
+    def principal_viewers(self) -> tuple[str, ...]:
+        return tuple(item for item in self.principal_viewer_ids.split(",") if item)
 
     @model_validator(mode="after")
     def validate_diagnostic_timing(self) -> "Settings":
+        if self.principal_read_authorization_enabled and not self.principal_context_enabled:
+            raise ValueError("principal read authorization requires principal context")
+        if self.principal_context_enabled:
+            token = (
+                self.principal_proxy_token.get_secret_value()
+                if self.principal_proxy_token is not None
+                else ""
+            )
+            if len(token) < 32 or token.lower().startswith(("replace_", "change-me")):
+                raise ValueError("principal proxy token must be a non-placeholder secret")
+            if not self.principal_viewers:
+                raise ValueError("at least one principal viewer id is required")
         if self.app_env == "production":
             if self.control_plane_instance_id == "unset-instance" or (
                 self.control_plane_instance_id.startswith("replace_")

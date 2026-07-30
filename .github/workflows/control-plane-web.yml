@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify trusted Principal headers with real Caddy
+        run: sh deploy/tests/m6-principal-caddy-integration.sh
       - name: Build standalone Web image
         run: >-
           docker build

@@ -32,6 +32,7 @@ from .models import (
     ServiceInstance,
     ServiceStatus,
 )
+from .principal import require_event_read
 from .schemas import (
     AlertEventView,
     DiagnosticResult,
@@ -421,7 +422,11 @@ async def update_restart_policy(
     )
 
 
-@router.get("/events/{event_id}", response_model=AlertEventView)
+@router.get(
+    "/events/{event_id}",
+    response_model=AlertEventView,
+    dependencies=[Depends(require_event_read)],
+)
 async def get_event(event_id: str, session: AsyncSession = Depends(get_session)) -> AlertEventView:
     event = await session.get(AlertEvent, event_id)
     if event is None:

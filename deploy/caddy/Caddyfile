@@ -7,7 +7,11 @@
 		request_body {
 			max_size 1MB
 		}
-		reverse_proxy api:8000
+		reverse_proxy api:8000 {
+			header_up -X-VPS-Agent-Principal-Id
+			header_up -X-VPS-Agent-Principal-Source
+			header_up -X-VPS-Agent-Principal-Proxy-Token
+		}
 	}
 
 	# Agent 只通过自身的一次性注册令牌或 Bearer 凭证认证。
@@ -16,7 +20,11 @@
 		request_body {
 			max_size 1MB
 		}
-		reverse_proxy api:8000
+		reverse_proxy api:8000 {
+			header_up -X-VPS-Agent-Principal-Id
+			header_up -X-VPS-Agent-Principal-Source
+			header_up -X-VPS-Agent-Principal-Proxy-Token
+		}
 	}
 
 	# 管理 API 和 API 文档需要额外的控制台登录保护。
@@ -25,7 +33,11 @@
 		basic_auth {
 			{$CADDY_ADMIN_USER} {$CADDY_ADMIN_PASSWORD_HASH}
 		}
-		reverse_proxy api:8000
+		reverse_proxy api:8000 {
+			header_up X-VPS-Agent-Principal-Id {http.auth.user.id}
+			header_up X-VPS-Agent-Principal-Source caddy_basic
+			header_up X-VPS-Agent-Principal-Proxy-Token {$PRINCIPAL_PROXY_TOKEN}
+		}
 	}
 
 	# Web 控制台需要登录；页面在服务端通过内部网络读取 API。
@@ -33,6 +45,10 @@
 		basic_auth {
 			{$CADDY_ADMIN_USER} {$CADDY_ADMIN_PASSWORD_HASH}
 		}
-		reverse_proxy web:3000
+		reverse_proxy web:3000 {
+			header_up X-VPS-Agent-Principal-Id {http.auth.user.id}
+			header_up X-VPS-Agent-Principal-Source caddy_basic
+			header_up X-VPS-Agent-Principal-Proxy-Token {$PRINCIPAL_PROXY_TOKEN}
+		}
 	}
 }

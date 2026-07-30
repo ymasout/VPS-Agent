@@ -17,6 +17,7 @@ import {
   type EventReview,
   type SimilarEvents,
 } from "@/lib/api";
+import { getPrincipalForwardHeaders } from "@/lib/principal";
 import { notFound } from "next/navigation";
 import { DiagnosticTrigger } from "./diagnostic-trigger";
 import { OperationCreate } from "./operation-create";
@@ -29,7 +30,8 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
   const { id } = await params;
   let event: AlertEvent | null = null;
   try {
-    event = await getEvent(id);
+    const principalHeaders = await getPrincipalForwardHeaders();
+    event = await getEvent(id, principalHeaders ?? undefined);
   } catch (reason) {
     if (reason instanceof ControlPlaneApiError && reason.status === 404) notFound();
   }

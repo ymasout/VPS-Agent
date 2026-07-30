@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ContextConversation, Service, formatBytes, getAgent, getAgentConversation, getDeploymentCandidates, getGitHubRepositories, getServiceMappingCandidates } from "@/lib/api";
+import { getPrincipalForwardHeaders } from "@/lib/principal";
 import { notFound } from "next/navigation";
 import { isGoodState, isServiceProblem, serviceStatusTone } from "@/lib/service-status";
 import { ServiceMappingPanel } from "../../service-mapping-panel";
@@ -46,7 +47,8 @@ export default async function ServerPage({
   const requestedService = typeof query.service === "string" ? query.service : "";
   const focusServiceKey = requestedService.length <= 255 ? requestedService : "";
   let agent;
-  try { agent = await getAgent(id); } catch { notFound(); }
+  const principalHeaders = await getPrincipalForwardHeaders();
+  try { agent = await getAgent(id, principalHeaders ?? undefined); } catch { notFound(); }
   const [candidates, repositories, deploymentCandidates, conversationResult] = await Promise.all([
     getServiceMappingCandidates(id).catch(() => []),
     getGitHubRepositories().catch(() => []),

@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { Agent, AlertEvent, GitHubRepository, GitHubStatus, SystemInfo, formatBytes, getAgents, getEvents, getGitHubRepositories, getGitHubStatus, getSystemInfo } from "@/lib/api";
+import { Agent, AlertEvent, GitHubRepository, GitHubStatus, Principal, SystemInfo, formatBytes, getAgents, getEvents, getGitHubRepositories, getGitHubStatus, getPrincipal, getSystemInfo } from "@/lib/api";
 import { summarizeFleet } from "@/lib/fleet";
+import { getPrincipalForwardHeaders } from "@/lib/principal";
 import { RegistrationPanel } from "./registration-panel";
 import { GitHubPanel } from "./github-panel";
 
@@ -39,10 +40,13 @@ export default async function Home() {
   let githubStatus: GitHubStatus | null = null;
   let repositories: GitHubRepository[] = [];
   let systemInfo: SystemInfo | null = null;
+  let principal: Principal | null = null;
   let error = "";
   try {
-    [agents, events, githubStatus] = await Promise.all([getAgents(), getEvents(), getGitHubStatus()]);
-    try { systemInfo = await getSystemInfo(); } catch { systemInfo = null; }
+    const principalHeaders = await getPrincipalForwardHeaders();
+    [agents, events, githubStatus] = await Promise.all([getAgents(principalHeaders ?? undefined), getEvents(principalHeaders ?? undefined), getGitHubStatus()]);
+    try { systemInfo = await getSystemInfo(principalHeaders ?? undefined); } catch { systemInfo = null; }
+    if (principalHeaders) principal = await getPrincipal(principalHeaders);
     if (githubStatus.configured) repositories = await getGitHubRepositories();
   } catch { error = "控制平面暂时不可用，请检查 API 服务。"; }
   const fleet = summarizeFleet(agents);
@@ -52,6 +56,7 @@ export default async function Home() {
         <div className="eyebrow"><span /> M1 · FLEET</div>
         <h1>机器<span>可见</span></h1>
         <p>{fleet.total} 台 VPS · {fleet.online} 台在线 · organization: local</p>
+        {principal && <p>Principal: {principal.display_name} · viewer · {principal.authorization_mode === "shadow" ? "shadow，当前权限未改变" : "有限只读授权已生效"}</p>}
         <Link className="back" href="/agent">进入全局 Fleet 只读会话 →</Link>
       </section>
       <RegistrationPanel operationKeyId={process.env.AGENT_OPERATION_KEY_ID} operationPublicKey={process.env.AGENT_OPERATION_PUBLIC_KEY_BASE64} />

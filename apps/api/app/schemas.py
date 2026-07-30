@@ -17,6 +17,16 @@ class SystemInfo(BaseModel):
     schema_current: bool
 
 
+class PrincipalView(BaseModel):
+    id: str
+    display_name: str
+    auth_source: Literal["caddy_basic"]
+    organization_id: Literal["local"]
+    roles: list[Literal["viewer"]]
+    capabilities: list[Literal["system:read", "fleet:read", "event:read"]]
+    authorization_mode: Literal["shadow", "read_enforced"]
+
+
 class NotificationTemplateInfo(BaseModel):
     key: str
     version: str

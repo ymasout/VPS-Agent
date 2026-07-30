@@ -15,3 +15,8 @@ for name in (
     "GITHUB_WEBHOOK_SECRET",
 ):
     os.environ[name] = ""
+
+for name in ("PRINCIPAL_CONTEXT_ENABLED", "PRINCIPAL_READ_AUTHORIZATION_ENABLED"):
+    os.environ[name] = "false"
+for name in ("PRINCIPAL_PROXY_TOKEN", "PRINCIPAL_VIEWER_IDS"):
+    os.environ[name] = ""

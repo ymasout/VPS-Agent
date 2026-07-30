@@ -101,6 +101,29 @@ curl -u 'Caddy用户名:原始密码' -H "X-Admin-Token: $ADMIN_API_TOKEN" \
 
 首页“接入新机器”功能由 Web 服务端通过内部网络调用 API。`ADMIN_API_TOKEN` 同时注入 Web 和 API 容器，但不会出现在浏览器 JavaScript 或页面源码中；能够通过 Caddy 登录的用户视为控制平面管理员，可以创建一次性 Agent 注册令牌。
 
+## M6.4b Principal 只读验证
+
+可信 Principal 与有限只读 capability 默认关闭。只有在独立审计、提交后 CI 均通过并取得
+金丝雀授权后，才为当前 Caddy 用户生成独立服务间令牌并配置精确用户名：
+
+```text
+PRINCIPAL_CONTEXT_ENABLED=true
+PRINCIPAL_READ_AUTHORIZATION_ENABLED=false
+PRINCIPAL_PROXY_TOKEN=<openssl rand -hex 32 的独立输出>
+PRINCIPAL_VIEWER_IDS=<CADDY_ADMIN_USER 的精确值>
+```
+
+第一阶段只开启 context；重建 `caddy api web` 后，经 Basic Auth 请求
+`/api/v1/principal`，应看到固定 `local`、`viewer` 和 `authorization_mode=shadow`，页面明确
+显示“当前权限未改变”。确认伪造 header 被 Caddy 覆盖、公共/Agent 路径被清除、响应和日志
+不含 proxy token 后，第二阶段才把 `PRINCIPAL_READ_AUTHORIZATION_ENABLED=true` 并重建
+`api web`，验证 system/fleet/event 的 5 个冻结 GET。该开关不保护任何 POST，也不改变
+`ADMIN_API_TOKEN`、写代理或 M4 actor；不得把它描述为团队写权限已经生效。
+
+金丝雀结束后把两个开关还原为 `false`、清空 token/viewer 配置并重建 `caddy api web`。
+环境变量修改不会仅靠 Caddy reload 自动进入现有容器。proxy token 不得复用管理令牌、
+Operation 签名密钥或未来 M6.4c 的具名写授权证明。
+
 `/agent-downloads/*` 是无需登录的 Agent Release 下载中转，仅允许固定的安装器、校验文件和 amd64/arm64 二进制。它用于目标 VPS 无法稳定连接 GitHub CDN 时从控制平面同域下载公开产物。
 
 ## 多通道告警

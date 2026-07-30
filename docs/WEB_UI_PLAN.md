@@ -158,7 +158,7 @@ Agent 对话不应只是一个孤立的聊天页面，而应同时支持全局�
 
 - M6.1 首片已增加受管理认证保护的系统信息端点，并以真实 build、commit、实际/期望 schema 状态替换页脚硬编码 `0.4.2-dev`；已提交 `38b8d40` 并通过生产金丝雀（2026-07-27，`/api/v1/system-info` 返回实际 commit/revision）。备份和恢复保持管理员显式离线操作，首版不提供文件上传、Web 一键恢复或在线覆盖数据库。
 - M6.2 已完成 PWA manifest/service worker/图标、无数据离线页、移动端只读页和独立审批体验，并于 2026-07-27 通过 Phase 3/Phase 4 生产金丝雀。移动审批继续展示冻结目标、风险、有效期和前置检查，复用 M4 独立确认、签名执行、健康验证与审计链。首轮金丝雀发现 standalone 镜像遗漏 `public/`；`fa35eee` 修复后新增真实 Web 镜像 CI 门，避免仅靠源码级测试判断发布资产完整。
-- M6.3a/b 已完成生产验证。M6.3c+d 已完成（生产金丝雀通过 2026-07-29）：通知页展示钉钉、Telegram 和“飞书预留”的实现/启用/配置状态，列出模板 `v1` 与支持通道；每个已启用通道拥有独立的显式测试卡，仍受服务器功能开关、配置、勾选和在线状态约束。页面不录入或回显 Webhook、bot token、chat ID 或 secret，不允许任意 URL/适配器。M6.4 已完成第一轮设计审计但尚无团队 UI：角色隐藏不能替代 API 授权，页面也不能提交可信 actor；全屏终端/Web SSH 最后单独设计。完整计划见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)。
+- M6.3a/b 已完成生产验证。M6.3c+d 已完成（生产金丝雀通过 2026-07-29）：通知页展示钉钉、Telegram 和“飞书预留”的实现/启用/配置状态，列出模板 `v1` 与支持通道；每个已启用通道拥有独立的显式测试卡，仍受服务器功能开关、配置、勾选和在线状态约束。页面不录入或回显 Webhook、bot token、chat ID 或 secret，不允许任意 URL/适配器。M6.4a 源码分发门已完成。M6.4b 首个 UI 已完成本地实现：首页和移动页仅显示服务端验证的当前 Principal 与 shadow/read-enforced 模式；shadow 明确写“不改变现有权限”，有限只读生效时也不宣称写操作已被禁止。角色隐藏不能替代 API 授权，页面不能提交可信 actor，proxy token 不进入客户端组件或公开响应；该切片仍待审计/CI/金丝雀，完整边界见 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md)。全屏终端/Web SSH 最后单独设计。
 
 ## 8. 设计约束
 

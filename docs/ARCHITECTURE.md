@@ -9,12 +9,13 @@ M5.3.1 会话到 M4 安全重启计划的显式交接已完成生产计划级+�
 M5.4 单 Agent/单服务上下文只读会话已完成本地实现与真实 PostgreSQL 验收，生产金丝雀通过 2026-07-26；两个 scope 的可信根、威胁模型和验收边界见 [M5.4_CONTEXT_CONVERSATION.md](./M5.4_CONTEXT_CONVERSATION.md)。
 M5.5–M5.7 已完成本地实现与真实 PostgreSQL 验收：组织级 Fleet 只读会话使用先持久化的不可变聚合快照；事件洞察提供确定性历史/相似事件与显式反馈；Runbook 只保存不可执行草稿并对失效 citation 显示墓碑。三片共用既有 Provider、引用、脱敏和组织隔离框架，独立迁移与开关均默认关闭；生产金丝雀通过 2026-07-26。详细边界见 [M5_COMPLETION_PLAN.md](./M5_COMPLETION_PLAN.md)。
 M6.1 首片（可验证的控制平面备份与离线恢复基础）已由 codex 实现、Claude 审计通过，提交 `38b8d40` 推送至 main，并于 2026-07-27 通过生产金丝雀。自托管发布、运行版本身份、备份/恢复边界、威胁模型和分阶段顺序见 [M6_PRODUCTIZATION.md](./M6_PRODUCTIZATION.md)。
+M6.4a 双许可证与源码发行门已于 2026-07-30 完成：`714da5a` 的四条 CI 全绿，源码包、依赖许可证和 SPDX 均为 review-only 资产，不改变运行时。M6.4b 可信 Principal 与有限只读角色已完成默认关闭的本地实现与本地验证，仍待独立审计、提交后 CI 和经授权金丝雀，见 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md)。
 
 ## 1. 产品与部署边界
 
 - 产品形态：自托管、单实例、面向个人和小团队的 Web/PWA 运维控制台。
 - 当前租户模型：所有资源固定使用 `organization_id = local`，不实现 SaaS、多租户、用户注册、RBAC 或计费。
-- M6.4 设计审计确认：当前 Caddy Basic Auth 和 `ADMIN_API_TOKEN` 都是共享管理员边界，不能提供可信具名 actor；`organization_id=local` 继续只是单实例一致性字段。团队模式若实施，身份与 capability 必须由服务端认证上下文派生，不能信任客户端 `confirmed_by` 或身份 header，且不得改变 M4 状态机。详见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)。
+- M6.4 设计审计确认：当前 Caddy Basic Auth 和 `ADMIN_API_TOKEN` 都是共享管理员边界，不能提供可信具名 actor；`organization_id=local` 继续只是单实例一致性字段。M6.4b 计划先以默认关闭的 Caddy→Web/API 可信 header 覆盖和服务间 token 构造 Principal shadow，再只保护有限 GET；不能信任裸客户端 header，且不改变写权限或 M4 状态机。详见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md) 与 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md)。
 - 控制平面应与关键被控业务分开部署，并具备独立备份能力。
 - Agent 只建立出站 HTTPS/WSS 连接，不要求 VPS 开放新的入站管理端口。
 - 浏览器不保存 SSH 私钥、Agent 密钥或其他服务器凭据，也不直接访问 VPS。
@@ -94,6 +95,7 @@ Release 安装器在首次安装时生成独立的 Agent machine-id，保存在 
 ### 生产部署拓扑
 
 - Caddy 是唯一公网入口，终止 HTTPS，并分别路由 Web、控制 API、Agent API 和 Release 中转。
+- M6.4b 的计划信任链不改变该拓扑：Caddy 成功认证后覆盖 Principal ID/source 并注入仅 Caddy/Web/API 持有的 proxy token；Web 与 API 都必须验证 token，Agent/webhook/health 路径显式清除 Principal header。首片默认关闭且不使用身份决定任何写操作。
 - Next.js、FastAPI、PostgreSQL、Redis 和 Caddy 由生产 Docker Compose 托管。
 - Alembic 是开发和生产数据库结构的唯一演进机制。部署在 API 启动前显式执行一次迁移；API entrypoint 不运行迁移，只在启动时核对数据库 revision，版本不匹配则拒绝启动。
 - M6.1 首片保持显式迁移，并把“迁移前 `pg_dump`”扩展为同一 exported snapshot 下、带运行版本/commit/revision/PostgreSQL major、固定计数 allowlist、manifest 和校验的原子备份包。恢复仅作为管理员显式离线操作，默认拒绝非空/错误目标，不接入 Web、Provider、Agent 或 M4 Operation；本地正/负向验证与生产金丝雀均已通过（2026-07-27）。
@@ -268,10 +270,11 @@ flowchart LR
 | 缓存/队列 | Redis | 简化异步任务、重试和去重 |
 | 本地编排 | Docker Compose | 一致启动 Web、API、Agent 和基础设施 |
 | Agent 网络 | 主动出站 | 减少 VPS 暴露面，不分发 SSH 私钥到浏览器 |
+| M6.4b Principal（本地实现，待审计/CI/金丝雀） | Caddy 身份 + 服务间 token，先 shadow 后有限 GET | 防止浏览器 header 伪造，同时避免在首片引入密码/session/OIDC 与写授权 |
 
 ## 10. 明确延后能力
 
 - M3 后续：文件日志和同步任务可靠性增强；Docker 自动发现、Web 单服务确认、Agent 可用性、GitHub/systemd 隔离闭环、真实仓库诊断引用与 `http_json` Provider 受控生产调用均已完成验证。
 - M4 后续扩展：拉取源码/构建、受限清理。重启、部署和回滚已生产验证。
 - M5 已完成：全局/上下文对话、仓库知识、诊断历史、反馈、Runbook 草稿与只读复盘均已通过生产金丝雀；GitHub 写和会话部署交接仍为后续独立扩展。
-- M6：先完成可验证的安装/升级/备份/恢复和发布基础，再进入 PWA/移动审批、通知/模板、团队协作和开源评估；Web SSH/高风险会话最后单独实施。
+- M6：M6.1–M6.3 与 M6.4a 已完成；M6.4b Principal/有限只读角色本地实现完成、待审计/CI/金丝雀，M6.4c 具名写授权和 M6.4d 正式制品随后实施；Web SSH/高风险会话最后单独设计。

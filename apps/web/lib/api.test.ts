@@ -19,6 +19,23 @@ describe("control plane API client", () => {
     );
   });
 
+  it("forwards trusted Principal headers only when the server supplies them", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const principalHeaders = {
+      "X-VPS-Agent-Principal-Id": "admin",
+      "X-VPS-Agent-Principal-Source": "caddy_basic",
+      "X-VPS-Agent-Principal-Proxy-Token": "server-secret",
+    };
+
+    await getAgents(principalHeaders);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/agents",
+      { cache: "no-store", headers: principalHeaders },
+    );
+  });
+
   it("rejects non-success responses", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("missing", { status: 404 })));
 

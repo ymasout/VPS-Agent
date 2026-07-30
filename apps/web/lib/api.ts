@@ -12,6 +12,16 @@ export type SystemInfo = {
   expected_alembic_revision: string[];
   schema_current: boolean;
 };
+export type Principal = {
+  id: string;
+  display_name: string;
+  auth_source: "caddy_basic";
+  organization_id: "local";
+  roles: ["viewer"];
+  capabilities: Array<"system:read" | "fleet:read" | "event:read">;
+  authorization_mode: "shadow" | "read_enforced";
+};
+export type PrincipalForwardHeaders = Record<string, string>;
 export type NotificationConfiguration = {
   ready: boolean;
   console_links_https: boolean;
@@ -393,38 +403,47 @@ export class ControlPlaneApiError extends Error {
   }
 }
 
-async function request<T>(path: string): Promise<T> {
-  const response = await fetch(`${apiURL}${path}`, { cache: "no-store" });
+async function request<T>(path: string, headers?: PrincipalForwardHeaders): Promise<T> {
+  const options: RequestInit = { cache: "no-store" };
+  if (headers) options.headers = headers;
+  const response = await fetch(`${apiURL}${path}`, options);
   if (!response.ok) throw new ControlPlaneApiError(response.status);
   return response.json() as Promise<T>;
 }
 
-async function adminRequest<T>(path: string): Promise<T> {
+async function adminRequest<T>(path: string, principalHeaders?: PrincipalForwardHeaders): Promise<T> {
   const token = process.env.ADMIN_API_TOKEN;
   if (!token) throw new Error("ADMIN_API_TOKEN is required for managed API requests");
   const response = await fetch(`${apiURL}${path}`, {
     cache: "no-store",
-    headers: { "X-Admin-Token": token },
+    headers: { ...principalHeaders, "X-Admin-Token": token },
   });
   if (!response.ok) throw new ControlPlaneApiError(response.status);
   return response.json() as Promise<T>;
 }
 
-export const getAgents = () => request<Agent[]>("/api/v1/agents");
-export const getSystemInfo = () => adminRequest<SystemInfo>("/api/v1/system-info");
+export const getPrincipal = (headers: PrincipalForwardHeaders) =>
+  request<Principal>("/api/v1/principal", headers);
+export const getAgents = (headers?: PrincipalForwardHeaders) =>
+  request<Agent[]>("/api/v1/agents", headers);
+export const getSystemInfo = (headers?: PrincipalForwardHeaders) =>
+  adminRequest<SystemInfo>("/api/v1/system-info", headers);
 export const getNotificationConfiguration = () =>
   adminRequest<NotificationConfiguration>("/api/v1/notification-configuration");
 export const getNotificationTests = () =>
   adminRequest<NotificationTest[]>("/api/v1/notification-tests?limit=10");
-export const getAgent = (id: string) => request<AgentDetail>(`/api/v1/agents/${id}`);
+export const getAgent = (id: string, headers?: PrincipalForwardHeaders) =>
+  request<AgentDetail>(`/api/v1/agents/${id}`, headers);
 export const getServiceMappingCandidates = (id: string) =>
   request<ServiceMappingCandidate[]>(`/api/v1/agents/${id}/service-mapping-candidates`);
 export const getDeploymentCandidates = (id: string) =>
   request<DeploymentCandidate[]>(`/api/v1/agents/${id}/deployment-candidates`);
 export const getGitHubStatus = () => request<GitHubStatus>("/api/v1/github/status");
 export const getGitHubRepositories = () => request<GitHubRepository[]>("/api/v1/github/repositories");
-export const getEvents = () => request<AlertEvent[]>("/api/v1/events");
-export const getEvent = (id: string) => request<AlertEvent>(`/api/v1/events/${id}`);
+export const getEvents = (headers?: PrincipalForwardHeaders) =>
+  request<AlertEvent[]>("/api/v1/events", headers);
+export const getEvent = (id: string, headers?: PrincipalForwardHeaders) =>
+  request<AlertEvent>(`/api/v1/events/${id}`, headers);
 export const getEventDiagnostics = (id: string) =>
   request<Diagnostic[]>(`/api/v1/events/${id}/diagnostics`);
 export const getEventConversation = (id: string) =>

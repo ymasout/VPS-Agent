@@ -27,6 +27,14 @@ from .notification_catalog import (
     NOTIFICATION_TEMPLATE_CATALOG,
 )
 from .notifications import MAX_DELIVERY_ATTEMPTS, deliver_pending_notifications
+from .principal import (
+    Principal,
+    current_principal,
+    require_event_read,
+    require_fleet_read,
+    require_system_read,
+    valid_admin_token,
+)
 from .schema import current_revisions, expected_revisions
 from .schemas import (
     AgentDetail,
@@ -41,6 +49,7 @@ from .schemas import (
     NotificationChannelInfo,
     NotificationConfiguration,
     NotificationTemplateInfo,
+    PrincipalView,
     RegistrationTokenCreate,
     RegistrationTokenCreated,
     ReportReceipt,
@@ -66,14 +75,14 @@ async def require_admin(
     x_admin_token: str | None = Header(default=None),
     settings: Settings = Depends(get_settings),
 ) -> None:
-    if not x_admin_token or hash_token(x_admin_token) != hash_token(settings.admin_api_token):
+    if not valid_admin_token(x_admin_token, settings):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid admin token")
 
 
 @router.get(
     "/system-info",
     response_model=SystemInfo,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_system_read)],
 )
 async def system_info(
     session: AsyncSession = Depends(get_session),
@@ -93,6 +102,19 @@ async def system_info(
         alembic_revision=current,
         expected_alembic_revision=expected,
         schema_current=current == expected,
+    )
+
+
+@router.get("/principal", response_model=PrincipalView)
+async def principal_view(principal: Principal = Depends(current_principal)) -> PrincipalView:
+    return PrincipalView(
+        id=principal.id,
+        display_name=principal.display_name,
+        auth_source=principal.auth_source,
+        organization_id=principal.organization_id,
+        roles=list(principal.roles),
+        capabilities=sorted(principal.capabilities),
+        authorization_mode=principal.authorization_mode,
     )
 
 
@@ -469,7 +491,11 @@ async def build_summary(agent: Agent, session: AsyncSession, offline_after: int)
     )
 
 
-@router.get("/agents", response_model=list[AgentSummary])
+@router.get(
+    "/agents",
+    response_model=list[AgentSummary],
+    dependencies=[Depends(require_fleet_read)],
+)
 async def list_agents(
     session: AsyncSession = Depends(get_session), settings: Settings = Depends(get_settings)
 ) -> list[AgentSummary]:
@@ -480,7 +506,11 @@ async def list_agents(
     ]
 
 
-@router.get("/agents/{agent_id}", response_model=AgentDetail)
+@router.get(
+    "/agents/{agent_id}",
+    response_model=AgentDetail,
+    dependencies=[Depends(require_fleet_read)],
+)
 async def get_agent(
     agent_id: str,
     session: AsyncSession = Depends(get_session),
@@ -601,7 +631,11 @@ async def list_deployment_candidates(
     return result
 
 
-@router.get("/events", response_model=list[AlertEventView])
+@router.get(
+    "/events",
+    response_model=list[AlertEventView],
+    dependencies=[Depends(require_event_read)],
+)
 async def list_events(
     event_status: str | None = Query(
         default=None,

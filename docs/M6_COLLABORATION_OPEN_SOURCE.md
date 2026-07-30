@@ -1,6 +1,6 @@
 # M6.4 协作与开源分发评估
 
-当前状态：**M6.4a 已完成本地实现，所有者权利声明已于 2026-07-30 记录，待独立审计、提交和 CI；M6.4b–d 尚未开始。** 本文冻结问题、边界和阶段顺序；M6.4a 不代表已经具备团队账号、RBAC 或正式控制平面发行版。
+当前状态：**M6.4a 已完成（`714da5a`，四条 CI 全绿，无生产金丝雀）；M6.4b 已完成本地实现与本地验证、待独立审计/提交后 CI/经授权金丝雀；M6.4c–d 尚未开始。** M6.4a 不代表已经具备团队账号、RBAC 或正式控制平面发行版。
 
 ## 1. 目标
 
@@ -16,7 +16,7 @@
 - 不允许浏览器、Provider、模型、仓库内容或请求正文指定可信 actor、角色、审批人或组织。
 - 不增加自由 Shell、GitHub 写、Runbook 执行、Web SSH、实时终端或永久 Root 会话。
 - 不自动确认、自动执行、自动回滚，也不因引入“团队审批”而弱化 M4 的过期、nonce、幂等、能力策略和健康验证。
-- 不在许可证尚未由项目所有者明确选择前宣称仓库是开源项目。
+- 不把已公开并带许可证的源码等同于已经具备团队身份、RBAC、正式制品或商业 SaaS。
 
 ## 3. 当前基线与真实缺口
 
@@ -31,12 +31,12 @@
 
 ### 3.2 开源与发布
 
-- 第一轮审计时仓库没有 `LICENSE`、`SECURITY.md`、`CONTRIBUTING.md`、行为准则、Issue/PR 模板或第三方许可证清单；M6.4a 已在本地工作区补齐这些资产，但提交和 CI 前仍不能把远端状态描述为已完成授权。
+- 第一轮审计时缺失的 `LICENSE`、`SECURITY.md`、`CONTRIBUTING.md`、行为准则、Issue/PR 模板和第三方许可证清单已由 M6.4a 提交；GitHub 当前识别根许可证为 AGPL-3.0，Agent 范围由 REUSE 映射为 Apache-2.0。
 - 根包和 Web 包均标记 `private=true`；Agent Go module 仍使用 `github.com/example/...` 占位路径。这不会阻止私有开发，但不满足正式公开发行标识。
 - 只有 Agent tag Release；控制平面没有不可变发行包、正式镜像发布、升级兼容清单或统一 changelog。
-- Agent Release 提供 SHA-256，但没有发布者签名、SLSA provenance 或 SBOM。GitHub Actions 使用主版本 tag，基础镜像和生产 Caddy/PostgreSQL/Redis 也使用可漂移 tag，尚未固定 digest。
+- Agent Release 提供 SHA-256，但没有发布者签名、SLSA provenance 或 SBOM。Source Distribution workflow 已固定 Action commit；其余既有 Actions、基础镜像和生产 Caddy/PostgreSQL/Redis 仍以可漂移 tag 为主，尚未统一固定 digest。
 - 当前跟踪文件只包含 `.env.example` 和 `deploy/.env.production.example`；真实 `.env` 已被忽略。公开源码包仍必须从 Git 索引生成，禁止直接打包带 `.env`、备份、恢复审计、构建目录或本机缓存的工作区。
-- Recovery、Migrations、Web 三条 CI 已覆盖关键控制平面路径，但没有统一源码发行门、秘密扫描、依赖漏洞/许可证检查和控制平面制品验证。
+- Recovery、Migrations、Web 与新增 Source Distribution 四条 CI 已覆盖关键控制平面和源码分发路径；M6.4a 已加入全历史秘密扫描、Python/Node/Go 依赖许可证门和源码 SPDX，但依赖漏洞门、容器镜像 SBOM/签名与正式控制平面制品仍待 M6.4d。
 
 ## 4. 威胁模型
 
@@ -90,15 +90,15 @@
 
 ## 7. 开源分发决策门
 
-1. **许可证选择（所有者决定）：**Apache-2.0 更利于广泛集成并提供专利条款；AGPL-3.0 要求网络服务修改者提供对应源码，更强调回馈。项目不得由实现者擅自选择。
-2. **公开范围：**确认整个 monorepo、仅 Agent，或控制平面与 Agent 分许可证；明确商标、示例配置和文档范围。
+1. **许可证选择（已关闭）：**所有者已选择默认/控制平面 `AGPL-3.0-only` 与 Agent `Apache-2.0`，精确目录范围由 REUSE 固定。
+2. **公开范围（已关闭）：**整个 monorepo 已公开，控制平面与 Agent 分许可证；第三方依赖保留各自条款。
 3. **安全响应：**确定私下报告渠道、支持版本、响应窗口和不应公开提交的漏洞类型。
 4. **发行身份：**确定正式仓库坐标、镜像仓库、包名、版本规则和签名主体，替换 `github.com/example/...` 等占位值。
 5. **依赖合规：**生成 Python、Go、Node 和容器基础镜像的第三方组件/许可证清单，拒绝与所选许可证不兼容或来源不明的依赖。
 
 ## 8. 分阶段实施顺序
 
-### M6.4a：可审计源码分发基线
+### M6.4a：可审计源码分发基线（已完成）
 
 - 先取得许可证和公开范围的明确选择。
 - 增加 LICENSE、SECURITY、CONTRIBUTING、行为准则、Issue/PR 模板、支持范围和自托管安装入口。
@@ -108,8 +108,10 @@
 ### M6.4b：可信 actor 基础（只读落地）
 
 - 定义服务端 `Principal` 和 capability 表，不接受请求 body 中的 actor。
-- 在只读管理端点和审计展示中传播 server-derived actor；默认 feature flag 关闭，legacy 单管理员模式继续工作。
+- 在明确列出的只读管理端点和有限身份展示中传播 server-derived actor；默认 feature flag 关闭，legacy 单管理员模式继续工作。
 - 冻结认证适配器、session/代理信任和紧急访问设计后，才决定是否需要用户/凭据迁移。
+- 代码前冻结方案见 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md)：先做可信
+  Caddy→Web/API shadow，再只对明确的 system/fleet/event GET 执行有限 capability。
 
 ### M6.4c：角色授权与具名 M4 审批
 
@@ -123,19 +125,21 @@
 - 在全新主机按公开文档完成安装→升级→备份→隔离恢复；贡献者能在干净 checkout 运行统一检查。
 - 经独立审计和授权金丝雀后同步 M6 状态；Web SSH 仍留到最后独立设计。
 
-## 9. 第一个可实现纵向切片
+## 9. 当前纵向切片
 
-建议先做 **M6.4a1：秘密安全的源码发行候选门**。它不修改 API、Web、Agent 协议、数据库或生产运行路径，可先解决“能否安全公开分发”的客观基础。
+M6.4a 已完成。**M6.4b1 + M6.4b2：可信 Principal shadow 与有限只读
+capability** 已连续完成本地实现与本地验证，但仍必须分别完成独立审计、提交后 CI 和
+经授权金丝雀：
 
-预计修改：
+1. b1 由 Caddy 覆盖认证用户名和内部 proxy token，Web/API 验证后构造固定
+   `organization_id=local` 的 Principal；只提供有限 `/principal` 状态和 shadow
+   展示，不改变现有允许/拒绝结果。
+2. b2 仅把 `system:read`、`fleet:read`、`event:read` 接入明确列出的 GET 路由；
+   flag 关闭时完全兼容，开启时缺失或伪造身份失败关闭。
 
-- 新增法律/治理文档骨架；LICENSE 仅在用户明确选型后加入。
-- 新增受控 Git 文件集合和源码包生成/检查脚本，只使用 Git tracked files。
-- 新增 GitHub Actions 分发检查：现有 API/Web/Agent 检查、secret scan、源码包 denylist、依赖与 SBOM 产出。
-- 修正公开坐标和安装文档中的占位描述，但不自动发布镜像或 Release。
-- 测试恶意 `.env`、私钥、数据库 dump、symlink、构建目录和未跟踪文件不会进入发行包。
-
-该切片不需要 Alembic 迁移或生产金丝雀；验收对象是 CI 生成的隔离发行候选。真正发布公开 Release 或再次修改仓库可见性仍需要用户单独明确授权；许可证范围已由用户在 2026-07-30 明确选择，但须先完成权利声明、审计、提交和 CI。
+M6.4b 不新增迁移，不更改写代理、`ADMIN_API_TOKEN`、M4 actor/状态机或 Agent。
+它也不宣称当前单 Caddy 用户已形成多人协作。完整实现边界见
+[M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md)。
 
 ## 10. 测试矩阵
 
@@ -149,17 +153,17 @@
 
 ## 11. 生产金丝雀边界
 
-- M6.4a 源码分发门不部署生产，也不改变仓库可见性或发布 Release。
+- M6.4a 源码分发门已以 CI-only 方式完成，没有部署生产、创建正式 Release 或改变仓库可见性。
 - M6.4b 首轮只允许 default-off、只读 principal shadow 记录；不得改变现有写权限判断或 M4 actor。
 - M6.4c 写路径需要独立两级金丝雀：先证明 viewer/operator 不能确认，再由具名 approver 对一条低影响计划完成既有 M4 全链；操作者身份必须由服务端证据核对。
 - 金丝雀不得删除共享紧急入口，除非新身份路径、恢复流程和锁死演练均已通过；紧急入口的每次使用必须形成高优先级审计。
-- 任何公开仓库、正式 Release、镜像推送、许可证发布或生产身份切换均需用户单独明确授权。
+- 任何正式 Release、镜像推送或生产身份切换均需用户单独明确授权；仓库与许可证已在 M6.4a 公开落地。
 
 ## 12. 风险清单
 
 ### P0
 
-- 未选择 LICENSE 却宣称开源，或发布范围与依赖许可证不兼容。
+- 项目文件或新依赖脱离 REUSE 目录映射，导致发布范围与许可证不兼容。
 - 团队模式继续信任客户端 `confirmed_by`/身份 header，产生可伪造审批审计。
 - 角色只在 Web 隐藏，API 写路径没有服务端授权。
 
@@ -191,16 +195,26 @@
 
 1. **`confirmed_by` 移除是 confirm 端点契约变更（M6.4c）**：M4.1/M5.3 金丝雀使用了 body `{"confirmed_by":"local-admin"}`（由 Web 代理注入）。M6.4c 移除客户端 `confirmed_by` 改为 principal 派生时，需明确 legacy 兼容路径：是硬切（新版本不接受 body 字段）还是过渡期接受后忽略并记录 deprecation 审计。Web 代理 `/console/operations/{id}/confirm` 的 body 注入逻辑需同步修改。实现时必须在 M6.4c 威胁建模中覆盖。
 
-2. **`ADMIN_API_TOKEN` 降级为 break-glass（M6.4b/c）**：团队模式引入独立 principal 后，共享 `ADMIN_API_TOKEN` 应降级为紧急 break-glass 入口。设计提到"legacy/break-glass"但未详述：需明确令牌轮换流程（从共享切到独立 principal 后如何撤销/轮换旧令牌）、每次 break-glass 使用的高优先级审计告警、以及"令牌泄露后如何在不锁死管理员的前提下撤销"。M6.4b 实现时补充恢复流程和锁死演练。
+2. **`ADMIN_API_TOKEN` 降级为 break-glass（M6.4c）**：M6.4b 按冻结边界继续保留现有 legacy 管理入口，不能在只读首片中改名或改变语义。M6.4c 引入具名写授权时，才需明确令牌轮换流程、每次 break-glass 使用的高优先级审计告警，以及"令牌泄露后如何在不锁死管理员的前提下撤销"，并完成恢复与锁死演练。
 
 3. **贡献者开发环境（M6.4d）**：M6.4d "贡献者能在干净 checkout 运行统一检查"隐含贡献者面向的开发环境文档。现有 `Makefile`/`compose.yaml` 存在但面向项目所有者。M6.4d 应确保贡献者指南覆盖：干净 checkout 的依赖安装（Python/Node/Go）、本地 Compose 启动、运行统一检查（API/Web/Agent/Compose/Ruff/ESLint）、以及贡献流程（分支、PR、CI 预期）。
 
-## 15. M6.4a 本地实现记录（2026-07-30）
+## 15. M6.4a 完成记录（2026-07-30）
 
 - 许可证决定冻结为目录级双许可证：控制平面、Web、文档及默认范围采用 `AGPL-3.0-only`；`apps/agent/**`、`scripts/install-agent.sh` 与 Agent Release workflow 采用 `Apache-2.0`。`REUSE.toml` 是机器可读的精确映射，`LICENSING.md` 是人类可读说明。
 - 新增 `scripts/source_release.py`：审计 tracked 与待审查的非忽略文件，但正式 archive 只由干净 committed `HEAD` 的 `git archive` 生成；拒绝运行环境、私钥/常见 token、备份、数据库、日志、缓存、构建目录和 symlink，产出 commit 绑定 manifest 与 SHA-256。
 - 新增 `scripts/dependency_licenses.py`：清点 Python、Node 和 Go 依赖，采用精确 SPDX 表达式白名单，未知或未批准项失败关闭；`BlueOak-1.0.0`、`ODC-By-1.0` 和 `Python-2.0` 只有在第三方通知存在时才能通过。
 - 新增固定 action commit 的 `Source Distribution` CI：干净 Ubuntu checkout 运行 Gitleaks、源码负向测试、Ruff、REUSE 3.3、依赖许可证门，并产出 review-only 源码包、checksum、manifest、源码 SPDX 和依赖清单；不会自动创建 Release、推送镜像或部署生产。
 - 技术来源审计见 `COPYRIGHT_PROVENANCE.md`。Git 历史只能证明提交身份与内容，不能证明雇佣成果归属、第三方转让或所有复制来源；项目所有者已于 2026-07-30 明确确认拥有或获授权许可全部项目原创内容、无已知冲突权利，并接受 `YY Home` 权利人名称与既定双许可证范围。该记录不是独立法律意见。
-- 只读 GitHub 核对发现仓库在本切片实施前已经是 Public，且当时没有已提交 LICENSE；本轮没有执行可见性变更。许可证、安全政策与 CI 未提交前，公开仓库仍处于待修复状态。
-- 本地门当前通过：源码候选检查 283 个文件、依赖许可证清单 421 项、REUSE 3.3 lint、源码负向测试和 Ruff。Gitleaks 扫描全部 81 个历史提交后命中 10 项，逐项确认均为文档凭据占位符、空私钥配置或固定测试标识，并以 commit/path/rule/line 指纹精确抑制；抑制后全历史扫描通过。独立审计发现首版 Python 清单错误扫描了解释器内所有包，导致结果随本地环境漂移；已改为从 `requirements-dev.txt`（含递归 `-r`）出发，按已安装 `Requires-Dist` 与 extras/marker 计算传递闭包，无关环境包不再进入清单；非 SPDX 长文本回退 classifier，常见非标准短名称只做精确规范化，未知项继续失败关闭。该 P1 修复待复审与 Ubuntu CI。最终数量以提交后的 CI 产物为准。
+- 只读 GitHub 核对发现仓库在本切片实施前已经是 Public，且当时没有已提交 LICENSE；本轮没有执行可见性变更。提交后 GitHub 已识别根许可证为 AGPL-3.0，Agent 的 Apache-2.0 边界继续由目录 LICENSE 与 REUSE 映射表达。
+- 独立审计发现首版 Python 清单错误扫描了解释器内所有包，导致结果随本地环境漂移；已改为从 `requirements-dev.txt`（含递归 `-r`）出发，按已安装 `Requires-Dist` 与 extras/marker 计算传递闭包，无关环境包不再进入清单；非 SPDX 长文本回退 classifier，常见非标准短名称只做精确规范化，未知项继续失败关闭。
+- `ed4e584` 提交后按 CI 证据完成三轮修复：`3d62f28` 精确抑制新增测试中的两项合成 PEM；`8122dc8` 审核批准 sharp Linux 平台包的 `LGPL-3.0-or-later`；`0a47a15` 增加 clean-worktree 有限诊断；`714da5a` 忽略 Gitleaks 生成的 `results.sarif`。
+- 最终 `714da5a` 的 Recovery、Migrations、Web、Source Distribution 四条 CI 全绿。Source Distribution 验证 Gitleaks、源码候选 283 文件、REUSE 278/278、依赖 421 包零拒绝、SPDX SBOM 和 archive build。该切片不含 API、数据库、Agent 或生产运行变更，无需生产金丝雀；M6.4a 完成。
+
+## 16. M6.4b 本地实现交接
+
+M6.4b 已按代码前审计与冻结设计完成本地实现，完整边界与本地验证记录见
+[M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md)。实现保持可信 Principal shadow
+→ 有限 GET capability 的顺序；两个开关默认关闭，无迁移，不修改写代理、M4 actor/状态机
+或 Agent。真实 Caddy header 覆盖/清除门已加入 Web CI，当前仍待独立审计、提交后 CI 与
+经授权的两阶段只读金丝雀，不得提前标记完成或跨过 M6.4c 修改写权限。

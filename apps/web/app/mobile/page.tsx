@@ -1,14 +1,18 @@
-import { type Agent, type AlertEvent, getAgents, getEvents } from "@/lib/api";
+import { type Agent, type AlertEvent, type Principal, getAgents, getEvents, getPrincipal } from "@/lib/api";
 import { summarizeFleet } from "@/lib/fleet";
+import { getPrincipalForwardHeaders } from "@/lib/principal";
 
 export const dynamic = "force-dynamic";
 
 export default async function MobileStatusPage() {
   let agents: Agent[] = [];
   let events: AlertEvent[] = [];
+  let principal: Principal | null = null;
   let error = "";
   try {
-    [agents, events] = await Promise.all([getAgents(), getEvents()]);
+    const principalHeaders = await getPrincipalForwardHeaders();
+    [agents, events] = await Promise.all([getAgents(principalHeaders ?? undefined), getEvents(principalHeaders ?? undefined)]);
+    if (principalHeaders) principal = await getPrincipal(principalHeaders);
   } catch {
     error = "控制平面暂时不可用，请联网后重新加载。";
   }
@@ -19,6 +23,7 @@ export default async function MobileStatusPage() {
         <div className="eyebrow"><span /> MOBILE · READ ONLY</div>
         <h1>运行<span>状态</span></h1>
         <p>当前在线数据 · 不提供离线快照 · 写操作仅在独立 Operation 审批页出现</p>
+        {principal && <p>Principal: {principal.display_name} · viewer · {principal.authorization_mode === "shadow" ? "shadow，当前权限未改变" : "有限只读授权已生效"}</p>}
       </section>
       {error && <div className="empty error" role="alert">{error}</div>}
       <section className="mobile-summary" aria-label="Fleet 摘要">
