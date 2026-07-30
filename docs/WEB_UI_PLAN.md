@@ -159,7 +159,7 @@ Agent 对话不应只是一个孤立的聊天页面，而应同时支持全局�
 - M6.1 首片已增加受管理认证保护的系统信息端点，并以真实 build、commit、实际/期望 schema 状态替换页脚硬编码 `0.4.2-dev`；已提交 `38b8d40` 并通过生产金丝雀（2026-07-27，`/api/v1/system-info` 返回实际 commit/revision）。备份和恢复保持管理员显式离线操作，首版不提供文件上传、Web 一键恢复或在线覆盖数据库。
 - M6.2 已完成 PWA manifest/service worker/图标、无数据离线页、移动端只读页和独立审批体验，并于 2026-07-27 通过 Phase 3/Phase 4 生产金丝雀。移动审批继续展示冻结目标、风险、有效期和前置检查，复用 M4 独立确认、签名执行、健康验证与审计链。首轮金丝雀发现 standalone 镜像遗漏 `public/`；`fa35eee` 修复后新增真实 Web 镜像 CI 门，避免仅靠源码级测试判断发布资产完整。
 - M6.3a/b 已完成生产验证。M6.3c+d 已完成（生产金丝雀通过 2026-07-29）：通知页展示钉钉、Telegram 和“飞书预留”的实现/启用/配置状态，列出模板 `v1` 与支持通道；每个已启用通道拥有独立的显式测试卡，仍受服务器功能开关、配置、勾选和在线状态约束。页面不录入或回显 Webhook、bot token、chat ID 或 secret，不允许任意 URL/适配器。M6.4a 源码分发门已完成。M6.4b UI 与有限只读授权已通过 2026-07-30 两阶段生产金丝雀：首页和移动页只显示服务端验证的 Principal 与 shadow/read-enforced 模式，伪造 header 被 Caddy 覆盖，验证后 flags 已还原关闭。M6.4c 设计要求 operator/approver 页面显示稳定 Principal、角色、请求者和确认者快照；选定 M4 写请求同源直达 Caddy→API，Web 不持有 write token、不提交 actor，也不能在 enforcement 模式继续使用共享管理令牌代理。按钮隐藏仍不是安全门，maker-checker 必须由 API 行锁事务执行。完整边界见 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md) 与 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)。全屏终端/Web SSH 最后单独设计。
-- M6.4c1 已完成本地 shadow 实现：页面可显示服务端稳定 Principal 的 operator/approver 角色和“写身份 shadow，写权限未改变”；write token 不进入 Web，现有写按钮和 `/console/...` 管理代理在 c1 保持 legacy。浏览器同源直达、Origin/Fetch Metadata enforcement、具名计划和 maker-checker 仍留在 c2/c3，不能因角色已展示而宣称写授权生效。
+- M6.4c1 已完成（审计+CI+生产金丝雀 2026-07-30）：页面可显示服务端稳定 Principal 的 operator/approver 角色和"写身份 shadow，写权限未改变"；write token 不进入 Web，现有写按钮和 `/console/...` 管理代理在 c1 保持 legacy。浏览器同源直达、Origin/Fetch Metadata enforcement、具名计划和 maker-checker 仍留在 c2/c3，不能因角色已展示而宣称写授权生效。
 
 ## 8. 设计约束
 

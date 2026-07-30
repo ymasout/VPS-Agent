@@ -1,9 +1,8 @@
 # M6.4c 角色授权与具名 M4 审批设计
 
-当前状态：**设计审计通过；M6.4c1 已完成本地实现与本地验证，待独立代码审计、CI 和生产
-shadow 金丝雀；M6.4c2/c3 尚未实现。** M6.4b 已于 2026-07-30 通过独立审计、
-四条 CI 与两阶段生产只读金丝雀；生产运行 `d847a7d`、Alembic head
-`0019_m6_multichannel_notify`，Principal 两个开关已还原关闭。M6.4c 会改变 M4 写路径
+当前状态：**M6.4c1 已由 codex 实现、Claude 审计通过（无 P0/P1/P2），提交 `48263db`+`d6a9528` 推送至 main，四个 CI 全绿，并于 2026-07-30 通过两阶段 shadow 生产金丝雀；M6.4c2/c3 尚未实现。** M6.4b 已于 2026-07-30 通过独立审计、
+四条 CI 与两阶段生产只读金丝雀；生产运行 `d6a9528`、Alembic head
+`0020_m6_named_approval`，Principal 两个开关已还原关闭。M6.4c 会改变 M4 写路径
 的身份、授权和审计契约，必须单独实现、审计、迁移验证并取得生产金丝雀授权。
 
 ## 1. 为什么不能直接实现
@@ -380,5 +379,13 @@ Ruff、单 head、0020 双向离线 SQL、Compose config、部署配置预检通
 后，真实 Caddy 多用户/7 路由/伪造覆盖/header 隔离测试通过；真实 PostgreSQL 16 完成
 全迁移至 0020、备份→隔离恢复→schema check，并实证存在具名 actor snapshot 时 downgrade
 失败关闭（`1 passed`）。Windows Git Bash 挂载路径兼容与 Recovery 测试新增 Caddy 必填变量
-也已修复。push 后 Ubuntu CI 仍是合并与金丝雀前的必要门。当前生产仍为
-`d847a7d + 0019` 且 Principal flags OFF。
+也已修复。push 后 Ubuntu CI 仍是合并与金丝雀前的必要门。当前生产为
+`d6a9528 + 0020` 且 Principal flags OFF。
+
+## 19. M6.4c1 生产金丝雀记录（2026-07-30）
+
+两阶段 shadow 金丝雀在用户明确授权下执行并通过：
+
+- **Phase A（flags OFF）**：部署 `d6a9528` + 迁移 0019->0020（加 actor snapshot 列）+ Caddy 三组凭据 + 新 env vars；system-info commit=d6a9528/revision=0020/schema_current=true；ops/trans 14/89 不变；`/healthz` 最小；operator/approver 可登录（200）。
+- **Phase B（b1 shadow）**：开 `PRINCIPAL_CONTEXT_ENABLED`+`PRINCIPAL_WRITE_CONTEXT_ENABLED`；admin `/principal`=`caddy-basic:admin`/viewer/write_shadow；operator `/principal`=`local:50afb0f6-...`/operator/capabilities 含 operation:plan+operation:read；approver `/principal`=`local:3be51886-...`/approver/capabilities 含 operation:approve+operation:read；**伪造 `X-VPS-Agent-Principal-Id: forged-attacker` + operator 登录，API 仍看到 `local:50afb0f6-...`**（Caddy 覆盖生产实证）；响应不含 write token；ops/trans 不变。
+- **Phase C（还原）**：两 flag 还原 false；`/principal` 403。`d6a9528` 留作运行基线（flags OFF = legacy 行为）。

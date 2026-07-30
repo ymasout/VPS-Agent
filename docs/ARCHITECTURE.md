@@ -9,7 +9,7 @@ M5.3.1 会话到 M4 安全重启计划的显式交接已完成生产计划级+�
 M5.4 单 Agent/单服务上下文只读会话已完成本地实现与真实 PostgreSQL 验收，生产金丝雀通过 2026-07-26；两个 scope 的可信根、威胁模型和验收边界见 [M5.4_CONTEXT_CONVERSATION.md](./M5.4_CONTEXT_CONVERSATION.md)。
 M5.5–M5.7 已完成本地实现与真实 PostgreSQL 验收：组织级 Fleet 只读会话使用先持久化的不可变聚合快照；事件洞察提供确定性历史/相似事件与显式反馈；Runbook 只保存不可执行草稿并对失效 citation 显示墓碑。三片共用既有 Provider、引用、脱敏和组织隔离框架，独立迁移与开关均默认关闭；生产金丝雀通过 2026-07-26。详细边界见 [M5_COMPLETION_PLAN.md](./M5_COMPLETION_PLAN.md)。
 M6.1 首片（可验证的控制平面备份与离线恢复基础）已由 codex 实现、Claude 审计通过，提交 `38b8d40` 推送至 main，并于 2026-07-27 通过生产金丝雀。自托管发布、运行版本身份、备份/恢复边界、威胁模型和分阶段顺序见 [M6_PRODUCTIZATION.md](./M6_PRODUCTIZATION.md)。
-M6.4a 双许可证与源码发行门已于 2026-07-30 完成：`714da5a` 的四条 CI 全绿，源码包、依赖许可证和 SPDX 均为 review-only 资产，不改变运行时。M6.4b 可信 Principal 与有限只读角色已完成独立审计、四条 CI 和两阶段生产只读金丝雀；生产运行 `d847a7d` 且 flags 已还原关闭，见 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md)。M6.4c 设计审计通过；c1 写身份 shadow 已完成本地实现与验证，待代码审计、CI 和金丝雀，见 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)。
+M6.4a 双许可证与源码发行门已于 2026-07-30 完成：`714da5a` 的四条 CI 全绿，源码包、依赖许可证和 SPDX 均为 review-only 资产，不改变运行时。M6.4b 可信 Principal 与有限只读角色已完成独立审计、四条 CI 和两阶段生产只读金丝雀；生产运行 `d6a9528` 且 flags 已还原关闭，见 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md)。M6.4c1 写身份 shadow 已完成审计+CI+生产金丝雀（2026-07-30），见 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)。
 
 ## 1. 产品与部署边界
 
@@ -278,4 +278,4 @@ flowchart LR
 - M3 后续：文件日志和同步任务可靠性增强；Docker 自动发现、Web 单服务确认、Agent 可用性、GitHub/systemd 隔离闭环、真实仓库诊断引用与 `http_json` Provider 受控生产调用均已完成验证。
 - M4 后续扩展：拉取源码/构建、受限清理。重启、部署和回滚已生产验证。
 - M5 已完成：全局/上下文对话、仓库知识、诊断历史、反馈、Runbook 草稿与只读复盘均已通过生产金丝雀；GitHub 写和会话部署交接仍为后续独立扩展。
-- M6：M6.1–M6.3 与 M6.4a/b 已完成；M6.4c1 本地已实现、待审计/CI/金丝雀，c2/c3 尚未实现，M6.4d 正式制品随后实施；Web SSH/高风险会话最后单独设计。
+- M6：M6.1–M6.3 与 M6.4a/b/c1 已完成；c2/c3 尚未实现，M6.4d 正式制品随后实施；Web SSH/高风险会话最后单独设计。
