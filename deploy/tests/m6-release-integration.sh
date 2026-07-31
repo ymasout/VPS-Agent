@@ -96,7 +96,7 @@ EOF
 
 sh "$RELEASE_SCRIPT" release-check
 sh "$RELEASE_SCRIPT" release-pull
-dc up --detach postgres redis
+dc up --detach --wait postgres redis
 dc run --rm --no-deps api sh -eu -c \
     'test "$(pwd)" = /app; test -r /app/alembic.ini; test -d /app/migrations; alembic -c /app/alembic.ini upgrade head'
 sh "$RELEASE_SCRIPT" release-up
