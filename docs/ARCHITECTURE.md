@@ -271,11 +271,11 @@ flowchart LR
 | 本地编排 | Docker Compose | 一致启动 Web、API、Agent 和基础设施 |
 | Agent 网络 | 主动出站 | 减少 VPS 暴露面，不分发 SSH 私钥到浏览器 |
 | M6.4b Principal（已完成） | Caddy 身份 + 服务间 read token，先 shadow 后有限 GET | 防止浏览器 header 伪造，同时不把只读证明升级为写授权 |
-| M6.4c 具名 M4（c1/c2 已完成，c3 本地待审计） | 多 Principal + Caddy/API 专用 write token + actor 快照 + 行锁 maker-checker | 具名确认仍复用 M4 签名/Agent/健康验证状态机；break-glass 默认关闭且无 Web 入口；完整边界见专门设计 |
+| M6.4c 具名 M4（c1/c2/c3 已完成） | 多 Principal + Caddy/API 专用 write token + actor 快照 + 行锁 maker-checker | 具名确认仍复用 M4 签名/Agent/健康验证状态机；break-glass 默认关闭且无 Web 入口；完整边界见专门设计 |
 
 ## 10. 明确延后能力
 
 - M3 后续：文件日志和同步任务可靠性增强；Docker 自动发现、Web 单服务确认、Agent 可用性、GitHub/systemd 隔离闭环、真实仓库诊断引用与 `http_json` Provider 受控生产调用均已完成验证。
 - M4 后续扩展：拉取源码/构建、受限清理。重启、部署和回滚已生产验证。
 - M5 已完成：全局/上下文对话、仓库知识、诊断历史、反馈、Runbook 草稿与只读复盘均已通过生产金丝雀；GitHub 写和会话部署交接仍为后续独立扩展。
-- M6：M6.1–M6.3 与 M6.4a/b/c1/c2 已完成；c3 已完成本地实现但尚待独立审计、CI 与生产金丝雀，M6.4d 正式制品随后实施；Web SSH/高风险会话最后单独设计。
+- M6：M6.1–M6.3 与 M6.4a/b/c 已完成；M6.4d 正式制品随后实施；Web SSH/高风险会话最后单独设计。

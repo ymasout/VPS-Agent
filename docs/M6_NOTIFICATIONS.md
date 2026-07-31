@@ -7,7 +7,7 @@
 - M2 已有钉钉自定义机器人通道，支持服务异常/恢复与 VPS 失联/恢复。
 - `notification_deliveries` 以 `(event_id, sequence, channel)` 去重；待发送、失败和陈旧 `sending` 可重试，单条最多尝试 3 次。
 - Webhook 与可选加签密钥只由环境变量注入 API；Web 和 Agent 不持有通知凭据。
-- 生产当前运行 `c78ae35 + 0020_m6_named_approval`（后续 M6.4c2 控制平面版本），告警通道选择仍为 `dingtalk`；M6.3c+d 已消除代码中的硬编码单通道，M6.3b 测试审计和 Web 配置入口均保留。
+- 生产当前运行 `0d75342 + 0020_m6_named_approval`（后续 M6.4c3 控制平面版本），告警通道选择仍为 `dingtalk`；M6.3c+d 已消除代码中的硬编码单通道，M6.3b 测试审计和 Web 配置入口均保留。
 
 ## 2. 目标
 

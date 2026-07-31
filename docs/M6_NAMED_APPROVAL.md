@@ -1,7 +1,7 @@
 # M6.4c 角色授权与具名 M4 审批设计
 
-当前状态：**M6.4c1+c2 已由 codex 实现、Claude 审计通过（无 P0/P1/P2），提交 `48263db`+`d6a9528`+`c78ae35` 推送至 main，四个 CI 全绿，并于 2026-07-31 通过具名计划生产金丝雀；c3 已完成本地实现和验证，尚待独立审计、CI 与生产金丝雀。** M6.4b 已于 2026-07-30 通过独立审计、
-四条 CI 与两阶段生产只读金丝雀；生产运行 `c78ae35`、Alembic head
+当前状态：**M6.4c1+c2+c3 均已由 codex 实现、Claude 审计通过（无 P0/P1/P2），提交 `48263db`+`d6a9528`+`c78ae35`+`2673877`+`0d75342` 推送至 main，四个 CI 全绿，并于 2026-07-31 通过具名审批生产金丝雀（operator 创建 + approver 确认 + M4 完整执行 + maker-checker + 幂等/越权回放拒绝）。M6.4c 完成。** M6.4b 已于 2026-07-30 通过独立审计、
+四条 CI 与两阶段生产只读金丝雀；生产运行 `0d75342`、Alembic head
 `0020_m6_named_approval`，Principal 相关运行时开关已全部还原关闭。M6.4c 会改变 M4 写路径
 的身份、授权和审计契约，必须单独实现、审计、迁移验证并取得生产金丝雀授权。
 
@@ -415,7 +415,20 @@ Ruff、单 head、0020 双向离线 SQL、Compose config、部署配置预检通
 Go test/vet、Compose config 与 `git diff --check` 通过。Docker Desktop 真实 Caddy 多用户、
 七路由覆盖/header 隔离通过；临时 PostgreSQL 16 完成 schema check，并通过真实具名计划
 `awaiting_confirmation`、actor snapshot、无 nonce/签名及 0020 downgrade fail-closed 两项测试。
-当前生产为 `c78ae35 + 0020`、Principal flags OFF；c2 已提交推送并完成审计、CI 与生产金丝雀。
+当前生产为 `0d75342 + 0020`、Principal flags OFF；c2 已提交推送并完成审计、CI 与生产金丝雀。
+
+## 23. M6.4c3 生产金丝雀记录（2026-07-31）
+
+具名审批 + maker-checker + M4 完整执行金丝雀在用户明确授权下执行并通过：
+
+- **Phase A（flags OFF）**：部署 `0d75342`（无迁移，head 0020）；system-info/ops/trans 15/92 不变；`/healthz` 最小。
+- **Phase B（c3 enforcement）**：开 4 flag + 启用 m4-deploy-bad restart（新 aliyun-零时 Agent `7175dcae`，instance `1c79ce1d`）。
+  - **B1 operator 创建计划**：`status=awaiting_confirmation`（首次非 failed--Agent 在线 + 预检通过）/ `requested_by=local:50afb0f6-...` / `authorization_mode=named` / 快照含 capability_used=operation:plan / `task_signature=null`。
+  - **B2 maker-checker**：operator 确认自己 -> **403**（缺 operation:approve，授权层先于 maker-checker 拒绝）。
+  - **B3 approver 确认 + M4 执行**：approver 确认 -> `status=queued` / `confirmed_by=local:3be51886-...` / 快照含 capability_used=operation:approve -> **poll 1: succeeded**（M4 签名 -> Agent 领取 -> docker restart -> 健康验证 -> succeeded，首次具名 M4 完整执行链）。
+  - **B4 回放**：同 approver -> **409**（已 succeeded，幂等 200 只适用于 queued）；operator -> **403**（缺 operation:approve）。
+- **Phase C（还原）**：restart false + 4 flag false + `/principal` 403。`0d75342` 留作运行基线。
+- **环境修复记录**：旧 aliyun-VPS 被释放；新 aliyun-零时 Agent v0.4.2 需 5 个 env var（`CONTROL_PLANE_URL`+`AGENT_EVIDENCE_POLICY=docker_logs`+`AGENT_OPERATION_POLICY=docker_restart`+`AGENT_OPERATION_KEY_ID`+`AGENT_OPERATION_PUBLIC_KEY_BASE64`），Go 常量用下划线，连字符被静默拒绝为 disabled。
 
 ## 21. M6.4c2 生产金丝雀记录（2026-07-31）
 
@@ -463,5 +476,4 @@ Go test/vet、Compose config 与 `git diff --check` 通过。Docker Desktop 真�
 Go test/vet、Compose config 与 `git diff --check` 通过。Docker Desktop 真实 Caddy 三身份、
 七路由覆盖/header 隔离及 4 KiB 拒绝门通过；临时 PostgreSQL 16 完成 create-all adoption、
 schema check，并通过 0020 downgrade guard、具名计划快照和并发确认只产生一条 queued
-Transition 共 3 项真实数据库测试。当前未提交、未运行 CI、未部署；生产仍为
-`c78ae35 + 0020`、Principal flags OFF。
+Transition 共 3 项真实数据库测试。已提交 `2673877`+`0d75342` 推送至 main，四个 CI 全绿；2026-07-31 生产金丝雀通过（见 §23）。生产现运行 `0d75342 + 0020`、Principal flags OFF。

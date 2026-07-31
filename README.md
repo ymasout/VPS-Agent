@@ -37,7 +37,7 @@ docs/        架构与开发约定
 - [安全报告政策](SECURITY.md)
 - [贡献指南](CONTRIBUTING.md)
 
-当前进度：M0–M5 已完成，M4 的重启、部署与显式回滚均通过生产验证。M6.1 备份/恢复、M6.2 PWA/移动体验、M6.3 多通道通知、M6.4a 源码发行门、M6.4b Principal 只读授权、M6.4c1 写身份 shadow 与 M6.4c2 具名 operator 计划创建均已完成相应审计、CI 和生产门；M6.4c3 具名确认、maker-checker 与默认关闭的事故 break-glass 已完成本地实现和验证，尚待独立审计、CI 与生产金丝雀，不能标记为完成。生产现运行 `c78ae35`，Alembic head 为 `0020_m6_named_approval`，Principal flags 已还原关闭。拉源码/构建、清理、Web SSH 与任意 Shell 仍不在当前范围。原始项目计划书作为产品基线保留，实际进度以项目状态和路线图为准。
+当前进度：M0–M5 已完成，M4 的重启、部署与显式回滚均通过生产验证。M6.1 备份/恢复、M6.2 PWA/移动体验、M6.3 多通道通知、M6.4a 源码发行门、M6.4b Principal 只读授权与 M6.4c 具名 M4 审批（c1 shadow + c2 operator 计划 + c3 approver 确认 + maker-checker + break-glass）均已完成相应审计、CI 和生产门；详细证据见项目状态与路线图。生产现运行 `0d75342`，Alembic head 为 `0020_m6_named_approval`，Principal flags 已还原关闭。拉源码/构建、清理、Web SSH 与任意 Shell 仍不在当前范围。原始项目计划书作为产品基线保留，实际进度以项目状态和路线图为准。
 
 产品终局不是要求用户逐台维护配置文件，而是“一条命令接入 VPS、自动发现服务、通过自然语言提出运维目标、按权限完成诊断或受控操作，并自动验证和审计”。M3 已增加 Docker 稳定身份、Docker/systemd 显式本地诊断策略、自动证据源目录、Web 单服务确认、GitHub App 授权仓库白名单快照，以及控制平面主动检测的 VPS 失联/恢复事件和机器级只读诊断；手工证据源配置只作为兼容入口。正式接入体验见路线图与 M3 诊断文档。
 
