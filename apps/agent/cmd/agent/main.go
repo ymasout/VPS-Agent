@@ -12,13 +12,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/example/vps-agent-console/apps/agent/internal/client"
-	"github.com/example/vps-agent-console/apps/agent/internal/collector"
-	"github.com/example/vps-agent-console/apps/agent/internal/config"
-	operationexecutor "github.com/example/vps-agent-console/apps/agent/internal/operation"
+	"github.com/ymasout/VPS-Agent/apps/agent/internal/client"
+	"github.com/ymasout/VPS-Agent/apps/agent/internal/collector"
+	"github.com/ymasout/VPS-Agent/apps/agent/internal/config"
+	operationexecutor "github.com/ymasout/VPS-Agent/apps/agent/internal/operation"
 )
 
-var version = "0.4.2-dev"
+var version = "0.6.1-dev"
 
 var capabilities = []string{"host.metrics", "docker.status", "systemd.status", "http.healthcheck", "evidence.docker_logs.v1", "evidence.systemd_journal.v1", "operation.compose_deploy.v2"}
 
@@ -29,6 +29,9 @@ func main() {
 	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	cfg := config.Load()
+	for _, warning := range cfg.Warnings {
+		logger.Warn("configuration policy rejected", "warning", warning)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	host, err := collector.HostInfo()

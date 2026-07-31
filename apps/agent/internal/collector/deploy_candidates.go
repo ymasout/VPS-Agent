@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/example/vps-agent-console/apps/agent/internal/client"
+	"github.com/ymasout/VPS-Agent/apps/agent/internal/client"
 )
 
 const maxDeploymentCandidates = 128

@@ -15,7 +15,7 @@ M6.4a 双许可证与源码发行门已于 2026-07-30 完成：`714da5a` 的四�
 
 - 产品形态：自托管、单实例、面向个人和小团队的 Web/PWA 运维控制台。
 - 当前租户模型：所有资源固定使用 `organization_id = local`，不实现 SaaS、多租户、用户注册、RBAC 或计费。
-- M6.4b 已证明 Caddy 可覆盖伪造 Principal header，并只对有限 GET 执行 read capability；其共享 read token 不能作为写 actor 证明。M6.4c 设计要求独立、仅 Caddy/API 持有的 write token、至少两个独立认证 subject、稳定 Principal 绑定、服务端 actor 快照和 maker-checker；Web 不持有 write token，也不能继续用共享管理令牌代理选定 M4 写路由。`organization_id=local` 继续只是单实例边界。详见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)、[M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md) 与 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)。
+- M6.4b 已证明 Caddy 可覆盖伪造 Principal header，并只对有限 GET 执行 read capability；其共享 read token 不能作为写 actor 证明。M6.4c 已落地独立、仅 Caddy/API 持有的 write token、不同认证 subject、稳定 Principal 绑定、服务端 actor 快照和行锁 maker-checker；Web 不持有 write token，也不使用共享管理令牌代理选定 M4 写路由。首次具名 M4 完整执行链已于 2026-07-31 通过，验证后相关 flags 已还原关闭。`organization_id=local` 继续只是单实例边界。详见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)、[M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md) 与 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)。
 - 控制平面应与关键被控业务分开部署，并具备独立备份能力。
 - Agent 只建立出站 HTTPS/WSS 连接，不要求 VPS 开放新的入站管理端口。
 - 浏览器不保存 SSH 私钥、Agent 密钥或其他服务器凭据，也不直接访问 VPS。
@@ -278,4 +278,4 @@ flowchart LR
 - M3 后续：文件日志和同步任务可靠性增强；Docker 自动发现、Web 单服务确认、Agent 可用性、GitHub/systemd 隔离闭环、真实仓库诊断引用与 `http_json` Provider 受控生产调用均已完成验证。
 - M4 后续扩展：拉取源码/构建、受限清理。重启、部署和回滚已生产验证。
 - M5 已完成：全局/上下文对话、仓库知识、诊断历史、反馈、Runbook 草稿与只读复盘均已通过生产金丝雀；GitHub 写和会话部署交接仍为后续独立扩展。
-- M6：M6.1–M6.3 与 M6.4a/b/c 已完成；M6.4d 正式制品随后实施；Web SSH/高风险会话最后单独设计。
+- M6：M6.1–M6.3 与 M6.4a/b/c 已完成；M6.4d 正式发行本地实现已完成，待独立审计、Ubuntu CI 与外部发行门；Web SSH/高风险会话最后单独设计。

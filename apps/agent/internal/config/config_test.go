@@ -2,6 +2,7 @@ package config
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -132,5 +133,24 @@ func TestDeployPolicyRequiresExplicitOptIn(t *testing.T) {
 	}
 	if DeployPolicyAllows(DeployPolicyPlanOnly, DeployPolicyDockerComposeDeploy) {
 		t.Fatal("plan-only must not grant executable deployment")
+	}
+}
+
+func TestInvalidDirectEnvironmentPoliciesWarnAndRemainDisabled(t *testing.T) {
+	t.Setenv("AGENT_EVIDENCE_POLICY", "docker-logs")
+	t.Setenv("AGENT_OPERATION_POLICY", "docker-restart")
+	t.Setenv("AGENT_DEPLOY_POLICY", "docker-compose-deploy")
+
+	cfg := Load()
+	if cfg.EvidencePolicy != "disabled" || cfg.OperationPolicy != "disabled" || cfg.DeployPolicy != "disabled" {
+		t.Fatalf("invalid direct environment policies must fail closed: %#v", cfg)
+	}
+	if len(cfg.Warnings) != 3 {
+		t.Fatalf("expected one warning per rejected policy, got %#v", cfg.Warnings)
+	}
+	for _, warning := range cfg.Warnings {
+		if !strings.Contains(warning, "capability remains disabled") {
+			t.Fatalf("warning does not explain fail-closed behavior: %q", warning)
+		}
 	}
 }

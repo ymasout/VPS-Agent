@@ -1,24 +1,19 @@
 # Agent 发布、安装与升级
 
-VPS Agent 通过 GitHub Release 发布 Linux 静态二进制。当前生产版本：control-plane 自监控、两台腾讯云为 `v0.4.0`，aliyun-VPS 为 `v0.4.2`（M4.2b/c `docker-compose-deploy` + `docker-restart`），DMIT 为 `v0.3.3`；所有机器保留原身份。aliyun-VPS 的 `m4-deploy-canary`/`m4-deploy-bad` 承担 M4.2 部署金丝雀；其余机器没有 M4 写权限。DMIT 无需为了首轮 M4 单独升级，`v0.3.3` 与 v0.4.0 控制平面兼容。Release 支持 `amd64` 和 `arm64`，同时包含安装脚本和 `SHA256SUMS`，安装器会在替换程序前自动校验二进制。
+VPS Agent 通过 GitHub Release 发布 Linux 静态二进制。旧版 Fleet 版本表不再作为当前事实：旧 aliyun-VPS 已被释放，2026-07-31 M6.4c 金丝雀改用新 aliyun-零时 Agent `v0.4.2`，完成具名 M4 全链后已关闭服务 restart 授权；其他机器的版本、身份和 capability 必须在每次生产操作前实时核对。历史 Agent Release 支持 `amd64`/`arm64` 和 SHA-256；首个统一正式发行候选为 `v0.6.1`，在发布前仍只是代码与设计，不得把下面的新流程描述成已经公开可用。
 
 ## 1. 发布新版本
 
-Agent 版本由 Git 标签决定。发布前先保证 `main` 的检查全部通过，然后创建并推送标签：
+M6.4d 起不再允许“推送任意 `v*` tag 就自动公开 Release”。`Agent Release Candidate` 只生成
+14 天 review-only 二进制；统一 `Formal Release` 工作流按 `review → draft → candidate → publish`
+显式执行，并要求：
 
-```bash
-git tag -a v0.2.5 -m "VPS Agent v0.2.5"
-git push origin v0.2.5
-```
+1. `release/release.json`、Git commit、Agent `--version`、OCI label 与 Release 名完全一致。
+2. `amd64`/`arm64` 二进制、源码和 API/Web OCI 均有 checksum、SBOM 和 Sigstore bundle。
+3. tag/draft、GHCR package 可见性、publish 和生产升级分别取得授权。
+4. 正式 tag 和 SemVer 镜像标签不存在才可创建，永不移动已有坐标。
 
-GitHub Actions 将自动：
-
-1. 运行 Go 测试。
-2. 构建 Linux `amd64` 和 `arm64` 二进制。
-3. 生成 SHA-256 校验文件。
-4. 创建 GitHub Release 并上传所有产物。
-
-版本号示例仅表示下一次发布；实际发布时应使用尚未存在的新标签。
+完整操作和验证命令见 [RELEASE_PROCESS.md](./RELEASE_PROCESS.md)。不要手工推 tag 绕过发行门。
 
 ## 2. 为每台 VPS 创建一次性令牌
 
@@ -49,7 +44,8 @@ curl -u 'Caddy用户名:Caddy密码' \
 
 ## 3. 首次安装
 
-快速安装方式（安装器仍会校验 Agent 二进制）：
+以下快速安装命令仍对应当前已公开的历史 Release；在 `v0.6.1` 正式发布前，它只提供该历史
+安装器已有的 checksum 保障：
 
 ```bash
 curl -fsSL --proto '=https' --tlsv1.2 \
@@ -68,7 +64,10 @@ grep ' install-agent.sh$' SHA256SUMS | sha256sum --check -
 less install-agent.sh
 ```
 
-确认脚本后安装。安装器会在终端中隐藏输入注册令牌：
+确认脚本后安装。正式 `v0.6.1+` 安装器默认还要求本机存在 `cosign`，下载对应
+`vps-agent-linux-<arch>.sigstore.json`，并固定 GitHub workflow identity/issuer 验证发布者；
+缺少 bundle 或 cosign 会失败关闭。只有安装明确的旧版 Release 时，管理员才可显式使用
+`--allow-legacy-checksum-only`，该选项会输出高可见警告且不能证明发布者身份。安装器会在终端中隐藏输入注册令牌：
 
 ```bash
 sudo bash install-agent.sh \
@@ -122,6 +121,13 @@ AGENT_EVIDENCE_SOURCES_JSON='[{"key":"payment-api-logs","kind":"docker_logs","ta
 容器/Unit 目标只保存在 VPS 本地；控制平面只能引用 Agent 声明的 `key` 并下发有限时间、行数、字节数和超时。机器详情页可确认自动发现的诊断服务，不需要手工填写容器 ID、Unit 参数或 `source_key`。完整协议见 [M3_DIAGNOSTICS.md](./M3_DIAGNOSTICS.md)。
 
 M4 写操作同样默认关闭。新机器在 Web 明确选择“允许经确认的 Docker 单服务重启”后，安装命令才会包含本地写策略与控制平面公钥。Agent 自动为当前 Docker 服务声明 `docker_restart + stable service_key`，不上传容器 target。控制台仍需把具体服务映射标记为非关键并显式启用重启；任务还必须经过管理员确认和 Ed25519 验签。完整协议见 [M4_OPERATIONS.md](./M4_OPERATIONS.md)。
+
+安装器 CLI 的用户选项使用连字符（例如 `--evidence-policy docker-logs`、
+`--operation-policy docker-restart`），但写入 `/etc/vps-agent/agent.env` 后必须是 Go 常量的
+下划线值：`AGENT_EVIDENCE_POLICY=docker_logs`、
+`AGENT_OPERATION_POLICY=docker_restart`。直接编辑 env 时不要写成 `docker-logs` 或
+`docker-restart`；未知值会安全降级为 `disabled`。启用写能力后必须同时核对 Agent 报告中
+实际出现 `docker_restart` capability，不能只核对配置文件文本。
 
 升级到 `v0.4.0` 时需注意 Docker health 行为修正：`running (unhealthy)` 不再被误报为健康，因此可能首次触发 M2 告警；`health: starting` 作为未知状态，不触发异常也不满足 M4 健康验证。部署前应先检查现有容器的 healthcheck 状态，并确保控制平面与 Agent 均使用 NTP/chrony 同步时间。
 

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/example/vps-agent-console/apps/agent/internal/client"
-	"github.com/example/vps-agent-console/apps/agent/internal/config"
+	"github.com/ymasout/VPS-Agent/apps/agent/internal/client"
+	"github.com/ymasout/VPS-Agent/apps/agent/internal/config"
 )
 
 func TestParseSystemdServicesUsesActiveState(t *testing.T) {

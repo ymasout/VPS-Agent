@@ -18,6 +18,9 @@ DEPLOY_ALLOWED_ROOT=""
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/vps-agent"
 DATA_DIR="/var/lib/vps-agent"
+ALLOW_LEGACY_CHECKSUM_ONLY="false"
+COSIGN_CERTIFICATE_IDENTITY="https://github.com/ymasout/VPS-Agent/.github/workflows/formal-release.yml@refs/heads/main"
+COSIGN_OIDC_ISSUER="https://token.actions.githubusercontent.com"
 
 usage() {
   cat <<'EOF'
@@ -37,6 +40,7 @@ Options:
   --deploy-allowed-root DIR  Local Compose root required for docker-compose-deploy
   --version VERSION     Release version such as 0.2.2 (default: latest)
   --download-base-url URL  Optional control-plane download mirror
+  --allow-legacy-checksum-only  Permit an old unsigned Agent release (unsafe compatibility escape hatch)
   -h, --help            Show this help
 
 Existing installations keep their identity and do not need another token.
@@ -63,6 +67,7 @@ while [[ $# -gt 0 ]]; do
     --deploy-allowed-root) DEPLOY_ALLOWED_ROOT="${2:-}"; shift 2 ;;
     --version) VERSION="${2:-}"; shift 2 ;;
     --download-base-url) DOWNLOAD_BASE_URL="${2:-}"; shift 2 ;;
+    --allow-legacy-checksum-only) ALLOW_LEGACY_CHECKSUM_ONLY="true"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) fail "unknown option: $1" ;;
   esac
@@ -176,6 +181,19 @@ curl --fail --location --proto '=https' --tlsv1.2 --silent --show-error "${BASE_
   cd "${TMP_DIR}"
   grep " ${BINARY}$" SHA256SUMS | sha256sum --check --status -
 ) || fail "binary checksum verification failed"
+
+if [[ "${ALLOW_LEGACY_CHECKSUM_ONLY}" == "true" ]]; then
+  printf 'WARNING: signature verification was explicitly bypassed for a legacy release; checksum does not prove publisher identity.\n' >&2
+else
+  command -v cosign >/dev/null || fail "cosign is required to verify formal releases; install cosign or explicitly use --allow-legacy-checksum-only for an old release"
+  curl --fail --location --proto '=https' --tlsv1.2 --silent --show-error \
+    "${BASE_URL}/${BINARY}.sigstore.json" -o "${TMP_DIR}/${BINARY}.sigstore.json"
+  cosign verify-blob \
+    --bundle "${TMP_DIR}/${BINARY}.sigstore.json" \
+    --certificate-identity "${COSIGN_CERTIFICATE_IDENTITY}" \
+    --certificate-oidc-issuer "${COSIGN_OIDC_ISSUER}" \
+    "${TMP_DIR}/${BINARY}" >/dev/null || fail "binary publisher signature verification failed"
+fi
 
 install -d -m 0755 "${INSTALL_DIR}" "${CONFIG_DIR}"
 install -d -m 0700 "${DATA_DIR}"

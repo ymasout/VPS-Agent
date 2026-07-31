@@ -1,0 +1,357 @@
+name: Formal Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Explicit release gate
+        required: true
+        type: choice
+        options: [review, draft, candidate, publish]
+      version:
+        description: Canonical SemVer from release/release.json
+        required: true
+        default: "0.6.1"
+      commit_sha:
+        description: Full audited main commit SHA
+        required: true
+      public_ghcr_confirmed:
+        description: Confirm repository owner separately made both GHCR packages public
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  API_IMAGE: ghcr.io/ymasout/vps-agent-api
+  WEB_IMAGE: ghcr.io/ymasout/vps-agent-web
+  COSIGN_IDENTITY: https://github.com/ymasout/VPS-Agent/.github/workflows/formal-release.yml@refs/heads/main
+  COSIGN_ISSUER: https://token.actions.githubusercontent.com
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      build_time: ${{ steps.metadata.outputs.build_time }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.commit_sha }}
+      - id: metadata
+        name: Validate commit, version, and immutable coordinates
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "${COMMIT_SHA}" = "$(git rev-parse HEAD)"
+          test "${#COMMIT_SHA}" -eq 40
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "${COMMIT_SHA}" origin/main
+          python3 scripts/release.py check --version "${VERSION}"
+          gh api "repos/${GITHUB_REPOSITORY}/commits/${COMMIT_SHA}/check-runs" --paginate \
+            --jq '.check_runs[] | [.name,.conclusion] | @tsv' > "$RUNNER_TEMP/check-runs"
+          for required in backup-restore release-compose create-all-adoption standalone-pwa-assets source-distribution; do
+            grep -Fqx "${required}"$'\t'"success" "$RUNNER_TEMP/check-runs" || {
+              echo "required successful check is missing: ${required}" >&2
+              exit 1
+            }
+          done
+          BUILD_EPOCH=$(git show -s --format=%ct "${COMMIT_SHA}")
+          echo "build_time=$(date -u -d "@${BUILD_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          if [ "${{ inputs.phase }}" = review ] || [ "${{ inputs.phase }}" = draft ]; then
+            if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}" >/dev/null 2>&1; then
+              echo "refusing an existing immutable Git tag" >&2
+              exit 1
+            fi
+          else
+            test "$(git ls-remote origin "refs/tags/v${VERSION}" | cut -f1)" = "${COMMIT_SHA}"
+          fi
+
+  build-assets:
+    if: inputs.phase == 'review' || inputs.phase == 'draft'
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.commit_sha }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: apps/agent/go.mod
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
+      - name: Install locked audit tools
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          python -m venv "$RUNNER_TEMP/api-deps"
+          "$RUNNER_TEMP/api-deps/bin/python" -m pip install --disable-pip-version-check -r apps/api/requirements-dev.txt
+          python -m venv "$RUNNER_TEMP/release-tools"
+          "$RUNNER_TEMP/release-tools/bin/python" -m pip install --disable-pip-version-check "reuse[charset-normalizer]==6.2.0"
+      - name: Build committed source and Agent assets
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          mkdir -p dist
+          "$RUNNER_TEMP/api-deps/bin/python" scripts/dependency_licenses.py --output dist/dependency-licenses.json
+          "$RUNNER_TEMP/release-tools/bin/reuse" spdx --output dist/source.spdx
+          "$RUNNER_TEMP/api-deps/bin/python" scripts/source_release.py build --output-dir dist
+          cp scripts/install-agent.sh dist/install-agent.sh
+          for arch in amd64 arm64; do
+            (cd apps/agent && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" \
+              go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
+              -o "../../dist/vps-agent-linux-${arch}" ./cmd/agent)
+            "dist/vps-agent-linux-${arch}" --version | grep --fixed-strings "vps-agent ${VERSION}"
+            syft scan "file:dist/vps-agent-linux-${arch}" -o "spdx-json=dist/vps-agent-linux-${arch}.spdx.json"
+          done
+      - name: Build multi-architecture OCI archives without publishing
+        env:
+          VERSION: ${{ inputs.version }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          BUILD_EPOCH=$(git show -s --format=%ct "${COMMIT_SHA}")
+          BUILD_TIME=$(date -u -d "@${BUILD_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)
+          docker buildx build --platform linux/amd64,linux/arm64 --file apps/api/Dockerfile \
+            --build-arg CONTROL_PLANE_VERSION="${VERSION}" \
+            --build-arg CONTROL_PLANE_COMMIT_SHA="${COMMIT_SHA}" \
+            --build-arg CONTROL_PLANE_BUILD_TIME="${BUILD_TIME}" \
+            --output type=oci,dest=dist/vps-agent-api.oci.tar .
+          docker buildx build --platform linux/amd64,linux/arm64 --file apps/web/Dockerfile \
+            --build-arg CONTROL_PLANE_VERSION="${VERSION}" \
+            --build-arg CONTROL_PLANE_COMMIT_SHA="${COMMIT_SHA}" \
+            --build-arg CONTROL_PLANE_BUILD_TIME="${BUILD_TIME}" \
+            --output type=oci,dest=dist/vps-agent-web.oci.tar .
+          syft scan oci-archive:dist/vps-agent-api.oci.tar -o spdx-json=dist/vps-agent-api.spdx.json
+          syft scan oci-archive:dist/vps-agent-web.oci.tar -o spdx-json=dist/vps-agent-web.spdx.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: formal-release-unsigned-${{ inputs.version }}-${{ inputs.commit_sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: dist/
+
+  sign-assets:
+    if: inputs.phase == 'review' || inputs.phase == 'draft'
+    needs: build-assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: formal-release-unsigned-${{ inputs.version }}-${{ inputs.commit_sha }}
+          path: dist
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+      - name: Create checksums and keyless blob bundles
+        run: |
+          cd dist
+          find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort > "$RUNNER_TEMP/release-files"
+          while IFS= read -r file; do sha256sum "$file"; done < "$RUNNER_TEMP/release-files" > SHA256SUMS
+          printf '%s\n' SHA256SUMS >> "$RUNNER_TEMP/release-files"
+          while IFS= read -r file; do
+            cosign sign-blob --yes --bundle "${file}.sigstore.json" "$file"
+          done < "$RUNNER_TEMP/release-files"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: formal-release-signed-${{ inputs.version }}-${{ inputs.commit_sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: dist/
+
+  create-draft:
+    if: inputs.phase == 'draft'
+    needs: sign-assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.commit_sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: formal-release-signed-${{ inputs.version }}-${{ inputs.commit_sha }}
+          path: dist
+      - name: Require private vulnerability reporting and create immutable tag plus draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/private-vulnerability-reporting" --jq .enabled)" = true
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            echo "release already exists" >&2
+            exit 1
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/v${VERSION}" -f sha="${COMMIT_SHA}"
+          gh release create "v${VERSION}" dist/* --verify-tag --draft \
+            --title "VPS Agent v${VERSION}" --notes-file CHANGELOG.md
+
+  push-candidates:
+    if: inputs.phase == 'candidate'
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    outputs:
+      api_digest: ${{ steps.api.outputs.digest }}
+      web_digest: ${{ steps.web.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.commit_sha }}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+      - name: Require the matching immutable draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}" --jq .object.sha)" = "${COMMIT_SHA}"
+          test "$(gh release view "v${VERSION}" --json isDraft --jq .isDraft)" = true
+      - id: api
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.API_IMAGE }}:candidate-${{ inputs.commit_sha }}
+          build-args: |
+            CONTROL_PLANE_VERSION=${{ inputs.version }}
+            CONTROL_PLANE_COMMIT_SHA=${{ inputs.commit_sha }}
+            CONTROL_PLANE_BUILD_TIME=${{ needs.prepare.outputs.build_time }}
+          provenance: mode=max
+          sbom: true
+      - id: web
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.WEB_IMAGE }}:candidate-${{ inputs.commit_sha }}
+          build-args: |
+            CONTROL_PLANE_VERSION=${{ inputs.version }}
+            CONTROL_PLANE_COMMIT_SHA=${{ inputs.commit_sha }}
+            CONTROL_PLANE_BUILD_TIME=${{ needs.prepare.outputs.build_time }}
+          provenance: mode=max
+          sbom: true
+      - name: Sign and verify candidate digests
+        env:
+          API_DIGEST: ${{ steps.api.outputs.digest }}
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+        run: |
+          for image in "${API_IMAGE}@${API_DIGEST}" "${WEB_IMAGE}@${WEB_DIGEST}"; do
+            cosign sign --yes "$image"
+            cosign verify "$image" --certificate-identity "${COSIGN_IDENTITY}" --certificate-oidc-issuer "${COSIGN_ISSUER}" >/dev/null
+            docker buildx imagetools inspect "$image" >/dev/null
+          done
+      - name: Build and sign the digest-pinned release bundle
+        env:
+          API_DIGEST: ${{ steps.api.outputs.digest }}
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+          VERSION: ${{ inputs.version }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          python3 scripts/release.py bundle --version "${VERSION}" --commit "${COMMIT_SHA}" \
+            --api-image "${API_IMAGE}@${API_DIGEST}" --web-image "${WEB_IMAGE}@${WEB_DIGEST}" --output-dir dist
+          jq -n --arg version "${VERSION}" --arg commit "${COMMIT_SHA}" \
+            --arg api "${API_IMAGE}@${API_DIGEST}" --arg web "${WEB_IMAGE}@${WEB_DIGEST}" \
+            '{version:$version,commit_sha:$commit,api:$api,web:$web}' > dist/image-digests.json
+          for file in dist/vps-agent-release-*.tar.gz dist/vps-agent-release-*.tar.gz.sha256 dist/image-digests.json; do
+            cosign sign-blob --yes --bundle "${file}.sigstore.json" "$file"
+          done
+      - name: Add candidate metadata to the existing draft without replacement
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: gh release upload "v${VERSION}" dist/vps-agent-release-*.tar.gz* dist/image-digests.json dist/image-digests.json.sigstore.json
+
+  publish:
+    if: inputs.phase == 'publish'
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.commit_sha }}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+      - name: Download and verify the signed candidate manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          PUBLIC_CONFIRMED: ${{ inputs.public_ghcr_confirmed }}
+        run: |
+          test "${PUBLIC_CONFIRMED}" = true
+          test "$(gh release view "v${VERSION}" --json isDraft --jq .isDraft)" = true
+          gh release download "v${VERSION}" --pattern image-digests.json --pattern image-digests.json.sigstore.json --dir dist
+          cosign verify-blob --bundle dist/image-digests.json.sigstore.json \
+            --certificate-identity "${COSIGN_IDENTITY}" --certificate-oidc-issuer "${COSIGN_ISSUER}" \
+            dist/image-digests.json
+          test "$(jq -r .commit_sha dist/image-digests.json)" = "${{ inputs.commit_sha }}"
+          test "$(jq -r .version dist/image-digests.json)" = "${VERSION}"
+      - name: Verify public digests before acquiring registry write credentials
+        run: |
+          docker buildx imagetools inspect "$(jq -r .api dist/image-digests.json)" >/dev/null
+          docker buildx imagetools inspect "$(jq -r .web dist/image-digests.json)" >/dev/null
+          if docker buildx imagetools inspect "${API_IMAGE}:v${{ inputs.version }}" >/dev/null 2>&1 || \
+             docker buildx imagetools inspect "${WEB_IMAGE}:v${{ inputs.version }}" >/dev/null 2>&1; then
+            echo "refusing to create or move an existing SemVer image tag" >&2
+            exit 1
+          fi
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Promote the verified digests and publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          docker buildx imagetools create --tag "${API_IMAGE}:v${VERSION}" "$(jq -r .api dist/image-digests.json)"
+          docker buildx imagetools create --tag "${WEB_IMAGE}:v${VERSION}" "$(jq -r .web dist/image-digests.json)"
+          test "$(docker buildx imagetools inspect "${API_IMAGE}:v${VERSION}" --format '{{json .Manifest.Digest}}' | tr -d '"')" = "$(jq -r .api dist/image-digests.json | cut -d@ -f2)"
+          test "$(docker buildx imagetools inspect "${WEB_IMAGE}:v${VERSION}" --format '{{json .Manifest.Digest}}' | tr -d '"')" = "$(jq -r .web dist/image-digests.json | cut -d@ -f2)"
+          gh release edit "v${VERSION}" --draft=false --latest

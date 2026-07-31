@@ -1,0 +1,26 @@
+{
+  "version": "0.6.1",
+  "tag": "v0.6.1",
+  "repository": "github.com/ymasout/VPS-Agent",
+  "agent_module": "github.com/ymasout/VPS-Agent/apps/agent",
+  "images": {
+    "api": "ghcr.io/ymasout/vps-agent-api",
+    "web": "ghcr.io/ymasout/vps-agent-web"
+  },
+  "build_images": {
+    "python": "docker.io/library/python@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de",
+    "node": "docker.io/library/node@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32",
+    "golang": "docker.io/library/golang@sha256:383395b794dffa5b53012a212365d40c8e37109a626ca30d6151c8348d380b5f",
+    "alpine": "docker.io/library/alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce"
+  },
+  "runtime_images": {
+    "caddy": "docker.io/library/caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648",
+    "postgres": "docker.io/library/postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777",
+    "redis": "docker.io/library/redis@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2"
+  },
+  "schema_revision": "0020_m6_named_approval",
+  "supported_agent_versions": [
+    "0.4.2",
+    "0.6.1"
+  ]
+}

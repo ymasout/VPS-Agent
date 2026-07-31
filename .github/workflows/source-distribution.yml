@@ -53,10 +53,12 @@ jobs:
       - name: Validate release policy and negative cases
         run: |
           "$RUNNER_TEMP/api-deps/bin/python" scripts/source_release.py check
+          "$RUNNER_TEMP/api-deps/bin/python" scripts/release.py check --version 0.6.1
           "$RUNNER_TEMP/api-deps/bin/python" -m pytest apps/api/tests/test_source_release.py
+          "$RUNNER_TEMP/api-deps/bin/python" -m pytest apps/api/tests/test_release.py
           "$RUNNER_TEMP/api-deps/bin/python" -m ruff check \
-            scripts/source_release.py scripts/dependency_licenses.py \
-            apps/api/tests/test_source_release.py
+            scripts/source_release.py scripts/dependency_licenses.py scripts/release.py \
+            apps/api/tests/test_source_release.py apps/api/tests/test_release.py
           "$RUNNER_TEMP/release-tools/bin/reuse" lint
 
       - name: Build license inventory, source SBOM, and source archive

@@ -1,6 +1,6 @@
 # M6.4 协作与开源分发评估
 
-当前状态：**M6.4a 已完成（`714da5a`，四条 CI 全绿，无生产金丝雀）；M6.4b 已完成独立审计、四条 CI 和两阶段生产只读金丝雀；M6.4c（c1/c2/c3）已完成审计+CI+生产金丝雀（2026-07-31，含首次具名 M4 完整执行链）；M6.4d 尚未开始。** 当前状态仍不代表已经具备全站 RBAC 或正式控制平面发行版。
+当前状态：**M6.4a 已完成（`714da5a`，四条 CI 全绿，无生产金丝雀）；M6.4b 已完成独立审计、四条 CI 和两阶段生产只读金丝雀；M6.4c（c1/c2/c3）已完成审计+CI+生产金丝雀（2026-07-31，含首次具名 M4 完整执行链）；M6.4d 本地实现已完成，待独立审计、Ubuntu CI 与外部发行门。** 当前状态仍不代表已经具备全站 RBAC 或正式控制平面发行版。
 
 ## 1. 目标
 
@@ -21,6 +21,8 @@
 ## 3. 当前基线与真实缺口
 
 ### 3.1 身份、权限和审计
+
+以下条目记录 M6.4 设计启动时的历史缺口，不再代表当前代码能力。M6.4b/c 已补入 default-off 的可信 Principal、有限只读 capability、具名计划/确认、actor snapshot 和 maker-checker；生产金丝雀后相关 flags 已还原关闭，因此当前生产仍保持 legacy 权限行为，启用具名 enforcement 必须重新核对配置并取得明确授权。
 
 - 外部控制台由 Caddy Basic Auth 保护，生产 Compose 当前只配置一组 `CADDY_ADMIN_USER`/密码哈希；登录者被整体视为管理员。
 - Web 服务端和 API 共享一个 `ADMIN_API_TOKEN`。浏览器不持有该令牌，但 API 只能证明请求来自共享管理边界，不能区分具体操作者。
@@ -122,6 +124,7 @@
 
 ### M6.4d：正式发行与协作收尾
 
+- 冻结设计见 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md)；为减少无意义切分，源码坐标、发行流水线、制品、签名、release bundle 和干净主机演练按一个连续实现批次完成，但 tag、draft、publish 与生产升级保留独立授权门。
 - 发布不可变控制平面资产、checksums、SBOM、签名/provenance、升级兼容矩阵和 changelog。
 - 在全新主机按公开文档完成安装→升级→备份→隔离恢复；贡献者能在干净 checkout 运行统一检查。
 - 经独立审计和授权金丝雀后同步 M6 状态；Web SSH 仍留到最后独立设计。
@@ -228,8 +231,9 @@ M6.4c 不能直接复用 M6.4b 的共享 read token 或现有 Web 管理代理�
 隔离。计划 migration 为 `0020_m6_named_approval`；Agent 任务协议和 M4 状态机不变。
 完整设计见 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)。
 
-M6.4c1 已按冻结设计落地严格角色绑定、独立 write token、三组 Caddy 凭据、精确 7 路由
-shadow、`0020_m6_named_approval` actor snapshot schema 和部署 preflight。本地 API/Web、
-Ruff、双向离线 SQL、Compose、发行检查、真实 Caddy 和真实 PostgreSQL 恢复/downgrade 门
-均通过，仍待 Ubuntu CI。c1 未切换 Web 写代理、未执行 capability 拒绝、未改变 actor/
-确认正文或 M4 状态机。
+M6.4c 已按 c1 shadow → c2 具名 operator 计划 → c3 独立 approver 确认顺序完成。代码
+`2673877` + CI 修复 `0d75342` 已推送 main，四条 CI 全绿；`0020_m6_named_approval`、精确
+operation capability、actor snapshot、Origin/Fetch Metadata、行锁 maker-checker 与默认关闭
+break-glass 均已落地。2026-07-31 生产金丝雀由不同 Principal 完成计划与确认，并完整复用
+M4 签名、Agent 领取、固定 `docker_restart` 与健康验证进入 `succeeded`；验证后 restart 与
+Principal flags 已还原关闭。完整证据见 [M6_NAMED_APPROVAL.md §23](./M6_NAMED_APPROVAL.md#23-m64c3-生产金丝雀记录2026-07-31)。

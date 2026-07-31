@@ -11,12 +11,31 @@ Thank you for helping improve VPS Agent. Contributions must preserve the self-ho
 
 ## Development checks
 
+A clean checkout needs Python 3.12, Node.js 22 with Corepack/pnpm, Go from `apps/agent/go.mod`, Docker
+Desktop/Engine with Compose v2, and GNU Make. Install the locked application dependencies before running checks:
+
+```text
+corepack enable
+make install
+```
+
+Copy only example configuration when starting the development stack; never commit the resulting local `.env`:
+
+```text
+copy .env.example .env
+make up
+```
+
+On Linux/macOS use `cp` in place of `copy`. `make down` stops the local stack. Production configuration, backups and
+credentials must never be used for contributor testing.
+
 Run the repository checks appropriate to the change:
 
 ```text
 make check
 python scripts/source_release.py check
 python scripts/dependency_licenses.py --output dist/dependency-licenses.json
+make release-check
 ```
 
 Database changes additionally require a single Alembic head, both-direction offline SQL where supported, and real PostgreSQL migration tests. Web standalone packaging changes require the real image CI gate. Agent changes require `go test ./...` and `go vet ./...`.

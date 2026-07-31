@@ -2,7 +2,7 @@
 
 package collector
 
-import "github.com/example/vps-agent-console/apps/agent/internal/client"
+import "github.com/ymasout/VPS-Agent/apps/agent/internal/client"
 
 // Windows support is limited to compilation and local protocol development;
 // production collection targets Linux VPS hosts.

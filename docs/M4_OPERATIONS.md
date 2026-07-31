@@ -182,7 +182,7 @@ M4 首批通过提交前安全审计（有条件通过，全部 P2/P3 已处理�
 - 创建计划 -> 确认（Ed25519 签发）-> `queued -> claimed -> running -> verifying -> succeeded`，审计 8 次转换完整，`output` 为固定摘要、不含容器 target。
 - Agent 经 Caddy Bearer 轮询领取并验签，本地按 stable service_key 重解析 target 后以固定 `docker restart --` 执行（无 Shell），退出 0 后由后续新鲜健康观测跨越 30s 稳定窗口判定 `succeeded`（非退出码判定）。
 
-当前生产 Fleet 中，control-plane 自监控、两台腾讯云运行 Agent `v0.4.0`，aliyun-VPS 为 `v0.4.2`（`docker_compose_deploy` + `docker_restart`）；其中只有 aliyun-VPS 明确开启写能力，其余机器没有 M4 写权限。DMIT 保持 `v0.3.3`，与 v0.4.0 控制平面兼容且无需为了 M4 单独升级。v0.4.0 Agent 在策略 disabled 时会初始化本地账本并以默认 5s 轮询空操作队列（无任务、不执行写操作），属可接受的额外空轮询，而非零行为变更。
+本段原有 Fleet 版本表是 2026-07-23 的历史快照，不应继续当作当前资产清单。旧 aliyun-VPS 后续已被释放；2026-07-31 M6.4c 金丝雀使用新 aliyun-零时 Agent `v0.4.2`，以 `AGENT_OPERATION_POLICY=docker_restart` 和签名公钥临时启用写能力，完成首次具名 M4 全链后已还原服务 restart 授权。其他机器的当前版本和能力必须在每次生产操作前实时核对，不能从本文推断。v0.4.0 Agent 在策略 disabled 时会初始化本地账本并以默认 5s 轮询空操作队列（无任务、不执行写操作），属可接受的额外空轮询，而非零行为变更。
 
 ## 10. 生产部署注意事项（控制平面）
 

@@ -5,7 +5,7 @@ package collector
 import (
 	"syscall"
 
-	"github.com/example/vps-agent-console/apps/agent/internal/client"
+	"github.com/ymasout/VPS-Agent/apps/agent/internal/client"
 )
 
 func disk() []client.DiskMetric {

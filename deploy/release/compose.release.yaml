@@ -1,0 +1,25 @@
+name: vps-agent-console
+
+# Apply after deploy/compose.production.yaml. The !reset tags deliberately remove local source builds.
+services:
+  caddy:
+    image: ${VPS_AGENT_CADDY_IMAGE:?set digest-pinned VPS_AGENT_CADDY_IMAGE}
+    pull_policy: always
+
+  web:
+    image: ${VPS_AGENT_WEB_IMAGE:?set digest-pinned VPS_AGENT_WEB_IMAGE}
+    build: !reset null
+    pull_policy: always
+
+  api:
+    image: ${VPS_AGENT_API_IMAGE:?set digest-pinned VPS_AGENT_API_IMAGE}
+    build: !reset null
+    pull_policy: always
+
+  postgres:
+    image: ${VPS_AGENT_POSTGRES_IMAGE:?set digest-pinned VPS_AGENT_POSTGRES_IMAGE}
+    pull_policy: always
+
+  redis:
+    image: ${VPS_AGENT_REDIS_IMAGE:?set digest-pinned VPS_AGENT_REDIS_IMAGE}
+    pull_policy: always

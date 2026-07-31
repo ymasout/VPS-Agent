@@ -417,19 +417,6 @@ Go test/vet、Compose config 与 `git diff --check` 通过。Docker Desktop 真�
 `awaiting_confirmation`、actor snapshot、无 nonce/签名及 0020 downgrade fail-closed 两项测试。
 当前生产为 `0d75342 + 0020`、Principal flags OFF；c2 已提交推送并完成审计、CI 与生产金丝雀。
 
-## 23. M6.4c3 生产金丝雀记录（2026-07-31）
-
-具名审批 + maker-checker + M4 完整执行金丝雀在用户明确授权下执行并通过：
-
-- **Phase A（flags OFF）**：部署 `0d75342`（无迁移，head 0020）；system-info/ops/trans 15/92 不变；`/healthz` 最小。
-- **Phase B（c3 enforcement）**：开 4 flag + 启用 m4-deploy-bad restart（新 aliyun-零时 Agent `7175dcae`，instance `1c79ce1d`）。
-  - **B1 operator 创建计划**：`status=awaiting_confirmation`（首次非 failed--Agent 在线 + 预检通过）/ `requested_by=local:50afb0f6-...` / `authorization_mode=named` / 快照含 capability_used=operation:plan / `task_signature=null`。
-  - **B2 maker-checker**：operator 确认自己 -> **403**（缺 operation:approve，授权层先于 maker-checker 拒绝）。
-  - **B3 approver 确认 + M4 执行**：approver 确认 -> `status=queued` / `confirmed_by=local:3be51886-...` / 快照含 capability_used=operation:approve -> **poll 1: succeeded**（M4 签名 -> Agent 领取 -> docker restart -> 健康验证 -> succeeded，首次具名 M4 完整执行链）。
-  - **B4 回放**：同 approver -> **409**（已 succeeded，幂等 200 只适用于 queued）；operator -> **403**（缺 operation:approve）。
-- **Phase C（还原）**：restart false + 4 flag false + `/principal` 403。`0d75342` 留作运行基线。
-- **环境修复记录**：旧 aliyun-VPS 被释放；新 aliyun-零时 Agent v0.4.2 需 5 个 env var（`CONTROL_PLANE_URL`+`AGENT_EVIDENCE_POLICY=docker_logs`+`AGENT_OPERATION_POLICY=docker_restart`+`AGENT_OPERATION_KEY_ID`+`AGENT_OPERATION_PUBLIC_KEY_BASE64`），Go 常量用下划线，连字符被静默拒绝为 disabled。
-
 ## 21. M6.4c2 生产金丝雀记录（2026-07-31）
 
 具名计划金丝雀在用户明确授权下执行并通过：
@@ -477,3 +464,16 @@ Go test/vet、Compose config 与 `git diff --check` 通过。Docker Desktop 真�
 七路由覆盖/header 隔离及 4 KiB 拒绝门通过；临时 PostgreSQL 16 完成 create-all adoption、
 schema check，并通过 0020 downgrade guard、具名计划快照和并发确认只产生一条 queued
 Transition 共 3 项真实数据库测试。已提交 `2673877`+`0d75342` 推送至 main，四个 CI 全绿；2026-07-31 生产金丝雀通过（见 §23）。生产现运行 `0d75342 + 0020`、Principal flags OFF。
+
+## 23. M6.4c3 生产金丝雀记录（2026-07-31）
+
+具名审批 + maker-checker + M4 完整执行金丝雀在用户明确授权下执行并通过：
+
+- **Phase A（flags OFF）**：部署 `0d75342`（无迁移，head 0020）；system-info/ops/trans 15/92 不变；`/healthz` 最小。
+- **Phase B（c3 enforcement）**：开 4 flag + 启用 m4-deploy-bad restart（新 aliyun-零时 Agent `7175dcae`，instance `1c79ce1d`）。
+  - **B1 operator 创建计划**：`status=awaiting_confirmation`（首次非 failed--Agent 在线 + 预检通过）/ `requested_by=local:50afb0f6-...` / `authorization_mode=named` / 快照含 capability_used=operation:plan / `task_signature=null`。
+  - **B2 maker-checker**：operator 确认自己 -> **403**（缺 operation:approve，授权层先于 maker-checker 拒绝；API 行锁内同 Principal 比较仍有独立测试覆盖）。
+  - **B3 approver 确认 + M4 执行**：approver 确认 -> `status=queued` / `confirmed_by=local:3be51886-...` / 快照含 capability_used=operation:approve -> **poll 1: succeeded**（M4 签名 -> Agent 领取 -> docker restart -> 健康验证 -> succeeded，首次具名 M4 完整执行链）。
+  - **B4 回放**：同 approver -> **409**（Operation 已进入 `succeeded`；幂等 200 只适用于仍为 `queued` 的原审批人重放），operator -> **403**（缺 operation:approve）。
+- **Phase C（还原）**：restart false + 4 flag false + `/principal` 403。`0d75342` 留作运行基线。
+- **环境修复记录**：旧 aliyun-VPS 已被释放；新 aliyun-零时 Agent v0.4.2 需 5 个 env var（`CONTROL_PLANE_URL` + `AGENT_EVIDENCE_POLICY=docker_logs` + `AGENT_OPERATION_POLICY=docker_restart` + `AGENT_OPERATION_KEY_ID` + `AGENT_OPERATION_PUBLIC_KEY_BASE64`）。直接配置环境变量时策略值必须使用 Go 常量的下划线形式；`docker-logs`/`docker-restart` 会安全降级为 `disabled`，因此启用前必须核对 Agent 实际声明的 capability，不能只看配置文件文本。

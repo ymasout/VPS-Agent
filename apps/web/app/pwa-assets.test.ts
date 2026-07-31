@@ -30,6 +30,6 @@ describe("PWA static assets", () => {
   });
 
   it("packages public PWA assets into the standalone runtime image", () => {
-    expect(dockerfile).toContain("COPY --from=build /repo/apps/web/public ./apps/web/public");
+    expect(dockerfile).toContain("COPY --chown=node:node --from=build /repo/apps/web/public ./apps/web/public");
   });
 });

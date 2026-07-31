@@ -1,70 +1,51 @@
-name: Release Agent
+name: Agent Release Candidate
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Review-only SemVer from release/release.json
+        required: true
+        default: "0.6.1"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  test:
+  test-and-build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/agent
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: apps/agent/go.mod
-          cache-dependency-path: apps/agent/go.mod
-      - run: go test ./...
-
-  build:
-    needs: test
-    runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
         goarch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: apps/agent/go.mod
           cache-dependency-path: apps/agent/go.mod
+      - name: Validate frozen release coordinates
+        run: python3 scripts/release.py check --version "${{ inputs.version }}"
+      - name: Test Agent
+        working-directory: apps/agent
+        run: go test ./... && go vet ./...
       - name: Build Linux binary
         working-directory: apps/agent
         env:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ inputs.version }}
         run: |
           mkdir -p ../../dist
-          go build -trimpath -ldflags="-s -w -X main.version=${VERSION#v}" -o "../../dist/vps-agent-linux-${GOARCH}" ./cmd/agent
-      - uses: actions/upload-artifact@v4
+          go build -trimpath -ldflags="-s -w -X main.version=${VERSION#v}" \
+            -o "../../dist/vps-agent-linux-${GOARCH}" ./cmd/agent
+          test "$(../../dist/vps-agent-linux-${GOARCH} --version)" = "vps-agent ${VERSION#v}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: vps-agent-linux-${{ matrix.goarch }}
+          name: agent-candidate-${{ inputs.version }}-${{ matrix.goarch }}
+          if-no-files-found: error
+          retention-days: 14
           path: dist/vps-agent-linux-${{ matrix.goarch }}
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: vps-agent-linux-*
-          path: dist
-          merge-multiple: true
-      - name: Create checksums
-        run: |
-          cp scripts/install-agent.sh dist/install-agent.sh
-          cd dist
-          sha256sum vps-agent-linux-* install-agent.sh > SHA256SUMS
-      - name: Publish GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" dist/* --verify-tag --generate-notes --title "VPS Agent ${GITHUB_REF_NAME}"

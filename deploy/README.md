@@ -124,6 +124,17 @@ PRINCIPAL_VIEWER_IDS=<CADDY_ADMIN_USER 的精确值>
 环境变量修改不会仅靠 Caddy reload 自动进入现有容器。proxy token 不得复用管理令牌、
 Operation 签名密钥或未来 M6.4c 的具名写授权证明。
 
+## M6.4d release-only 镜像模式
+
+现有 `compose.production.yaml` 保留源码构建，供仓库所有者开发和迁移前审计使用。正式发行额外
+叠加 `release/compose.release.yaml`，以 `!reset null` 删除 API/Web 的 `build`，并从发行包生成的
+`release/images.env` 读取 API、Web、Caddy、PostgreSQL、Redis 五个不可变 digest。
+
+先以 `release-check` 确认合并后恰好五个 digest 且不存在本地构建，再执行 `release-pull`。
+标准顺序保持 `preflight → migrate → release-up → reload-caddy → postflight`；`release-up` 固定
+传入 `--no-build`，镜像缺失时失败，不能回退到宿主机源码。完整命令见
+[RELEASE_PROCESS.md](../docs/RELEASE_PROCESS.md)。该路径不自动部署，生产执行仍需单独授权。
+
 ## M6.4c1 多 Principal 写身份 shadow
 
 M6.4c1 只观察具名写身份，不改变任何 M4 允许/拒绝结果。部署配置必须先准备三个不同的
@@ -149,15 +160,15 @@ API 和 Web 后，`/api/v1/principal` 应显示稳定 ID、实际角色、有限
 `write_authorization_mode=shadow`。精确 M4 POST 只产生 `principal.write_shadow` 决策日志；
 原有 `ADMIN_API_TOKEN` 仍是唯一写授权，Operation actor、确认正文和状态机均不变。
 
-M6.4c2 本地实现允许在独立审计、CI 和部署授权后临时设置
+M6.4c 已完成审计、CI 和 2026-07-31 生产金丝雀；后续只有在单独授权的验证或实际团队使用窗口中才可临时设置
 `PRINCIPAL_READ_AUTHORIZATION_ENABLED=true` 与
 `PRINCIPAL_WRITE_AUTHORIZATION_ENABLED=true`。该开关必须同时注入 API 与 Web，部署 preflight
 会拒绝两者不一致。开启后仅冻结的六条计划 POST 由 operator 通过浏览器同源直达 API；旧
-Web 计划代理返回 409。M6.4c3 本地实现后，第七条 confirm POST 仅接受具备
+Web 计划代理返回 409。第七条 confirm POST 仅接受具备
 `operation:approve` 的独立 approver，正文必须为空，actor 由可信 Principal 派生；API 在行锁
 事务内拒绝 creator 自批，并继续复用 M4 确认时预检、签名、Agent 执行和健康验证链。部署前
-仍必须确认不存在 legacy `awaiting_confirmation`/`queued` Operation。生产当前仍保持该开关
-为 `false`，c3 未通过独立审计、CI 和金丝雀前不得启用。
+仍必须确认不存在 legacy `awaiting_confirmation`/`queued` Operation。首次具名 M4 完整执行
+金丝雀已通过；生产验证后该开关仍已还原为 `false`，不得因代码已完成而长期默认开启。
 
 事故 break-glass 使用独立 API-only 开关：
 

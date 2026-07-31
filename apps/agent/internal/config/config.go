@@ -26,6 +26,7 @@ type Config struct {
 	OperationPollInterval time.Duration
 	DeployPolicy          string
 	DeployAllowedRoots    []string
+	Warnings              []string
 }
 
 type EvidenceSource struct {
@@ -45,6 +46,25 @@ var systemdUnitPattern = regexp.MustCompile(`^[a-zA-Z0-9_.@:-]+\.service$`)
 
 func Load() Config {
 	interval := durationOrDefault("AGENT_REPORT_INTERVAL", 30*time.Second)
+	evidenceRaw := os.Getenv("AGENT_EVIDENCE_POLICY")
+	operationRaw := os.Getenv("AGENT_OPERATION_POLICY")
+	deployRaw := os.Getenv("AGENT_DEPLOY_POLICY")
+	evidence := evidencePolicy(evidenceRaw)
+	operation := operationPolicy(operationRaw)
+	deploy := deployPolicy(deployRaw)
+	warnings := make([]string, 0, 3)
+	warnings = append(warnings, invalidPolicyWarning(
+		"AGENT_EVIDENCE_POLICY", evidenceRaw, evidence,
+		"disabled, docker_logs, systemd_journal, or docker_logs,systemd_journal",
+	)...)
+	warnings = append(warnings, invalidPolicyWarning(
+		"AGENT_OPERATION_POLICY", operationRaw, operation,
+		"disabled or docker_restart",
+	)...)
+	warnings = append(warnings, invalidPolicyWarning(
+		"AGENT_DEPLOY_POLICY", deployRaw, deploy,
+		"disabled, plan_only, or docker_compose_deploy",
+	)...)
 	return Config{
 		ControlPlaneURL:       valueOrDefault("CONTROL_PLANE_URL", "http://localhost:8000"),
 		AgentName:             valueOrDefault("AGENT_NAME", "VPS Agent"),
@@ -54,15 +74,25 @@ func Load() Config {
 		ReportInterval:        interval,
 		HealthcheckURLs:       splitList(os.Getenv("AGENT_HEALTHCHECK_URLS")),
 		EvidenceSources:       parseEvidenceSources(os.Getenv("AGENT_EVIDENCE_SOURCES_JSON")),
-		EvidencePolicy:        evidencePolicy(os.Getenv("AGENT_EVIDENCE_POLICY")),
-		OperationPolicy:       operationPolicy(os.Getenv("AGENT_OPERATION_POLICY")),
+		EvidencePolicy:        evidence,
+		OperationPolicy:       operation,
 		OperationKeyID:        os.Getenv("AGENT_OPERATION_KEY_ID"),
 		OperationPublicKey:    os.Getenv("AGENT_OPERATION_PUBLIC_KEY_BASE64"),
 		OperationStateFile:    valueOrDefault("AGENT_OPERATION_STATE_FILE", "/var/lib/vps-agent/operations.json"),
 		OperationPollInterval: durationOrDefault("AGENT_OPERATION_POLL_INTERVAL", 5*time.Second),
-		DeployPolicy:          deployPolicy(os.Getenv("AGENT_DEPLOY_POLICY")),
+		DeployPolicy:          deploy,
 		DeployAllowedRoots:    parseAllowedRoots(os.Getenv("AGENT_DEPLOY_ALLOWED_ROOTS")),
+		Warnings:              warnings,
 	}
+}
+
+func invalidPolicyWarning(key, raw, normalized, allowed string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "disabled" || normalized != "disabled" {
+		return nil
+	}
+	return []string{key + " contains unsupported value " + raw +
+		"; capability remains disabled; direct environment values must use " + allowed}
 }
 
 const OperationPolicyDockerRestart = "docker_restart"

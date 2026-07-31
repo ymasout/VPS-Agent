@@ -5,11 +5,20 @@ MODE=${1:-}
 REPO_ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 ENV_FILE=${ENV_FILE:-$REPO_ROOT/deploy/.env.production}
 COMPOSE_FILE=${COMPOSE_FILE:-$REPO_ROOT/deploy/compose.production.yaml}
+COMPOSE_OVERRIDE_FILE=${COMPOSE_OVERRIDE_FILE:-}
+RELEASE_IMAGE_ENV_FILE=${RELEASE_IMAGE_ENV_FILE:-}
 BACKUP_DIR=${BACKUP_DIR:-/var/backups/vps-agent-console}
 ADOPTION_REVISION=0006_m4_safe_operations
 
 dc() {
-    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+    if [ -n "$COMPOSE_OVERRIDE_FILE" ] && [ -n "$RELEASE_IMAGE_ENV_FILE" ]; then
+        docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_IMAGE_ENV_FILE" \
+            -f "$COMPOSE_FILE" -f "$COMPOSE_OVERRIDE_FILE" "$@"
+    elif [ -n "$COMPOSE_OVERRIDE_FILE" ]; then
+        docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$COMPOSE_OVERRIDE_FILE" "$@"
+    else
+        docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+    fi
 }
 
 require_file() {
@@ -106,6 +115,46 @@ postflight() {
     echo "postflight passed: revision, schema, health, Agent operation route and mapping candidates"
 }
 
+require_release_mode() {
+    if [ -z "$COMPOSE_OVERRIDE_FILE" ] || [ -z "$RELEASE_IMAGE_ENV_FILE" ]; then
+        echo "release mode requires COMPOSE_OVERRIDE_FILE and RELEASE_IMAGE_ENV_FILE" >&2
+        exit 1
+    fi
+    require_file "$COMPOSE_OVERRIDE_FILE"
+    require_file "$RELEASE_IMAGE_ENV_FILE"
+    images=$(dc config --images)
+    count=0
+    for image in $images; do
+        count=$((count + 1))
+        if ! printf '%s\n' "$image" | grep -Eq '^[a-z0-9.-]+(:[0-9]+)?/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$'; then
+            echo "release image is not a canonical digest reference: $image" >&2
+            exit 1
+        fi
+    done
+    if [ "$count" -ne 5 ]; then
+        echo "release mode expected exactly five digest-pinned service images, got $count" >&2
+        exit 1
+    fi
+}
+
+release_pull() {
+    require_release_mode
+    dc pull api web caddy postgres redis
+    echo "release images pulled by immutable digest"
+}
+
+release_check() {
+    require_release_mode
+    dc config --quiet
+    echo "release Compose passed: five digest-pinned images and API/Web local builds removed"
+}
+
+release_up() {
+    require_release_mode
+    dc up -d --no-build
+    echo "release services started with local builds disabled"
+}
+
 require_file "$ENV_FILE"
 require_file "$COMPOSE_FILE"
 
@@ -115,8 +164,11 @@ case "$MODE" in
     migrate) migrate ;;
     reload-caddy) reload_caddy ;;
     postflight) postflight ;;
+    release-check) release_check ;;
+    release-pull) release_pull ;;
+    release-up) release_up ;;
     *)
-        echo "usage: $0 {adopt|preflight|migrate|reload-caddy|postflight}" >&2
+        echo "usage: $0 {adopt|preflight|migrate|reload-caddy|postflight|release-check|release-pull|release-up}" >&2
         exit 2
         ;;
 esac

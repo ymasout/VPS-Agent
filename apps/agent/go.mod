@@ -1,4 +1,3 @@
-module github.com/example/vps-agent-console/apps/agent
+module github.com/ymasout/VPS-Agent/apps/agent
 
 go 1.23
-

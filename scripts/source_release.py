@@ -23,6 +23,11 @@ REQUIRED_FILES = {
     "SECURITY.md",
     "CONTRIBUTING.md",
     "CODE_OF_CONDUCT.md",
+    "CHANGELOG.md",
+    "release/release.json",
+    "docs/RELEASE_COMPATIBILITY.md",
+    "docs/RELEASE_PROCESS.md",
+    "docs/M6_RELEASE_DISTRIBUTION.md",
 }
 FORBIDDEN_PARTS = {
     ".git",
@@ -48,7 +53,11 @@ FORBIDDEN_SUFFIXES = {
     ".sqlite",
     ".sqlite3",
 }
-ALLOWED_ENV_FILES = {".env.example", "deploy/.env.production.example"}
+ALLOWED_ENV_FILES = {
+    ".env.example",
+    "deploy/.env.production.example",
+    "deploy/release/.env.release.example",
+}
 TOKEN_PATTERNS = {
     "aws_access_key": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
     "github_token": re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,})\b"),
