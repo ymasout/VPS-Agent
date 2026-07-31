@@ -8,7 +8,17 @@ import { operationApprovalSummary } from "./operation-approval";
 
 const active = new Set(["queued", "claimed", "running", "verifying"]);
 
-export function OperationPanel({ operation, namedAuthorization = false }: { operation: Operation; namedAuthorization?: boolean }) {
+export function OperationPanel({
+  operation,
+  namedAuthorization = false,
+  canApprove = false,
+  currentPrincipalId = null,
+}: {
+  operation: Operation;
+  namedAuthorization?: boolean;
+  canApprove?: boolean;
+  currentPrincipalId?: string | null;
+}) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -34,7 +44,15 @@ export function OperationPanel({ operation, namedAuthorization = false }: { oper
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`/console/operations/${operation.id}/confirm`, { method: "POST" });
+      const response = await fetch(
+        namedAuthorization
+          ? `/api/v1/operations/${operation.id}/confirm`
+          : `/console/operations/${operation.id}/confirm`,
+        {
+          method: "POST",
+          headers: namedAuthorization ? { "content-type": "application/json" } : undefined,
+        },
+      );
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail ?? "确认失败");
       router.refresh();
@@ -127,8 +145,14 @@ export function OperationPanel({ operation, namedAuthorization = false }: { oper
         </div>
         <p className="approval-warning">创建计划不等于确认。确认后服务端仍会检查状态与有效期，签发任务，并等待 Agent 执行和独立健康验证；不会自动回滚。</p>
         {!online && <p className="approval-offline" role="alert">当前离线。审批不会排队，请恢复网络并重新核对最新状态。</p>}
-        {namedAuthorization ? (
-          <p className="approval-offline" role="status">M6.4c2 具名计划已启用；具名确认将在 c3 启用，当前不可执行。</p>
+        {namedAuthorization && !canApprove ? (
+          <p className="approval-offline" role="status">
+            当前身份没有 operation:approve；请由独立审批人核对并确认。
+          </p>
+        ) : namedAuthorization && currentPrincipalId === operation.requested_by ? (
+          <p className="approval-offline" role="status">
+            计划创建人与审批人必须不同；请切换到独立审批身份。
+          </p>
         ) : <><label className="approval-check">
           <input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} />
           <span>我已核对目标、动作、风险和有效期，并确认这是本次独立人工授权。</span>

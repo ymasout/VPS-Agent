@@ -71,4 +71,42 @@ describe("mobile operation approval", () => {
     expect(markup).not.toContain('name="machine"');
     expect(markup).not.toContain('name="action"');
   });
+
+  it("shows named confirmation only to an independent approver", () => {
+    const named = operation({
+      requested_by: "local:operator",
+      authorization_mode: "named",
+    });
+    const approverMarkup = renderToStaticMarkup(
+      <OperationPanel
+        operation={named}
+        namedAuthorization
+        canApprove
+        currentPrincipalId="local:approver"
+      />,
+    );
+    expect(approverMarkup).toContain("我已核对目标、动作、风险和有效期");
+    expect(approverMarkup).not.toContain("当前身份没有 operation:approve");
+
+    const operatorMarkup = renderToStaticMarkup(
+      <OperationPanel
+        operation={named}
+        namedAuthorization
+        currentPrincipalId="local:operator"
+      />,
+    );
+    expect(operatorMarkup).toContain("当前身份没有 operation:approve");
+    expect(operatorMarkup).not.toContain("我已核对目标、动作、风险和有效期");
+
+    const sameActorMarkup = renderToStaticMarkup(
+      <OperationPanel
+        operation={named}
+        namedAuthorization
+        canApprove
+        currentPrincipalId="local:operator"
+      />,
+    );
+    expect(sameActorMarkup).toContain("计划创建人与审批人必须不同");
+    expect(sameActorMarkup).not.toContain("我已核对目标、动作、风险和有效期");
+  });
 });

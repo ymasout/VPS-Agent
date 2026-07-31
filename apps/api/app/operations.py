@@ -2,6 +2,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -24,7 +25,9 @@ from .models import (
     ServiceStatus,
 )
 from .principal import (
+    OPERATION_APPROVE,
     OPERATION_PLAN,
+    BreakGlassAuthorization,
     Principal,
     authorize_operation_confirmation,
     authorize_operation_plan,
@@ -50,6 +53,7 @@ from .schemas import (
 from .security import sign_operation
 
 router = APIRouter(prefix="/api/v1")
+logger = structlog.get_logger()
 RESTART_ACTION = "docker_restart"
 DEPLOY_ACTION = "docker_compose_deploy"
 DEPLOY_PLAN_VERSION = "m4.2b-executable-v1"
@@ -152,6 +156,7 @@ async def transition(
     actor_type: str,
     *,
     actor_id: str | None = None,
+    actor_principal_snapshot: dict | None = None,
     reason: str | None = None,
     details: dict | None = None,
 ) -> None:
@@ -169,6 +174,7 @@ async def transition(
             to_status=to_status,
             actor_type=actor_type,
             actor_id=actor_id,
+            actor_principal_snapshot=actor_principal_snapshot,
             reason=reason,
             details=details or {},
         )
@@ -1046,13 +1052,16 @@ async def create_rollback_operation(
 @router.post(
     "/operations/{operation_id}/confirm",
     response_model=OperationView,
-    dependencies=[Depends(authorize_operation_confirmation)],
 )
 async def confirm_operation(
     operation_id: str,
-    payload: OperationConfirm,
+    payload: OperationConfirm | None = None,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    authorization: Annotated[
+        Principal | BreakGlassAuthorization | None,
+        Depends(authorize_operation_confirmation),
+    ] = None,
 ) -> OperationView:
     operation = await session.scalar(
         select(Operation).where(Operation.id == operation_id).with_for_update()
@@ -1061,9 +1070,92 @@ async def confirm_operation(
         raise HTTPException(status_code=404, detail="operation not found")
     require_executable_action(operation)
     if operation.status == "queued":
-        return await operation_view(session, operation)
+        if authorization is None:
+            return await operation_view(session, operation)
+        if isinstance(authorization, Principal):
+            if (
+                operation.authorization_mode == "named"
+                and operation.confirmed_by == authorization.id
+            ):
+                return await operation_view(session, operation)
+            raise HTTPException(
+                status_code=409,
+                detail="operation_already_confirmed_by_other_principal",
+            )
+        queued_transition = await session.scalar(
+            select(OperationTransition)
+            .where(
+                OperationTransition.operation_id == operation.id,
+                OperationTransition.to_status == "queued",
+            )
+            .order_by(
+                OperationTransition.created_at.desc(),
+                OperationTransition.id.desc(),
+            )
+            .limit(1)
+        )
+        if (
+            operation.authorization_mode == "break_glass"
+            and queued_transition is not None
+            and queued_transition.details.get("break_glass_request_id")
+            == authorization.request_id
+        ):
+            return await operation_view(session, operation)
+        raise HTTPException(
+            status_code=409,
+            detail="operation_already_confirmed_by_other_principal",
+        )
     if operation.status != "awaiting_confirmation":
         raise HTTPException(status_code=409, detail="operation is not awaiting confirmation")
+
+    actor_type = "admin"
+    actor_id = "local-admin"
+    actor_snapshot = None
+    confirmation_details: dict = {
+        "plan_frozen": True,
+    }
+    authorization_mode = operation.authorization_mode or "legacy"
+    if isinstance(authorization, Principal):
+        requested_snapshot = operation.requested_principal_snapshot
+        if (
+            authorization_mode != "named"
+            or not isinstance(requested_snapshot, dict)
+            or requested_snapshot.get("organization_id") != "local"
+            or requested_snapshot.get("principal_id") != operation.requested_by
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="named_operation_principal_snapshot_invalid",
+            )
+        if operation.requested_by == authorization.id:
+            raise HTTPException(
+                status_code=409,
+                detail="maker_checker_same_principal",
+            )
+        actor_type = "principal"
+        actor_id = authorization.id
+        actor_snapshot = authorization.snapshot(OPERATION_APPROVE)
+    elif isinstance(authorization, BreakGlassAuthorization):
+        actor_type = "break_glass"
+        actor_id = "break-glass:local-admin"
+        actor_snapshot = authorization.snapshot()
+        authorization_mode = "break_glass"
+        confirmation_details.update(
+            {
+                "break_glass": True,
+                "break_glass_request_id": authorization.request_id,
+                "break_glass_reason": authorization.reason,
+            }
+        )
+    else:
+        if payload is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="legacy_confirmation_body_required",
+            )
+        legacy_payload = payload
+        actor_id = legacy_payload.confirmed_by
+
     current_time = now_utc()
     if operation.expires_at <= current_time:
         operation.error_code = "expired"
@@ -1109,7 +1201,9 @@ async def confirm_operation(
         return await operation_view(session, operation)
     if not settings.operation_signing_key_id:
         raise HTTPException(status_code=503, detail="operation task signing is not configured")
-    operation.confirmed_by = payload.confirmed_by
+    operation.confirmed_by = actor_id
+    operation.confirmed_principal_snapshot = actor_snapshot
+    operation.authorization_mode = authorization_mode
     operation.confirmed_at = current_time
     operation.issued_at = current_time
     operation.task_nonce = secrets.token_urlsafe(24)
@@ -1127,12 +1221,28 @@ async def confirm_operation(
         session,
         operation,
         "queued",
-        "admin",
-        actor_id=payload.confirmed_by,
-        reason="explicit confirmation",
-        details={"plan_frozen": True, "confirmation_precheck": checks},
+        actor_type,
+        actor_id=actor_id,
+        actor_principal_snapshot=actor_snapshot,
+        reason=(
+            "explicit emergency break-glass confirmation"
+            if isinstance(authorization, BreakGlassAuthorization)
+            else "explicit confirmation"
+        ),
+        details={
+            **confirmation_details,
+            "confirmation_precheck": checks,
+        },
     )
     await session.commit()
+    if isinstance(authorization, BreakGlassAuthorization):
+        await logger.awarning(
+            "operation_break_glass_confirmation",
+            operation_id=operation.id,
+            principal_id=actor_id,
+            request_id=authorization.request_id,
+            reason=authorization.reason,
+        )
     return await operation_view(session, operation)
 
 

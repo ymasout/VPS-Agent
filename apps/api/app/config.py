@@ -81,6 +81,7 @@ class Settings(BaseSettings):
     principal_viewer_ids: str = ""
     principal_write_context_enabled: bool = False
     principal_write_authorization_enabled: bool = False
+    principal_break_glass_enabled: bool = False
     principal_write_proxy_token: SecretStr | None = None
     principal_role_bindings_json: tuple[PrincipalRoleBinding, ...] = ()
     dev_agent_registration_token: str | None = None
@@ -263,6 +264,8 @@ class Settings(BaseSettings):
             and not self.principal_read_authorization_enabled
         ):
             raise ValueError("principal write authorization requires principal read authorization")
+        if self.principal_break_glass_enabled and not self.principal_write_authorization_enabled:
+            raise ValueError("principal break glass requires principal write authorization")
         if self.principal_write_context_enabled and not self.principal_context_enabled:
             raise ValueError("principal write context requires principal context")
         if self.principal_context_enabled:

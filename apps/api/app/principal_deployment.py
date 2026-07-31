@@ -47,6 +47,8 @@ def validate_principal_deployment(document: object) -> None:
         raise PrincipalDeploymentError("Caddy credential hashes must be distinct")
     if web.get("PRINCIPAL_WRITE_PROXY_TOKEN"):
         raise PrincipalDeploymentError("Web must not receive the principal write proxy token")
+    if str(web.get("PRINCIPAL_BREAK_GLASS_ENABLED", "false")).lower() == "true":
+        raise PrincipalDeploymentError("Web must not receive the break-glass enablement flag")
     api_write_authorization = str(
         api.get("PRINCIPAL_WRITE_AUTHORIZATION_ENABLED", "false")
     ).lower()

@@ -65,6 +65,13 @@ def test_principal_deployment_keeps_write_token_out_of_web() -> None:
     with pytest.raises(PrincipalDeploymentError, match="Web must not receive"):
         validate_principal_deployment(document)
 
+    break_glass = deployment_config()
+    break_glass["services"]["web"]["environment"][
+        "PRINCIPAL_BREAK_GLASS_ENABLED"
+    ] = "true"
+    with pytest.raises(PrincipalDeploymentError, match="break-glass"):
+        validate_principal_deployment(break_glass)
+
 
 def test_principal_deployment_requires_api_web_enforcement_parity() -> None:
     document = deployment_config()

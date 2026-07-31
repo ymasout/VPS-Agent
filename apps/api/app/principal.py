@@ -1,9 +1,9 @@
 import re
 import secrets
 from dataclasses import dataclass
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import structlog
 from fastapi import Depends, Header, HTTPException, Request, status
@@ -55,6 +55,23 @@ class Principal:
             "organization_id": self.organization_id,
             "roles": list(self.roles),
             "capability_used": capability,
+        }
+
+
+@dataclass(frozen=True)
+class BreakGlassAuthorization:
+    request_id: str
+    reason: str
+
+    def snapshot(self) -> dict:
+        return {
+            "principal_id": "break-glass:local-admin",
+            "display_name": "Emergency local administrator",
+            "auth_source": "admin_token",
+            "auth_subject": "local-admin",
+            "organization_id": "local",
+            "roles": ["break_glass"],
+            "capability_used": OPERATION_APPROVE,
         }
 
 
@@ -247,18 +264,81 @@ async def authorize_operation_confirmation(
     request: Request,
     x_admin_token: str | None = Header(default=None),
     settings: Settings = Depends(get_settings),
-) -> None:
-    if settings.principal_write_authorization_enabled:
+    idempotency_key: Annotated[
+        str | None, Header(alias="Idempotency-Key")
+    ] = None,
+    x_vps_agent_break_glass_reason: Annotated[
+        str | None, Header(alias="X-VPS-Agent-Break-Glass-Reason")
+    ] = None,
+) -> Principal | BreakGlassAuthorization | None:
+    if not settings.principal_write_authorization_enabled:
+        await observe_operation_approve(request, settings)
+        if not valid_admin_token(x_admin_token, settings):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="invalid admin token",
+            )
+        return None
+
+    break_glass_requested = bool(
+        idempotency_key is not None or x_vps_agent_break_glass_reason is not None
+    )
+    if break_glass_requested:
+        if not settings.principal_break_glass_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="principal_break_glass_disabled",
+            )
+        if not valid_admin_token(x_admin_token, settings):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="invalid admin token",
+            )
+        try:
+            parsed_request_id = UUID(idempotency_key or "")
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="invalid_break_glass_request_id",
+            ) from error
+        if (
+            parsed_request_id.version != 4
+            or str(parsed_request_id) != idempotency_key
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="invalid_break_glass_request_id",
+            )
+        reason = x_vps_agent_break_glass_reason or ""
+        if (
+            reason != reason.strip()
+            or not 1 <= len(reason) <= 256
+            or any(ord(character) < 32 or ord(character) == 127 for character in reason)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="invalid_break_glass_reason",
+            )
+        if await request.body():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="confirmation_body_must_be_empty",
+            )
+        return BreakGlassAuthorization(request_id=idempotency_key, reason=reason)
+
+    validate_same_origin_write(request, settings)
+    if await request.body():
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="principal_confirmation_not_available",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="confirmation_body_must_be_empty",
         )
-    await observe_operation_approve(request, settings)
-    if not valid_admin_token(x_admin_token, settings):
+    principal = resolve_write_principal(request, settings)
+    if OPERATION_APPROVE not in principal.capabilities:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="invalid admin token",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="principal_capability_denied",
         )
+    return principal
 
 
 async def authorize_operation_read(

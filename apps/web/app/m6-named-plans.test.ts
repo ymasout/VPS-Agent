@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const appRoot = process.cwd();
 
-describe("M6.4c2 named plan browser paths", () => {
+describe("M6.4c3 named plan and confirmation browser paths", () => {
   it("uses only the six frozen direct API plan routes when enforcement is enabled", () => {
     const sources = [
       "events/[id]/operation-create.tsx",
@@ -18,10 +18,11 @@ describe("M6.4c2 named plan browser paths", () => {
     expect(sources).toContain('"/api/v1/deployment-plans"');
     expect(sources).toContain("/api/v1/deployment-operations/${operation.id}/rollback");
     expect(sources).toContain('${namedAuthorization ? "/api/v1" : "/console"}/events/');
-    expect(sources).toContain("具名确认将在 c3 启用，当前不可执行");
+    expect(sources).toContain("当前身份没有 operation:approve");
+    expect(sources).toContain("计划创建人与审批人必须不同");
   });
 
-  it("disables all legacy plan proxies and confirmation before c3", () => {
+  it("keeps all legacy write proxies disabled during named enforcement", () => {
     const routes = [
       "console/operations/route.ts",
       "console/deployment-plans/route.ts",
@@ -38,5 +39,20 @@ describe("M6.4c2 named plan browser paths", () => {
         source.indexOf("ADMIN_API_TOKEN"),
       );
     }
+  });
+
+  it("posts named confirmation directly to the frozen API route with an empty body", () => {
+    const source = readFileSync(
+      join(appRoot, "app", "operations/[id]/operation-panel.tsx"),
+      "utf8",
+    );
+    const confirmation = source.slice(
+      source.indexOf("async function confirm()"),
+      source.indexOf("async function createRollback()"),
+    );
+    expect(confirmation).toContain("/api/v1/operations/${operation.id}/confirm");
+    expect(confirmation).toContain('method: "POST"');
+    expect(confirmation).not.toContain("body:");
+    expect(confirmation).not.toContain("confirmed_by");
   });
 });

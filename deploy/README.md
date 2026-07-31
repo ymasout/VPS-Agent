@@ -153,8 +153,23 @@ M6.4c2 本地实现允许在独立审计、CI 和部署授权后临时设置
 `PRINCIPAL_READ_AUTHORIZATION_ENABLED=true` 与
 `PRINCIPAL_WRITE_AUTHORIZATION_ENABLED=true`。该开关必须同时注入 API 与 Web，部署 preflight
 会拒绝两者不一致。开启后仅冻结的六条计划 POST 由 operator 通过浏览器同源直达 API；旧
-Web 计划代理和确认入口返回 409。c3 完成前不得把具名计划投入执行，部署前还必须确认不存在
-legacy `awaiting_confirmation`/`queued` Operation。生产当前仍保持该开关为 `false`。
+Web 计划代理返回 409。M6.4c3 本地实现后，第七条 confirm POST 仅接受具备
+`operation:approve` 的独立 approver，正文必须为空，actor 由可信 Principal 派生；API 在行锁
+事务内拒绝 creator 自批，并继续复用 M4 确认时预检、签名、Agent 执行和健康验证链。部署前
+仍必须确认不存在 legacy `awaiting_confirmation`/`queued` Operation。生产当前仍保持该开关
+为 `false`，c3 未通过独立审计、CI 和金丝雀前不得启用。
+
+事故 break-glass 使用独立 API-only 开关：
+
+```text
+PRINCIPAL_BREAK_GLASS_ENABLED=false
+```
+
+只有在单独事故授权窗口中才可把该值注入 API 并重建 API；不得注入 Web。每次调用 confirm
+都必须使用 Caddy admin 身份、有效 `X-Admin-Token`、新的规范 UUIDv4 `Idempotency-Key`、
+1–256 字符且不含控制字符的 `X-VPS-Agent-Break-Glass-Reason`，并发送空正文。它不会由普通
+具名确认失败自动触发，也没有 Web 入口。事故结束后立即关闭开关、重建 API、核对有限 warning
+日志与 Operation/Transition 快照，并按事故流程轮换管理令牌。
 
 write token 只进入 Caddy/API，不能进入 Web、浏览器、Agent、日志或响应。Agent、webhook、
 下载、健康、Web 及非 allowlist API 路径都会清除该 header。c1 验证结束后关闭 write context

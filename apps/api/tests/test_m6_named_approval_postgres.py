@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import os
 import subprocess
 import sys
@@ -7,6 +8,9 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from fastapi import HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -19,10 +23,11 @@ from app.models import (
     OperationTransition,
     ServiceInstance,
 )
-from app.operations import build_restart_plan
+from app.operations import build_restart_plan, confirm_operation
 from app.principal import (
     EVENT_READ,
     FLEET_READ,
+    OPERATION_APPROVE,
     OPERATION_PLAN,
     OPERATION_READ,
     SYSTEM_READ,
@@ -200,6 +205,226 @@ def test_named_restart_plan_persists_actor_and_stops_before_confirmation(
                         delete(Operation).where(Operation.id == operation_id)
                     )
                     await session.commit()
+            await engine.dispose()
+
+    asyncio.run(exercise())
+
+
+def test_named_confirmation_serializes_replays_and_persists_one_approver_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    creator = Principal(
+        id="local:4bf4ab08-4da6-44bb-8607-3c87f1946012",
+        display_name="Alice",
+        auth_source="caddy_basic",
+        auth_subject="ops-alice",
+        organization_id="local",
+        roles=("operator",),
+        capabilities=frozenset(
+            {SYSTEM_READ, FLEET_READ, EVENT_READ, OPERATION_READ, OPERATION_PLAN}
+        ),
+        authorization_mode="read_enforced",
+        write_authorization_mode="enforced",
+    )
+    approver = Principal(
+        id="local:7c09f56b-f777-4277-99d8-8ac55b69b0ff",
+        display_name="Bob",
+        auth_source="caddy_basic",
+        auth_subject="ops-bob",
+        organization_id="local",
+        roles=("approver",),
+        capabilities=frozenset(
+            {SYSTEM_READ, FLEET_READ, EVENT_READ, OPERATION_READ, OPERATION_APPROVE}
+        ),
+        authorization_mode="read_enforced",
+        write_authorization_mode="enforced",
+    )
+    other_approver = Principal(
+        id="local:bc26803c-c5a0-4d15-964b-91e99f867615",
+        display_name="Carol",
+        auth_source="caddy_basic",
+        auth_subject="ops-carol",
+        organization_id="local",
+        roles=("approver",),
+        capabilities=approver.capabilities,
+        authorization_mode="read_enforced",
+        write_authorization_mode="enforced",
+    )
+    private_key = Ed25519PrivateKey.generate()
+    raw_key = private_key.private_bytes(
+        serialization.Encoding.Raw,
+        serialization.PrivateFormat.Raw,
+        serialization.NoEncryption(),
+    )
+    settings = Settings(
+        skip_database_init=True,
+        operation_signing_key_id="m6-c3-postgres",
+        operation_signing_private_key_base64=base64.b64encode(raw_key).decode(),
+    )
+
+    async def exercise() -> None:
+        assert POSTGRES_URL is not None
+        engine = create_async_engine(POSTGRES_URL, pool_pre_ping=True)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        operation_id = str(uuid4())
+        race_operation_id = str(uuid4())
+        try:
+            async with factory() as session:
+                instance = await session.scalar(select(ServiceInstance).limit(1))
+                assert instance is not None
+                agent = await session.get(Agent, instance.agent_id)
+                managed = await session.get(ManagedService, instance.service_id)
+                assert agent is not None and managed is not None
+
+                async def passing_prechecks(*_args: object):
+                    await asyncio.sleep(0.05)
+                    return (
+                        {"passed": True, "target_frozen": True},
+                        agent,
+                        managed,
+                        None,
+                    )
+
+                monkeypatch.setattr(
+                    operations_module, "run_prechecks", passing_prechecks
+                )
+                session.add(
+                    Operation(
+                        id=operation_id,
+                        instance_id=instance.id,
+                        agent_id=instance.agent_id,
+                        action_type="docker_restart",
+                        status="awaiting_confirmation",
+                        active_key=f"{instance.id}:m6-c3-write",
+                        requested_by=creator.id,
+                        requested_principal_snapshot=creator.snapshot(OPERATION_PLAN),
+                        authorization_mode="named",
+                        risk_level="medium",
+                        impact_summary="M6.4c3 concurrent confirmation fixture",
+                        plan_snapshot={},
+                        precheck_result={"passed": True},
+                        verification_policy={},
+                        idempotency_key=f"m6-c3-{operation_id}",
+                        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+                    )
+                )
+                await session.commit()
+
+            async def confirm_once():
+                async with factory() as session:
+                    return await confirm_operation(
+                        operation_id,
+                        None,
+                        session,
+                        settings,
+                        approver,
+                    )
+
+            left, right = await asyncio.gather(confirm_once(), confirm_once())
+            assert left.status == "queued"
+            assert right.status == "queued"
+
+            async with factory() as session:
+                operation = await session.get(Operation, operation_id)
+                assert operation is not None
+                assert operation.confirmed_by == approver.id
+                assert operation.confirmed_principal_snapshot == approver.snapshot(
+                    OPERATION_APPROVE
+                )
+                transitions = list(
+                    (
+                        await session.scalars(
+                            select(OperationTransition).where(
+                                OperationTransition.operation_id == operation_id,
+                                OperationTransition.to_status == "queued",
+                            )
+                        )
+                    ).all()
+                )
+                assert len(transitions) == 1
+                assert transitions[0].actor_id == approver.id
+                assert transitions[0].actor_principal_snapshot == approver.snapshot(
+                    OPERATION_APPROVE
+                )
+                await session.execute(
+                    delete(Operation).where(Operation.id == operation_id)
+                )
+                session.add(
+                    Operation(
+                        id=race_operation_id,
+                        instance_id=operation.instance_id,
+                        agent_id=operation.agent_id,
+                        action_type="docker_restart",
+                        status="awaiting_confirmation",
+                        active_key=f"{operation.instance_id}:m6-c3-race",
+                        requested_by=creator.id,
+                        requested_principal_snapshot=creator.snapshot(OPERATION_PLAN),
+                        authorization_mode="named",
+                        risk_level="medium",
+                        impact_summary="M6.4c3 competing approvers fixture",
+                        plan_snapshot={},
+                        precheck_result={"passed": True},
+                        verification_policy={},
+                        idempotency_key=f"m6-c3-{race_operation_id}",
+                        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+                    )
+                )
+                await session.commit()
+
+            async def compete(candidate: Principal):
+                async with factory() as session:
+                    try:
+                        return await confirm_operation(
+                            race_operation_id,
+                            None,
+                            session,
+                            settings,
+                            candidate,
+                        )
+                    except HTTPException as error:
+                        return error
+
+            competing_results = await asyncio.gather(
+                compete(approver),
+                compete(other_approver),
+            )
+            assert sum(
+                getattr(result, "status", None) == "queued"
+                for result in competing_results
+            ) == 1
+            conflicts = [
+                result
+                for result in competing_results
+                if isinstance(result, HTTPException)
+            ]
+            assert len(conflicts) == 1
+            assert conflicts[0].status_code == 409
+            assert (
+                conflicts[0].detail
+                == "operation_already_confirmed_by_other_principal"
+            )
+
+            async with factory() as session:
+                race_transitions = list(
+                    (
+                        await session.scalars(
+                            select(OperationTransition).where(
+                                OperationTransition.operation_id
+                                == race_operation_id,
+                                OperationTransition.to_status == "queued",
+                            )
+                        )
+                    ).all()
+                )
+                assert len(race_transitions) == 1
+        finally:
+            async with factory() as session:
+                await session.execute(
+                    delete(Operation).where(
+                        Operation.id.in_([operation_id, race_operation_id])
+                    )
+                )
+                await session.commit()
             await engine.dispose()
 
     asyncio.run(exercise())

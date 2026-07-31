@@ -118,6 +118,15 @@ assert_write_trusted ci-operator operator-password /api/v1/deployment-operations
 assert_write_trusted ci-operator operator-password /api/v1/deployment-operations/op-1/rollback
 assert_write_trusted ci-operator operator-password /api/v1/events/event-1/conversation/turns/turn-1/restart-plan
 assert_write_trusted ci-operator operator-password /api/v1/events/event-1/conversation/turns/turn-1/rollback-plan
+oversized_status="$(
+    dd if=/dev/zero bs=1024 count=5 2>/dev/null |
+        curl --silent --output /dev/null --write-out '%{http_code}' \
+            --request POST --user ci-approver:approver-password \
+            --header 'Content-Type: application/json' \
+            --data-binary @- \
+            http://127.0.0.1:18080/api/v1/operations/op-1/confirm
+)"
+test "$oversized_status" = "413"
 assert_write_stripped GET /api/v1/operations
 assert_write_stripped POST /api/v1/operations/op-1/cancel
 assert_stripped /healthz

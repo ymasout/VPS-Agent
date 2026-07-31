@@ -35,6 +35,9 @@
 		path_regexp principal_write_path ^/api/v1/(operations|deployment-plans|deployment-operations|deployment-operations/[^/]+/rollback|operations/[^/]+/confirm|events/[^/]+/conversation/turns/[^/]+/(restart|rollback)-plan)$
 	}
 	handle @principal_write {
+		request_body {
+			max_size 4KB
+		}
 		basic_auth {
 			{$CADDY_ADMIN_USER} {$CADDY_ADMIN_PASSWORD_HASH}
 			{$CADDY_OPERATOR_USER} {$CADDY_OPERATOR_PASSWORD_HASH}

@@ -1,8 +1,8 @@
 # M6.4c 角色授权与具名 M4 审批设计
 
-当前状态：**M6.4c1+c2 已由 codex 实现、Claude 审计通过（无 P0/P1/P2），提交 `48263db`+`d6a9528`+`c78ae35` 推送至 main，四个 CI 全绿，并于 2026-07-31 通过具名计划生产金丝雀；c3 尚未实现。** M6.4b 已于 2026-07-30 通过独立审计、
+当前状态：**M6.4c1+c2 已由 codex 实现、Claude 审计通过（无 P0/P1/P2），提交 `48263db`+`d6a9528`+`c78ae35` 推送至 main，四个 CI 全绿，并于 2026-07-31 通过具名计划生产金丝雀；c3 已完成本地实现和验证，尚待独立审计、CI 与生产金丝雀。** M6.4b 已于 2026-07-30 通过独立审计、
 四条 CI 与两阶段生产只读金丝雀；生产运行 `c78ae35`、Alembic head
-`0020_m6_named_approval`，Principal 两个开关已还原关闭。M6.4c 会改变 M4 写路径
+`0020_m6_named_approval`，Principal 相关运行时开关已全部还原关闭。M6.4c 会改变 M4 写路径
 的身份、授权和审计契约，必须单独实现、审计、迁移验证并取得生产金丝雀授权。
 
 ## 1. 为什么不能直接实现
@@ -425,4 +425,43 @@ Go test/vet、Compose config 与 `git diff --check` 通过。Docker Desktop 真�
 - **Phase B（c2 enforcement）**：开 4 个 flag（context+read_auth+write_context+write_auth）；approver 创建计划 -> 403（capability_denied）；无 Origin -> 401（invalid_principal_context）；确认任意计划 -> 409（principal_confirmation_not_available，c3 阻断）；operator 创建具名计划 -> `requested_by=local:50afb0f6-...`/`authorization_mode=named`/`requested_principal_snapshot` 含 principal_id+display_name+capability_used=operation:plan/`task_signature=null`/`nonce=null`（无签名/执行）；approver 确认该计划 -> 409；restart 已还原。
 - **核对**：ops/trans 14/89 -> 15/92（+1 op +3 trans，计划行+状态过渡，无签名/nonce/Agent 领取）；DB `requested_by=local:50afb0f6-...`/`authorization_mode=named`/`has_snapshot=t`。
 - **Phase C（还原）**：4 flag 还原 false；`/principal` 403。`c78ae35` 留作运行基线（flags OFF = legacy 行为）。
-- **待调查**：operator 创建的计划返回 `status=failed`（预期 `awaiting_confirmation` 或 `planned`）；安全属性全部验证通过（具名 actor + 快照 + 无签名/nonce + 确认 409 + CSRF 防护），`status=failed` 不影响安全判定但需调查 `build_restart_plan` 状态设置或维护循环过渡逻辑。
+- **状态解释**：operator 创建的计划返回 `status=failed`，且计数只增加 3 条 Transition；
+  这与 `planned -> prechecking -> failed` 的创建时预检失败分支一致，不是先进入
+  `awaiting_confirmation` 后再被维护循环终止。金丝雀记录未保留具体失败的
+  `precheck_result` 字段，因此不能再推断是哪一项生产前置检查失败；安全属性仍全部通过
+  （具名 actor + 快照 + 无签名/nonce + 确认 409 + CSRF 防护）。后续金丝雀应保存有限的
+  false 检查键，不记录秘密或完整远程输出。
+
+## 22. M6.4c3 本地实现记录（2026-07-31）
+
+本切片未新增 migration，Alembic head 仍为 `0020_m6_named_approval`。已实现：
+
+- `operation:approve` 只接入
+  `POST /api/v1/operations/{operation_id}/confirm`。enforcement 模式要求浏览器同源、
+  `Sec-Fetch-Site: same-origin`、JSON Content-Type、可信 write token、approver capability
+  和空正文；不再接受客户端自报 `confirmed_by`。
+- confirm 先以 `SELECT FOR UPDATE` 锁定 Operation，再比较稳定 creator/approver ID。
+  同一 Principal 返回 `maker_checker_same_principal`，且不运行确认预检、不签名、不写
+  Transition。成功确认保存 Operation/queued Transition 的独立 approver 快照，再复用
+  M4 原有确认时预检、Ed25519 签名、nonce、Agent claim/execute 与健康验证链。
+- 已排队 Operation 只允许原审批人幂等重放；其他 Principal 返回
+  `operation_already_confirmed_by_other_principal`。真实 PostgreSQL 并发测试证明两个同审批人
+  请求只产生一条 queued Transition。
+- `PRINCIPAL_BREAK_GLASS_ENABLED=false` 默认关闭且只进入 API，不进入 Web。显式事故请求必须
+  同时提供有效管理令牌、规范 UUIDv4 `Idempotency-Key`、1–256 字符且无控制字符的
+  `X-VPS-Agent-Break-Glass-Reason` 和空正文；结果使用固定
+  `break-glass:local-admin` actor、`authorization_mode=break_glass`、有限 Transition details
+  与 warning 审计。无 Web UI、无自动 fallback；同一事故请求键才允许幂等读取。
+- Web 操作页读取服务端 Principal，只向具有 `operation:approve` 且不是 creator 的身份展示
+  原有默认未勾选、在线门控确认控件；确认空正文直达 Caddy→API。operator/creator 仅显示需
+  独立审批提示，页面不持有 write/admin token，也没有 break-glass 入口。
+- Caddy 冻结写路由统一限制 4 KiB 请求体；部署 preflight 拒绝把 break-glass flag 注入 Web。
+  feature off 继续接受原 legacy 管理确认契约，未修改 cancel、policy、Agent 协议、任务字段或
+  Operation 状态机。
+
+本地验证：API `300 passed, 14 skipped`；Web `100 passed`、ESLint、production build；Ruff、
+Go test/vet、Compose config 与 `git diff --check` 通过。Docker Desktop 真实 Caddy 三身份、
+七路由覆盖/header 隔离及 4 KiB 拒绝门通过；临时 PostgreSQL 16 完成 create-all adoption、
+schema check，并通过 0020 downgrade guard、具名计划快照和并发确认只产生一条 queued
+Transition 共 3 项真实数据库测试。当前未提交、未运行 CI、未部署；生产仍为
+`c78ae35 + 0020`、Principal flags OFF。

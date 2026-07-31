@@ -27,6 +27,16 @@ from app.operations import (
     stale_operation_outcome,
     transition,
 )
+from app.principal import (
+    EVENT_READ,
+    FLEET_READ,
+    OPERATION_APPROVE,
+    OPERATION_PLAN,
+    OPERATION_READ,
+    SYSTEM_READ,
+    BreakGlassAuthorization,
+    Principal,
+)
 from app.schemas import (
     AgentReport,
     Metrics,
@@ -58,6 +68,41 @@ def make_operation(status: str, now: datetime | None = None) -> Operation:
         output_truncated=False,
         requested_at=current_time,
         updated_at=current_time,
+    )
+
+
+def approver() -> Principal:
+    return Principal(
+        id="local:7c09f56b-f777-4277-99d8-8ac55b69b0ff",
+        display_name="Bob",
+        auth_source="caddy_basic",
+        auth_subject="ops-bob",
+        organization_id="local",
+        roles=("approver",),
+        capabilities=frozenset(
+            {
+                SYSTEM_READ,
+                FLEET_READ,
+                EVENT_READ,
+                OPERATION_READ,
+                OPERATION_APPROVE,
+            }
+        ),
+        authorization_mode="read_enforced",
+        write_authorization_mode="enforced",
+    )
+
+
+def signing_settings() -> Settings:
+    key = Ed25519PrivateKey.generate()
+    raw = key.private_bytes(
+        serialization.Encoding.Raw,
+        serialization.PrivateFormat.Raw,
+        serialization.NoEncryption(),
+    )
+    return Settings(
+        operation_signing_key_id="m6-c3-test",
+        operation_signing_private_key_base64=base64.b64encode(raw).decode(),
     )
 
 
@@ -322,6 +367,217 @@ def test_state_machine_rejects_illegal_transition() -> None:
 
     assert operation.status == "awaiting_confirmation"
     session.add.assert_not_called()
+
+
+def test_named_confirmation_enforces_maker_checker_and_writes_actor_snapshots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    operation = make_operation("awaiting_confirmation")
+    creator = Principal(
+        id="local:4bf4ab08-4da6-44bb-8607-3c87f1946012",
+        display_name="Alice",
+        auth_source="caddy_basic",
+        auth_subject="ops-alice",
+        organization_id="local",
+        roles=("operator",),
+        capabilities=frozenset(
+            {SYSTEM_READ, FLEET_READ, EVENT_READ, OPERATION_READ, OPERATION_PLAN}
+        ),
+        authorization_mode="read_enforced",
+        write_authorization_mode="enforced",
+    )
+    operation.requested_by = creator.id
+    operation.requested_principal_snapshot = creator.snapshot(OPERATION_PLAN)
+    operation.authorization_mode = "named"
+    instance = ServiceInstance(
+        id="instance-1",
+        service_id="service-1",
+        agent_id="agent-1",
+        service_kind="docker",
+        service_key="compose:demo:api:1",
+    )
+
+    async def passing_prechecks(*_args: object):
+        return (
+            {"passed": True, "target_frozen": True},
+            Agent(id="agent-1"),
+            ManagedService(id="service-1"),
+            None,
+        )
+
+    rows = MagicMock()
+    rows.all.return_value = []
+    session = AsyncMock()
+    session.scalar.return_value = operation
+    session.get.return_value = instance
+    session.scalars.return_value = rows
+    session.add = MagicMock()
+    monkeypatch.setattr(operations_module, "run_prechecks", passing_prechecks)
+
+    result = asyncio.run(
+        confirm_operation(
+            operation.id,
+            None,
+            session,
+            signing_settings(),
+            approver(),
+        )
+    )
+
+    assert result.status == "queued"
+    assert operation.confirmed_by == approver().id
+    assert operation.confirmed_principal_snapshot == approver().snapshot(
+        OPERATION_APPROVE
+    )
+    transition_record = session.add.call_args.args[0]
+    assert transition_record.actor_type == "principal"
+    assert transition_record.actor_id == approver().id
+    assert transition_record.actor_principal_snapshot == approver().snapshot(
+        OPERATION_APPROVE
+    )
+    assert transition_record.details["plan_frozen"] is True
+    assert operation.task_signature
+
+    denied = make_operation("awaiting_confirmation")
+    denied.requested_by = approver().id
+    denied.requested_principal_snapshot = approver().snapshot(OPERATION_PLAN)
+    denied.authorization_mode = "named"
+    denied_session = AsyncMock()
+    denied_session.scalar.return_value = denied
+    with pytest.raises(HTTPException) as same_actor:
+        asyncio.run(
+            confirm_operation(
+                denied.id,
+                None,
+                denied_session,
+                signing_settings(),
+                approver(),
+            )
+        )
+    assert same_actor.value.status_code == 409
+    assert same_actor.value.detail == "maker_checker_same_principal"
+    denied_session.get.assert_not_awaited()
+    denied_session.commit.assert_not_awaited()
+
+
+def test_named_confirmation_replay_is_bound_to_the_original_approver() -> None:
+    operation = make_operation("queued")
+    operation.authorization_mode = "named"
+    operation.confirmed_by = approver().id
+    rows = MagicMock()
+    rows.all.return_value = []
+    session = AsyncMock()
+    session.scalar.return_value = operation
+    session.scalars.return_value = rows
+
+    result = asyncio.run(
+        confirm_operation(operation.id, None, session, Settings(), approver())
+    )
+    assert result.status == "queued"
+
+    other = approver()
+    other = Principal(
+        **{
+            **other.__dict__,
+            "id": "local:bc26803c-c5a0-4d15-964b-91e99f867615",
+        }
+    )
+    with pytest.raises(HTTPException) as conflict:
+        asyncio.run(confirm_operation(operation.id, None, session, Settings(), other))
+    assert conflict.value.status_code == 409
+    assert conflict.value.detail == "operation_already_confirmed_by_other_principal"
+
+
+def test_legacy_confirmation_still_requires_its_existing_body_contract() -> None:
+    operation = make_operation("awaiting_confirmation")
+    session = AsyncMock()
+    session.scalar.return_value = operation
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(confirm_operation(operation.id, None, session, Settings()))
+
+    assert error.value.status_code == 422
+    assert error.value.detail == "legacy_confirmation_body_required"
+    session.get.assert_not_awaited()
+    session.commit.assert_not_awaited()
+
+
+def test_break_glass_confirmation_is_explicit_audited_and_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    operation = make_operation("awaiting_confirmation")
+    operation.requested_by = "local:4bf4ab08-4da6-44bb-8607-3c87f1946012"
+    operation.requested_principal_snapshot = {
+        "principal_id": operation.requested_by,
+        "organization_id": "local",
+    }
+    operation.authorization_mode = "named"
+    instance = ServiceInstance(
+        id="instance-1",
+        service_id="service-1",
+        agent_id="agent-1",
+        service_kind="docker",
+        service_key="compose:demo:api:1",
+    )
+
+    async def passing_prechecks(*_args: object):
+        return (
+            {"passed": True, "target_frozen": True},
+            Agent(id="agent-1"),
+            ManagedService(id="service-1"),
+            None,
+        )
+
+    rows = MagicMock()
+    rows.all.return_value = []
+    session = AsyncMock()
+    session.scalar.return_value = operation
+    session.get.return_value = instance
+    session.scalars.return_value = rows
+    session.add = MagicMock()
+    monkeypatch.setattr(operations_module, "run_prechecks", passing_prechecks)
+    authorization = BreakGlassAuthorization(
+        request_id="6aa45c54-108a-4c10-a3ac-7b55c40ca4d7",
+        reason="production incident",
+    )
+
+    result = asyncio.run(
+        confirm_operation(
+            operation.id,
+            None,
+            session,
+            signing_settings(),
+            authorization,
+        )
+    )
+
+    assert result.status == "queued"
+    assert operation.authorization_mode == "break_glass"
+    assert operation.confirmed_by == "break-glass:local-admin"
+    transition_record = session.add.call_args.args[0]
+    assert transition_record.actor_type == "break_glass"
+    assert transition_record.details == {
+        "plan_frozen": True,
+        "break_glass": True,
+        "break_glass_request_id": authorization.request_id,
+        "break_glass_reason": authorization.reason,
+        "confirmation_precheck": {"passed": True, "target_frozen": True},
+    }
+
+    replay_session = AsyncMock()
+    replay_session.scalar.side_effect = [operation, transition_record]
+    replay_session.scalars.return_value = rows
+    replay = asyncio.run(
+        confirm_operation(
+            operation.id,
+            None,
+            replay_session,
+            Settings(),
+            authorization,
+        )
+    )
+    assert replay.status == "queued"
+    replay_session.commit.assert_not_awaited()
 
 
 def test_confirmation_precheck_drift_fails_without_overwriting_creation_snapshot(

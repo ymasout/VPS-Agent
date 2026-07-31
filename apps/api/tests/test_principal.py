@@ -17,6 +17,7 @@ from app.principal import (
     OPERATION_PLAN,
     OPERATION_READ,
     SYSTEM_READ,
+    BreakGlassAuthorization,
     authorize_operation_confirmation,
     authorize_operation_plan,
     authorize_operation_read,
@@ -57,8 +58,22 @@ def role_bindings() -> str:
     )
 
 
-def request_with_headers(headers: list[tuple[bytes, bytes]]) -> Request:
-    return Request({"type": "http", "method": "GET", "path": "/", "headers": headers})
+def request_with_headers(
+    headers: list[tuple[bytes, bytes]], body: bytes = b""
+) -> Request:
+    delivered = False
+
+    async def receive() -> dict:
+        nonlocal delivered
+        if delivered:
+            return {"type": "http.disconnect"}
+        delivered = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    return Request(
+        {"type": "http", "method": "POST", "path": "/", "headers": headers},
+        receive,
+    )
 
 
 def trusted_headers(user_id: str = "admin") -> list[tuple[bytes, bytes]]:
@@ -99,7 +114,7 @@ def write_shadow_settings() -> Settings:
     )
 
 
-def write_enforced_settings() -> Settings:
+def write_enforced_settings(*, break_glass: bool = False) -> Settings:
     return Settings(
         skip_database_init=True,
         console_public_url="https://ops.example.com",
@@ -109,6 +124,7 @@ def write_enforced_settings() -> Settings:
         principal_viewer_ids="admin,ops-alice,ops-bob",
         principal_write_context_enabled=True,
         principal_write_authorization_enabled=True,
+        principal_break_glass_enabled=break_glass,
         principal_write_proxy_token=WRITE_TOKEN,
         principal_role_bindings_json=role_bindings(),
     )
@@ -128,6 +144,7 @@ def test_principal_configuration_is_default_off_and_fail_closed() -> None:
     assert settings.principal_read_authorization_enabled is False
     assert settings.principal_write_context_enabled is False
     assert settings.principal_write_authorization_enabled is False
+    assert settings.principal_break_glass_enabled is False
 
     with pytest.raises(ValueError, match="requires principal context"):
         Settings(principal_read_authorization_enabled=True)
@@ -143,6 +160,8 @@ def test_principal_configuration_is_default_off_and_fail_closed() -> None:
         Settings(principal_write_authorization_enabled=True)
     with pytest.raises(ValueError, match="write context requires principal context"):
         Settings(principal_write_context_enabled=True)
+    with pytest.raises(ValueError, match="break glass requires"):
+        Settings(principal_break_glass_enabled=True)
 
 
 def test_resolve_principal_returns_finite_shadow_view() -> None:
@@ -427,16 +446,34 @@ def test_named_write_metadata_fails_closed(
     assert error.value.detail == detail
 
 
-def test_c2_confirmation_is_unavailable_and_operation_read_is_role_limited() -> None:
+def test_c3_confirmation_requires_approver_and_empty_body() -> None:
     settings = write_enforced_settings()
+    approver = asyncio.run(
+        authorize_operation_confirmation(
+            request_with_headers(named_write_headers("ops-bob")), None, settings
+        )
+    )
+    assert approver is not None and approver.id == APPROVER_ID
+
     with pytest.raises(HTTPException) as error:
         asyncio.run(
             authorize_operation_confirmation(
-                request_with_headers(named_write_headers("ops-bob")), None, settings
+                request_with_headers(named_write_headers("ops-alice")), None, settings
             )
         )
-    assert error.value.status_code == 409
-    assert error.value.detail == "principal_confirmation_not_available"
+    assert error.value.status_code == 403
+    assert error.value.detail == "principal_capability_denied"
+
+    with pytest.raises(HTTPException) as body_error:
+        asyncio.run(
+            authorize_operation_confirmation(
+                request_with_headers(named_write_headers("ops-bob"), b"{}"),
+                None,
+                settings,
+            )
+        )
+    assert body_error.value.status_code == 422
+    assert body_error.value.detail == "confirmation_body_must_be_empty"
 
     operator = asyncio.run(
         authorize_operation_read(
@@ -465,6 +502,83 @@ def test_c2_confirmation_is_unavailable_and_operation_read_is_role_limited() -> 
         )
         is None
     )
+
+
+def test_break_glass_requires_explicit_flag_admin_uuid_reason_and_empty_body() -> None:
+    request_id = "6aa45c54-108a-4c10-a3ac-7b55c40ca4d7"
+    with pytest.raises(HTTPException) as disabled:
+        asyncio.run(
+            authorize_operation_confirmation(
+                request_with_headers([]),
+                "change-me-in-production",
+                write_enforced_settings(),
+                request_id,
+                "production incident",
+            )
+        )
+    assert disabled.value.status_code == 403
+    assert disabled.value.detail == "principal_break_glass_disabled"
+
+    settings = write_enforced_settings(break_glass=True)
+    authorization = asyncio.run(
+        authorize_operation_confirmation(
+            request_with_headers([]),
+            "change-me-in-production",
+            settings,
+            request_id,
+            "production incident",
+        )
+    )
+    assert isinstance(authorization, BreakGlassAuthorization)
+    assert authorization.request_id == request_id
+    assert authorization.reason == "production incident"
+
+    with pytest.raises(HTTPException) as body_error:
+        asyncio.run(
+            authorize_operation_confirmation(
+                request_with_headers([], b"{}"),
+                "change-me-in-production",
+                settings,
+                request_id,
+                "production incident",
+            )
+        )
+    assert body_error.value.status_code == 422
+    assert body_error.value.detail == "confirmation_body_must_be_empty"
+
+
+@pytest.mark.parametrize(
+    ("request_id", "reason", "detail"),
+    [
+        (None, "production incident", "invalid_break_glass_request_id"),
+        ("not-a-uuid", "production incident", "invalid_break_glass_request_id"),
+        (
+            "6aa45c54-108a-4c10-a3ac-7b55c40ca4d7",
+            "",
+            "invalid_break_glass_reason",
+        ),
+        (
+            "6aa45c54-108a-4c10-a3ac-7b55c40ca4d7",
+            " production incident",
+            "invalid_break_glass_reason",
+        ),
+    ],
+)
+def test_break_glass_rejects_partial_or_invalid_audit_context(
+    request_id: str | None, reason: str, detail: str
+) -> None:
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            authorize_operation_confirmation(
+                request_with_headers([]),
+                "change-me-in-production",
+                write_enforced_settings(break_glass=True),
+                request_id,
+                reason,
+            )
+        )
+    assert error.value.status_code == 422
+    assert error.value.detail == detail
 
 
 @pytest.mark.parametrize(

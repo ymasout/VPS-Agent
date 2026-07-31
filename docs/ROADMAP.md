@@ -19,7 +19,7 @@
 | M3：上下文与 AI 诊断 | P3 + P5 核心闭环 | **已完成** | 服务/目录/日志/仓库映射、有限取证和结构化诊断 |
 | M4：操作可处置 | P4：可处置 | **已完成（核心）** | 安全重启、部署、回滚（均生产验证）；拉源码/清理为后续扩展 |
 | M5：诊断体验增强 | P5 完整体验 | **已完成** | M5.1–M5.4 已完成生产金丝雀；M5.5–M5.7 本地验收通过，生产金丝雀通过 2026-07-26 |
-| M6：自托管产品化 | P6 | **进行中（M6.1 + M6.2 + M6.3 + M6.4a + M6.4b + M6.4c1 + M6.4c2 已完成；c3/Web SSH 待开始）** | 可验证的安装/升级/备份/恢复，然后 PWA、通知、协作与开源分发 |
+| M6：自托管产品化 | P6 | **进行中（M6.1 + M6.2 + M6.3 + M6.4a + M6.4b + M6.4c1 + M6.4c2 已完成；c3 本地已实现待审计/CI/金丝雀）** | 可验证的安装/升级/备份/恢复，然后 PWA、通知、协作与开源分发 |
 | SaaS/商业化 | 计划第 7 章 | **冻结** | 满足原计划前置条件前不启动 |
 
 ### 2.1 终局产品体验
@@ -269,7 +269,7 @@ M5.4 单 Agent/单服务上下文只读会话已于 2026-07-26 完成本地实�
 
 ## 9. M6：自托管产品化
 
-状态：**进行中（M6.1、M6.2、M6.3、M6.4a、M6.4b、M6.4c1、M6.4c2 已完成（生产金丝雀通过 2026-07-31）；c3/Web SSH 待开始）**
+状态：**进行中（M6.1、M6.2、M6.3、M6.4a、M6.4b、M6.4c1、M6.4c2 已完成（生产金丝雀通过 2026-07-31）；c3 本地已实现，待独立审计、CI 与生产金丝雀）**
 
 M6 按可恢复性基础优先拆分，不一次扩展全部 P6 范围：
 
@@ -279,7 +279,7 @@ M6 按可恢复性基础优先拆分，不一次扩展全部 P6 范围：
 4. **M6.4：团队协作与开源分发评估。** M6.4a 已于 2026-07-30 完成：`714da5a` 上 Recovery、Migrations、Web 与 Source Distribution 四条 CI 全绿，验证 Gitleaks 全历史、283 文件源码候选、REUSE 278/278、421 项依赖许可证、SPDX 和 archive；该 CI-only 切片不部署生产。M6.4b 两个连续首片已完成（审计通过+CI 全绿+生产金丝雀 2026-07-30）：先 default-off 的可信 Principal shadow，再只对明确列出的 GET 执行 `system:read`/`fleet:read`/`event:read`；不修改写权限、M4 actor、Agent 或数据库。M6.4c 设计审计通过，c1 已完成（审计+CI+生产金丝雀 2026-07-30）：严格稳定 Principal 绑定、独立 Caddy/API write token、三组 Caddy 凭据、7 个 M4 POST shadow、actor snapshot migration `0020_m6_named_approval` 和部署预检。c2 已完成（审计+CI+生产金丝雀 2026-07-31）：operator 只可创建具名计划（稳定 Principal 快照+named authorization_mode），approver/viewer 403，确认 409（c3 阻断），同源 Origin/CSRF enforcement；生产 flags OFF 时仍为 legacy。详见 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md) 与 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)。SaaS/多租户继续冻结。
 5. **最后阶段：Web SSH、实时终端和限时高风险会话。** 按机器、身份、时长和范围授权，二次确认、自动撤销和完整审计；不得变成模型的永久 Root 权限。
 
-M6 总体设计、发布/备份/恢复审计和风险见 [M6_PRODUCTIZATION.md](./M6_PRODUCTIZATION.md)，M6.2 缓存、移动只读与审批边界见 [M6_PWA_MOBILE.md](./M6_PWA_MOBILE.md)。M6.1、M6.2 和 M6.3 已完成相应审计、CI 与生产金丝雀；当前生产运行 `c78ae35 + 0020`，Principal flags OFF，通知仍仅启用钉钉。M6.4a 已完成 CI-only 收尾，M6.4b 已完成审计+CI+生产金丝雀（2026-07-30），M6.4c1 已完成审计+CI+shadow 金丝雀（2026-07-30），M6.4c2 已完成审计+CI+具名计划金丝雀（2026-07-31）；设计与金丝雀记录见 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md) 与 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)，总评估见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)。真实生产库恢复仍属单独事故授权。
+M6 总体设计、发布/备份/恢复审计和风险见 [M6_PRODUCTIZATION.md](./M6_PRODUCTIZATION.md)，M6.2 缓存、移动只读与审批边界见 [M6_PWA_MOBILE.md](./M6_PWA_MOBILE.md)。M6.1、M6.2 和 M6.3 已完成相应审计、CI 与生产金丝雀；当前生产运行 `c78ae35 + 0020`，Principal flags OFF，通知仍仅启用钉钉。M6.4a 已完成 CI-only 收尾，M6.4b 已完成审计+CI+生产金丝雀（2026-07-30），M6.4c1 已完成审计+CI+shadow 金丝雀（2026-07-30），M6.4c2 已完成审计+CI+具名计划金丝雀（2026-07-31）；M6.4c3 已完成本地实现和验证但尚未取得独立审计、CI 或生产证据，不得提前标记完成。设计与金丝雀记录见 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md) 与 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)，总评估见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)。真实生产库恢复仍属单独事故授权。
 
 Web UI 的初步信息架构、首页定位和分阶段设计见 [WEB_UI_PLAN.md](./WEB_UI_PLAN.md)。
 
