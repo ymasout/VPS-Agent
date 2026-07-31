@@ -116,16 +116,18 @@ jobs:
           "$RUNNER_TEMP/api-deps/bin/python" scripts/source_release.py build --output-dir dist
           cp scripts/install-agent.sh dist/install-agent.sh
           which syft || { echo "syft not found in PATH"; exit 1; }
+          set -x
           for arch in amd64 arm64; do
             (cd apps/agent && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" \
               go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
               -o "../../dist/vps-agent-linux-${arch}" ./cmd/agent)
             "dist/vps-agent-linux-${arch}" --version | grep --fixed-strings "vps-agent ${VERSION}"
-            syft "dist/vps-agent-linux-${arch}" -o "spdx-json=dist/vps-agent-linux-${arch}.spdx.json" || {
-              echo "syft scan failed for ${arch}, retrying with scope" >&2
-              syft scan "dist/vps-agent-linux-${arch}" --scope all-layers -o "spdx-json=dist/vps-agent-linux-${arch}.spdx.json"
+            syft "dist/vps-agent-linux-${arch}" -o spdx-json --file "dist/vps-agent-linux-${arch}.spdx.json" 2>&1 || {
+              echo "=== syft exit code: $? ===" >&2
+              exit 1
             }
           done
+          set +x
       - name: Build multi-architecture OCI archives without publishing
         env:
           VERSION: ${{ inputs.version }}
