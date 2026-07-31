@@ -121,7 +121,10 @@ jobs:
               go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
               -o "../../dist/vps-agent-linux-${arch}" ./cmd/agent)
             "dist/vps-agent-linux-${arch}" --version | grep --fixed-strings "vps-agent ${VERSION}"
-            syft scan "file:dist/vps-agent-linux-${arch}" -o "spdx-json=dist/vps-agent-linux-${arch}.spdx.json" 2>&1
+            syft "dist/vps-agent-linux-${arch}" -o "spdx-json=dist/vps-agent-linux-${arch}.spdx.json" || {
+              echo "syft scan failed for ${arch}, retrying with scope" >&2
+              syft scan "dist/vps-agent-linux-${arch}" --scope all-layers -o "spdx-json=dist/vps-agent-linux-${arch}.spdx.json"
+            }
           done
       - name: Build multi-architecture OCI archives without publishing
         env:
