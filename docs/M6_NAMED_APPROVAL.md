@@ -1,7 +1,7 @@
 # M6.4c 角色授权与具名 M4 审批设计
 
-当前状态：**M6.4c1 已由 codex 实现、Claude 审计通过（无 P0/P1/P2），提交 `48263db`+`d6a9528` 推送至 main，四个 CI 全绿，并于 2026-07-30 通过两阶段 shadow 生产金丝雀；M6.4c2 已完成本地实现与验证、待独立审计/CI/授权金丝雀，c3 尚未实现。** M6.4b 已于 2026-07-30 通过独立审计、
-四条 CI 与两阶段生产只读金丝雀；生产运行 `d6a9528`、Alembic head
+当前状态：**M6.4c1+c2 已由 codex 实现、Claude 审计通过（无 P0/P1/P2），提交 `48263db`+`d6a9528`+`c78ae35` 推送至 main，四个 CI 全绿，并于 2026-07-31 通过具名计划生产金丝雀；c3 尚未实现。** M6.4b 已于 2026-07-30 通过独立审计、
+四条 CI 与两阶段生产只读金丝雀；生产运行 `c78ae35`、Alembic head
 `0020_m6_named_approval`，Principal 两个开关已还原关闭。M6.4c 会改变 M4 写路径
 的身份、授权和审计契约，必须单独实现、审计、迁移验证并取得生产金丝雀授权。
 
@@ -380,7 +380,7 @@ Ruff、单 head、0020 双向离线 SQL、Compose config、部署配置预检通
 全迁移至 0020、备份→隔离恢复→schema check，并实证存在具名 actor snapshot 时 downgrade
 失败关闭（`1 passed`）。Windows Git Bash 挂载路径兼容与 Recovery 测试新增 Caddy 必填变量
 也已修复。push 后 Ubuntu CI 仍是合并与金丝雀前的必要门。当前生产为
-`d6a9528 + 0020` 且 Principal flags OFF。
+`c78ae35 + 0020` 且 Principal flags OFF。
 
 ## 19. M6.4c1 生产金丝雀记录（2026-07-30）
 
@@ -415,4 +415,14 @@ Ruff、单 head、0020 双向离线 SQL、Compose config、部署配置预检通
 Go test/vet、Compose config 与 `git diff --check` 通过。Docker Desktop 真实 Caddy 多用户、
 七路由覆盖/header 隔离通过；临时 PostgreSQL 16 完成 schema check，并通过真实具名计划
 `awaiting_confirmation`、actor snapshot、无 nonce/签名及 0020 downgrade fail-closed 两项测试。
-当前生产仍为 `d6a9528 + 0020`、Principal flags OFF；以上状态不代表 c2 已提交、CI 或生产验证。
+当前生产为 `c78ae35 + 0020`、Principal flags OFF；c2 已提交推送并完成审计、CI 与生产金丝雀。
+
+## 21. M6.4c2 生产金丝雀记录（2026-07-31）
+
+具名计划金丝雀在用户明确授权下执行并通过：
+
+- **Phase A（flags OFF）**：部署 `c78ae35`（无迁移，head 0020）；system-info commit=c78ae35/revision=0020/schema_current=true；ops/trans 14/89 不变；`/healthz` 最小。
+- **Phase B（c2 enforcement）**：开 4 个 flag（context+read_auth+write_context+write_auth）；approver 创建计划 -> 403（capability_denied）；无 Origin -> 401（invalid_principal_context）；确认任意计划 -> 409（principal_confirmation_not_available，c3 阻断）；operator 创建具名计划 -> `requested_by=local:50afb0f6-...`/`authorization_mode=named`/`requested_principal_snapshot` 含 principal_id+display_name+capability_used=operation:plan/`task_signature=null`/`nonce=null`（无签名/执行）；approver 确认该计划 -> 409；restart 已还原。
+- **核对**：ops/trans 14/89 -> 15/92（+1 op +3 trans，计划行+状态过渡，无签名/nonce/Agent 领取）；DB `requested_by=local:50afb0f6-...`/`authorization_mode=named`/`has_snapshot=t`。
+- **Phase C（还原）**：4 flag 还原 false；`/principal` 403。`c78ae35` 留作运行基线（flags OFF = legacy 行为）。
+- **待调查**：operator 创建的计划返回 `status=failed`（预期 `awaiting_confirmation` 或 `planned`）；安全属性全部验证通过（具名 actor + 快照 + 无签名/nonce + 确认 409 + CSRF 防护），`status=failed` 不影响安全判定但需调查 `build_restart_plan` 状态设置或维护循环过渡逻辑。
