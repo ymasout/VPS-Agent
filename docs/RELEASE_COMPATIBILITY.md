@@ -6,7 +6,7 @@ integration tests. Historical documentation is not compatibility evidence.
 | Release path | Database | Agent | Status |
 |---|---|---|---|
 | Clean install `v0.6.1` | Empty PostgreSQL 16 → `0020_m6_named_approval` | `v0.6.1` amd64/arm64 | Passed (formal release 2026-08-01) |
-| Current production baseline → `v0.6.1` | `0d75342`, revision `0020_m6_named_approval` | Existing `v0.4.2` | Pending explicit production upgrade canary |
+| Current production baseline → `v0.6.1` | `0d75342`, revision `0020_m6_named_approval` | Existing `v0.4.2` | Passed (production upgrade canary 2026-08-01) |
 | Application rollback | Remains at `0020_m6_named_approval` | Unchanged | Only to the recorded compatible previous image digest |
 | Backup restore | Exact manifest version/revision and PostgreSQL major | Not applicable | Offline isolated target only |
 

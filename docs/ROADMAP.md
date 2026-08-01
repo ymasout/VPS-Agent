@@ -269,7 +269,7 @@ M5.4 单 Agent/单服务上下文只读会话已于 2026-07-26 完成本地实�
 
 ## 9. M6：自托管产品化
 
-状态：**进行中（M6.1a/b、M6.2、M6.3、M6.4a/b/c/d 已完成；M6.1c/d 可靠性收尾待完成）**
+状态：**进行中（M6.1a/b、M6.2、M6.3、M6.4a/b/c/d 已完成；v0.6.1 生产升级金丝雀通过 2026-08-01；M6.1c/d 可靠性收尾待完成）**
 
 M6 按可恢复性基础优先拆分，不一次扩展全部 P6 范围：
 
@@ -279,7 +279,7 @@ M6 按可恢复性基础优先拆分，不一次扩展全部 P6 范围：
 4. **M6.4：团队协作与开源分发评估。** M6.4a 已于 2026-07-30 完成：`714da5a` 上 Recovery、Migrations、Web 与 Source Distribution 四条 CI 全绿，验证 Gitleaks 全历史、283 文件源码候选、REUSE 278/278、421 项依赖许可证、SPDX 和 archive；该 CI-only 切片不部署生产。M6.4b 两个连续首片已完成（审计通过+CI 全绿+生产金丝雀 2026-07-30）：先 default-off 的可信 Principal shadow，再只对明确列出的 GET 执行 `system:read`/`fleet:read`/`event:read`。M6.4c c1/c2/c3 已全部完成审计、四条 CI 和生产金丝雀（2026-07-30/31）：稳定 Principal、独立 write token、actor snapshot、具名 operator 计划、独立 approver 确认和行锁 maker-checker 均已落地；首次具名 M4 完整执行链到 `succeeded`，验证后 restart 与 Principal flags 全部还原关闭。详见 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md) 与 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)。M6.4d v0.6.1 已于 2026-08-01 正式公开发行：tag `v0.6.1` 指向 `8746182`，Formal Release 四阶段全成功，四条 CI 全绿，PVR 已启用，32 资产，GHCR API/Web 公开可拉取。生产尚未切换正式镜像。详见 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md)；SaaS/多租户继续冻结。
 5. **最后阶段：Web SSH、实时终端和限时高风险会话。** 按机器、身份、时长和范围授权，二次确认、自动撤销和完整审计；不得变成模型的永久 Root 权限。
 
-M6 总体设计、发布/备份/恢复审计和风险见 [M6_PRODUCTIZATION.md](./M6_PRODUCTIZATION.md)，M6.2 缓存、移动只读与审批边界见 [M6_PWA_MOBILE.md](./M6_PWA_MOBILE.md)。M6.1a/b、M6.2、M6.3、M6.4a/b/c 已完成相应审计、CI 与生产金丝雀；最后一次生产记录为 `0d75342 + 0020`、Principal flags OFF、通知仅启用钉钉，任何后续生产操作前必须实时核对。M6.4d v0.6.1 已于 2026-08-01 正式公开发行（tag `v0.6.1`、commit `8746182`、32 资产、PVR 启用、四条 CI 全绿、GHCR 公开）。设计与金丝雀记录见 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md) 与 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)，总评估见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)，正式发行边界见 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md)。真实生产库恢复仍属单独事故授权。
+M6 总体设计、发布/备份/恢复审计和风险见 [M6_PRODUCTIZATION.md](./M6_PRODUCTIZATION.md)，M6.2 缓存、移动只读与审批边界见 [M6_PWA_MOBILE.md](./M6_PWA_MOBILE.md)。M6.1a/b、M6.2、M6.3、M6.4a/b/c 已完成相应审计、CI 与生产金丝雀。M6.4d v0.6.1 已于 2026-08-01 正式公开发行并同日完成生产升级金丝雀（digest-pinned release 镜像、commit `8746182`、`0020`、Principal flags OFF、通知仅启用钉钉）。任何后续生产操作前必须实时核对。设计与金丝雀记录见 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md) 与 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)，总评估见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)，正式发行边界见 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md)。真实生产库恢复仍属单独事故授权。
 
 Web UI 的初步信息架构、首页定位和分阶段设计见 [WEB_UI_PLAN.md](./WEB_UI_PLAN.md)。
 

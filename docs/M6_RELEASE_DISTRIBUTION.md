@@ -7,7 +7,8 @@ API 镜像 `ghcr.io/ymasout/vps-agent-api:v0.6.1`（manifest digest
 `sha256:7bc0fb29ffcfadc3ff8f76dff066301fa301e525ab361c5bb63a9a1a9661373c`）与 Web 镜像
 `ghcr.io/ymasout/vps-agent-web:v0.6.1`（manifest digest
 `sha256:e05136ea7fee0a8a36155294403350f5b620d7043368982b810034834407af13`）均已公开可匿名拉取。
-生产尚未切换到正式镜像；生产升级仍是独立授权事件。
+生产已于 2026-08-01 完成升级金丝雀，切换到 digest-pinned release 镜像（API/Web）；
+Postgres/Redis/Caddy 保持现有缓存版本运行。
 
 ## 1. 设计时基线与当前实现状态
 

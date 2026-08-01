@@ -1,7 +1,7 @@
 # 项目状态
 
 最后同步：2026-08-02
-当前阶段：**M0–M5 已完成；M6.1a/b、M6.2、M6.3、M6.4a/b/c 与 M6.4d 正式发行已完成；M6.1c/d 可靠性收尾待完成；v0.6.1 已于 2026-08-01 正式公开发行**
+当前阶段：**M0–M5 已完成；M6.1a/b、M6.2、M6.3、M6.4a/b/c/d 已完成；v0.6.1 正式发行 + 生产升级金丝雀通过 2026-08-01；M6.1c/d 可靠性收尾待完成**
 
 ## 1. 当前结论
 
@@ -312,7 +312,7 @@ M5.2.1 本地验收：API 157 项通过；Web 43 项、ESLint、生产构建、�
 
 ## 8. M6：自托管产品化
 
-状态：**进行中（M6.1a/b、M6.2、M6.3、M6.4a/b/c/d 已完成；M6.1c Agent 安全升级/失败回退与 M6.1d 灾备运行手册待完成；Web SSH 待单独设计）**
+状态：**进行中（M6.1a/b、M6.2、M6.3、M6.4a/b/c/d 已完成；v0.6.1 生产升级金丝雀通过 2026-08-01；M6.1c Agent 安全升级/失败回退与 M6.1d 灾备运行手册待完成；Web SSH 待单独设计）**
 
 2026-07-26 完成 M6 第一轮发布、Compose、Alembic、备份/恢复、Agent 安装升级、版本/健康、Web 管理入口、CI 和发布资产审计。当前结论：
 
@@ -358,7 +358,9 @@ M6.4a 随后以 `ed4e584` 提交，并按 CI 失败证据完成三轮收敛：`3
 
 同日完成 M6.4d 正式发行与开源分发设计审计，冻结公开坐标、统一 SemVer、Agent/控制平面制品、SBOM、checksum、Sigstore keyless 签名/provenance、digest-pinned release bundle、兼容与回退矩阵、干净主机演练和发布授权边界。随后完成本地连续实现：统一 `v0.6.1`/正式 Go module 坐标，固定 Actions 与基础镜像 digest，新增 candidate-then-promote 正式 workflow、Agent 签名验证、release bundle/兼容矩阵/CHANGELOG、digest-only release Compose 和真实临时 registry 集成门；隔离验证已完成候选镜像回拉、空库迁移至 `0020`、非 root 启动、schema/health/system-info/build identity 核对。实现中额外修复了提交者非 UTC 时区导致生产构建时间校验失败的问题。
 
-2026-08-01 v0.6.1 正式公开发行：tag `v0.6.1` 指向 `8746182`，Formal Release workflow 四阶段（review → draft → candidate → publish）全部成功；四条 CI（Control Plane Recovery、Migrations、Web、Source Distribution）全绿；PVR 已启用并通过 create-draft 门；Release `isDraft=false`、`isPrerelease=false`、32 个资产。API 镜像 `ghcr.io/ymasout/vps-agent-api:v0.6.1`（manifest digest `sha256:7bc0fb29ffcfadc3ff8f76dff066301fa301e525ab361c5bb63a9a1a9661373c`）与 Web 镜像 `ghcr.io/ymasout/vps-agent-web:v0.6.1`（manifest digest `sha256:e05136ea7fee0a8a36155294403350f5b620d7043368982b810034834407af13`）均已公开可匿名拉取。生产尚未切换到正式镜像；生产升级仍是独立授权事件。详见 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md)。
+2026-08-01 v0.6.1 正式公开发行：tag `v0.6.1` 指向 `8746182`，Formal Release workflow 四阶段（review → draft → candidate → publish）全部成功；四条 CI（Control Plane Recovery、Migrations、Web、Source Distribution）全绿；PVR 已启用并通过 create-draft 门；Release `isDraft=false`、`isPrerelease=false`、32 个资产。API 镜像 `ghcr.io/ymasout/vps-agent-api:v0.6.1`（manifest digest `sha256:7bc0fb29ffcfadc3ff8f76dff066301fa301e525ab361c5bb63a9a1a9661373c`）与 Web 镜像 `ghcr.io/ymasout/vps-agent-web:v0.6.1`（manifest digest `sha256:e05136ea7fee0a8a36155294403350f5b620d7043368982b810034834407af13`）均已公开可匿名拉取。详见 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md)。
+
+同日完成 v0.6.1 生产升级金丝雀：从源码构建基线 `0d75342` 切换到 digest-pinned release 镜像。Phase 0 实时核对确认 `0d75342 + 0020`、5 Agent online（aliyun-VPS 已释放 offline 符合预期）、Principal flags OFF；M6.1 原子备份包 `control-plane-pre-migration-20260801T195202Z` 生成并 inspect 通过；migrate 为 no-op（`0020` → `0020`）；postflight 全过（revision/schema/health/Agent operation route/mapping candidates）；build identity 更新为 `commit_sha=8746182`/`version=0.6.1`/`build_time=2026-08-01T13:31:01Z`（与 OCI label 一致）；Agent 状态不变、日志无错误/凭据泄露；Web 200、`/healthz` ok、PWA manifest 在 `/manifest.webmanifest` 返回 200。Postgres/Redis/Caddy 因 Docker Hub DNS 异常保持现有缓存版本运行，仅 API/Web 切换至 release digest。`deploy/.env.production` 的 `CONTROL_PLANE_COMMIT_SHA`/`CONTROL_PLANE_BUILD_TIME` 已更新为 v0.6.1 值并备份旧文件。
 
 2026-07-27 M6.1 生产金丝雀通过：部署 `38b8d40`（注入 build version/commit/build time）+ postflight；`/api/v1/system-info` 返回 `commit_sha=38b8d40e76ea1c30497bbfa0f17d2b87aaa27977`、`version=0.6.1`、`schema_current=true`、`alembic_revision=["0017_m5_runbook_drafts"]`；`preflight` 生成原子备份包 `control-plane-pre-migration-20260727T131115Z`，`inspect` + 隔离空库 `restore` 成功，审计摘要 `schema_current=true`/`key_table_counts_match=true`/`active_operation_count=0`；恢复后 `ops=13/trans=81/agents=5` 与生产一致；生产 `ops/trans` 前后不变、日志无秘密、开关未变；隔离项目已清理，首份原子备份包保留（0700/0600）。M6.1 无 feature flag，`38b8d40` 留作运行基线。
 
