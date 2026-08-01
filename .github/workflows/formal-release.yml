@@ -120,12 +120,19 @@ jobs:
             (cd apps/agent && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" \
               go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
               -o "../../dist/vps-agent-linux-${arch}" ./cmd/agent)
-            AGENT_OUTPUT=$(./"dist/vps-agent-linux-${arch}" --version 2>&1 || true)
-            echo "$AGENT_OUTPUT" | grep --fixed-strings "vps-agent ${VERSION}" || {
-              echo "version mismatch: $AGENT_OUTPUT" >&2
-              exit 1
-            }
-            syft "dist/vps-agent-linux-${arch}" -o spdx-json --file "dist/vps-agent-linux-${arch}.spdx.json" || {
+            if [ "$arch" = "amd64" ]; then
+              AGENT_OUTPUT=$(./"dist/vps-agent-linux-${arch}" --version 2>&1 || true)
+              echo "$AGENT_OUTPUT" | grep --fixed-strings "vps-agent ${VERSION}" || {
+                echo "version mismatch: $AGENT_OUTPUT" >&2
+                exit 1
+              }
+            else
+              file "dist/vps-agent-linux-${arch}" | grep --fixed-strings "ELF" | grep --fixed-strings "$arch" || {
+                echo "binary architecture mismatch for $arch" >&2
+                exit 1
+              }
+            fi
+            syft "dist/vps-agent-linux-${arch}" -o "spdx-json=dist/vps-agent-linux-${arch}.spdx.json" || {
               echo "=== syft failed with exit code $? ===" >&2
               exit 1
             }
