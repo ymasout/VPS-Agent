@@ -1,7 +1,7 @@
 # 项目状态
 
-最后同步：2026-07-29
-当前阶段：**M0–M5 已完成；M6.1、M6.2、M6.3、M6.4a、M6.4b、M6.4c 已完成相应审计、CI 和生产门；M6.4d 本地实现完成，待独立审计、Ubuntu CI 与外部发行门**
+最后同步：2026-08-02
+当前阶段：**M0–M5 已完成；M6.1a/b、M6.2、M6.3、M6.4a/b/c 与 M6.4d 正式发行已完成；M6.1c/d 可靠性收尾待完成；v0.6.1 已于 2026-08-01 正式公开发行**
 
 ## 1. 当前结论
 
@@ -312,7 +312,7 @@ M5.2.1 本地验收：API 157 项通过；Web 43 项、ESLint、生产构建、�
 
 ## 8. M6：自托管产品化
 
-状态：**进行中（M6.1、M6.2、M6.3、M6.4a、M6.4b、M6.4c 已完成（生产金丝雀通过 2026-07-31）；M6.4d 本地实现完成，待独立审计、Ubuntu CI 与外部发行门；Web SSH 待单独设计）**
+状态：**进行中（M6.1a/b、M6.2、M6.3、M6.4a/b/c/d 已完成；M6.1c Agent 安全升级/失败回退与 M6.1d 灾备运行手册待完成；Web SSH 待单独设计）**
 
 2026-07-26 完成 M6 第一轮发布、Compose、Alembic、备份/恢复、Agent 安装升级、版本/健康、Web 管理入口、CI 和发布资产审计。当前结论：
 
@@ -356,7 +356,9 @@ M6.4a 随后以 `ed4e584` 提交，并按 CI 失败证据完成三轮收敛：`3
 
 同日完成 M6.4c3 实现与验证：`operation:approve` 只接入冻结的 confirm POST，enforcement 下正文必须为空，可信 approver 由 Caddy/API write token 链派生；API 在 `SELECT FOR UPDATE` 事务内比较稳定 creator/approver ID，同人返回 409 且不预检、不签名、不写 Transition。成功确认写入 Operation 与 queued Transition 的审批快照并继续复用原 M4 预检、Ed25519 签名、Agent claim/execute/verify 状态机；同一审批人仅在 Operation 仍为 `queued` 时幂等 200，进入后续或终态后按状态机返回 409，其他审批人冲突 409。事故 break-glass 默认关闭、无 Web 入口，只接受管理令牌、规范 UUIDv4 请求键、1–256 字符无控制字符原因和空正文，写入 `authorization_mode=break_glass`、固定 actor、有限原因与 warning 审计；Web 仅向具有 approve capability 且不是 creator 的身份显示原有显式勾选确认控件。无迁移，head 保持 0020；API `300 passed, 14 skipped`、Web `100 passed`、lint/build、Ruff、Go test/vet、Compose config、真实 Caddy 4KB 写体限制和临时 PostgreSQL 16 并发确认/单 queued Transition 门均通过。代码提交 `2673877`，Gitleaks 修复 `0d75342`，四条 CI 全绿。2026-07-31 生产金丝雀通过：operator 创建具名计划后因缺少 `operation:approve` 自确认返回 403；独立 approver 确认后 Operation 进入 `queued` 并经签名、Agent 领取、`docker restart` 和健康验证到 `succeeded`；终态回放同 approver 返回 409、operator 仍返回 403。旧 aliyun-VPS 已释放，临时新 Agent 使用下划线形式的 `docker_logs`/`docker_restart` 环境策略完成验证；服务 restart 授权与 Principal flags 随后还原关闭。生产运行 `0d75342 + 0020`。
 
-同日完成 M6.4d 正式发行与开源分发设计审计，冻结公开坐标、统一 SemVer、Agent/控制平面制品、SBOM、checksum、Sigstore keyless 签名/provenance、digest-pinned release bundle、兼容与回退矩阵、干净主机演练和发布授权边界。随后完成本地连续实现：统一 `v0.6.1`/正式 Go module 坐标，固定 Actions 与基础镜像 digest，新增 candidate-then-promote 正式 workflow、Agent 签名验证、release bundle/兼容矩阵/CHANGELOG、digest-only release Compose 和真实临时 registry 集成门；隔离验证已完成候选镜像回拉、空库迁移至 `0020`、非 root 启动、schema/health/system-info/build identity 核对。实现中额外修复了提交者非 UTC 时区导致生产构建时间校验失败的问题。当前待独立审计与 Ubuntu CI；Private Vulnerability Reporting 仍为 P1 阻断，GHCR public 可见性仍需单独授权。未创建 tag/Release、未推送 GHCR、未部署生产；详见 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md)。
+同日完成 M6.4d 正式发行与开源分发设计审计，冻结公开坐标、统一 SemVer、Agent/控制平面制品、SBOM、checksum、Sigstore keyless 签名/provenance、digest-pinned release bundle、兼容与回退矩阵、干净主机演练和发布授权边界。随后完成本地连续实现：统一 `v0.6.1`/正式 Go module 坐标，固定 Actions 与基础镜像 digest，新增 candidate-then-promote 正式 workflow、Agent 签名验证、release bundle/兼容矩阵/CHANGELOG、digest-only release Compose 和真实临时 registry 集成门；隔离验证已完成候选镜像回拉、空库迁移至 `0020`、非 root 启动、schema/health/system-info/build identity 核对。实现中额外修复了提交者非 UTC 时区导致生产构建时间校验失败的问题。
+
+2026-08-01 v0.6.1 正式公开发行：tag `v0.6.1` 指向 `8746182`，Formal Release workflow 四阶段（review → draft → candidate → publish）全部成功；四条 CI（Control Plane Recovery、Migrations、Web、Source Distribution）全绿；PVR 已启用并通过 create-draft 门；Release `isDraft=false`、`isPrerelease=false`、32 个资产。API 镜像 `ghcr.io/ymasout/vps-agent-api:v0.6.1`（manifest digest `sha256:7bc0fb29ffcfadc3ff8f76dff066301fa301e525ab361c5bb63a9a1a9661373c`）与 Web 镜像 `ghcr.io/ymasout/vps-agent-web:v0.6.1`（manifest digest `sha256:e05136ea7fee0a8a36155294403350f5b620d7043368982b810034834407af13`）均已公开可匿名拉取。生产尚未切换到正式镜像；生产升级仍是独立授权事件。详见 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md)。
 
 2026-07-27 M6.1 生产金丝雀通过：部署 `38b8d40`（注入 build version/commit/build time）+ postflight；`/api/v1/system-info` 返回 `commit_sha=38b8d40e76ea1c30497bbfa0f17d2b87aaa27977`、`version=0.6.1`、`schema_current=true`、`alembic_revision=["0017_m5_runbook_drafts"]`；`preflight` 生成原子备份包 `control-plane-pre-migration-20260727T131115Z`，`inspect` + 隔离空库 `restore` 成功，审计摘要 `schema_current=true`/`key_table_counts_match=true`/`active_operation_count=0`；恢复后 `ops=13/trans=81/agents=5` 与生产一致；生产 `ops/trans` 前后不变、日志无秘密、开关未变；隔离项目已清理，首份原子备份包保留（0700/0600）。M6.1 无 feature flag，`38b8d40` 留作运行基线。
 

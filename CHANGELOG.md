@@ -1,9 +1,9 @@
 # Changelog
 
 This changelog records user-visible changes for the first unified VPS Agent release. Historical Agent-only
-tags remain available, but `v0.6.1` is the first planned monorepo release covering the control plane and Agent.
+tags remain available; `v0.6.1` is the first formal monorepo release covering the control plane and Agent.
 
-## [0.6.1] - Unreleased
+## [0.6.1] - 2026-08-01
 
 ### M0–M2: self-hosted operations foundation
 

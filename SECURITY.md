@@ -2,13 +2,13 @@
 
 ## Supported versions
 
-Until the first formal control-plane release, only the current `main` branch and the newest Agent release are eligible for security fixes. Older development snapshots are unsupported.
+The newest formal release and the current `main` branch are eligible for security fixes. Older releases are supported only if listed in [RELEASE_COMPATIBILITY.md](./docs/RELEASE_COMPATIBILITY.md). Development snapshots before `v0.6.1` are unsupported.
 
 ## Reporting a vulnerability
 
 Do not open a public issue containing credentials, exploit details, private infrastructure data, database contents, signed task material, Agent identity files, notification URLs, or reproduction steps that could endanger a running instance.
 
-GitHub private vulnerability reporting is the intended reporting channel, but it is not enabled yet. Enabling and testing that channel is a release blocker. Until it is enabled, do not claim that the project has a confidential vulnerability-reporting path and do not publish a security-sensitive release.
+GitHub private vulnerability reporting is the intended reporting channel. It has been enabled and verified.
 
 Never attach production `.env` files, backups, logs, database dumps, operation signatures, GitHub App keys, Provider keys, Telegram tokens, DingTalk webhook URLs, or Agent credentials to a report.
 

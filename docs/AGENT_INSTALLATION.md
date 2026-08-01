@@ -1,6 +1,6 @@
 # Agent 发布、安装与升级
 
-VPS Agent 通过 GitHub Release 发布 Linux 静态二进制。旧版 Fleet 版本表不再作为当前事实：旧 aliyun-VPS 已被释放，2026-07-31 M6.4c 金丝雀改用新 aliyun-零时 Agent `v0.4.2`，完成具名 M4 全链后已关闭服务 restart 授权；其他机器的版本、身份和 capability 必须在每次生产操作前实时核对。历史 Agent Release 支持 `amd64`/`arm64` 和 SHA-256；首个统一正式发行候选为 `v0.6.1`，在发布前仍只是代码与设计，不得把下面的新流程描述成已经公开可用。
+VPS Agent 通过 GitHub Release 发布 Linux 静态二进制。v0.6.1 已于 2026-08-01 正式公开发行，Agent 与 API/Web 使用统一版本；历史 Agent-only Release（`v0.2.2`–`v0.4.2`）仍可从 GitHub 获取。旧版 Fleet 版本表不再作为当前事实：旧 aliyun-VPS 已被释放，2026-07-31 M6.4c 金丝雀改用新 aliyun-零时 Agent `v0.4.2`，完成具名 M4 全链后已关闭服务 restart 授权；其他机器的版本、身份和 capability 必须在每次生产操作前实时核对。正式发行同时提供 SHA-256、SBOM 和 Sigstore keyless 签名。
 
 ## 1. 发布新版本
 
@@ -44,8 +44,7 @@ curl -u 'Caddy用户名:Caddy密码' \
 
 ## 3. 首次安装
 
-以下快速安装命令仍对应当前已公开的历史 Release；在 `v0.6.1` 正式发布前，它只提供该历史
-安装器已有的 checksum 保障：
+以下快速安装命令对应当前已公开的 Release，提供 checksum 和正式签名保障：
 
 ```bash
 curl -fsSL --proto '=https' --tlsv1.2 \

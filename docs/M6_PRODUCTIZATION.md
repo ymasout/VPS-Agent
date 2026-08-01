@@ -1,6 +1,6 @@
 # M6 自托管产品化
 
-本文冻结 M6 的目标、安全边界和阶段顺序。当前状态为：**M6.1、M6.2、M6.3（a/b/c+d）均已完成相应生产金丝雀；M6.3 完成**。本文不是后续生产操作授权；任何生产备份恢复、外部测试消息或数据修改仍需用户另行明确授权。
+本文冻结 M6 的目标、安全边界和阶段顺序。当前状态为：**M6.1a/b、M6.2、M6.3、M6.4a/b/c/d 已完成（v0.6.1 正式发行 2026-08-01）；M6.1c Agent 安全升级/失败回退与 M6.1d 灾备运行手册待完成**。本文不是后续生产操作授权；任何生产备份恢复、外部测试消息或数据修改仍需用户另行明确授权。
 
 ## 1. 目标与非目标
 
@@ -28,7 +28,7 @@
 ### 2.1 已存在的可靠性基础
 
 - 生产 Compose 由 Caddy、Web、API、PostgreSQL 16 和 Redis 组成；PostgreSQL、Redis 与 Caddy 数据使用命名卷。
-- Alembic 是当前 schema 演进唯一入口。生产现运行 `0020_m6_named_approval`（M6.4c1 迁移已应用）。API 启动时校验数据库 revision，不自动迁移。
+- Alembic 是当前 schema 演进唯一入口。最后一次生产记录的 revision 为 `0020_m6_named_approval`（M6.4c1 迁移已应用）；任何后续生产操作前必须实时核对。API 启动时校验数据库 revision，不自动迁移。
 - `deploy/control-plane-release.sh` 已分离 `preflight`、`migrate`、`reload-caddy` 和 `postflight`；`postflight` 会运行 schema check、数据库感知健康检查、Agent operation 路由和映射候选检查。
 - `preflight` 会生成 PostgreSQL custom-format `pg_dump` 和迁移 SQL 预览，备份目录/文件权限分别为 `0700`/`0600`，不自动删除备份。
 - Agent 通过 GitHub Release 发布 Linux amd64/arm64 静态二进制、安装器和 `SHA256SUMS`；安装器校验二进制、保留身份/策略，并由 systemd 托管。
@@ -241,7 +241,7 @@
 4. **M6.1d 秘密与灾备运行手册**：配置/密钥清单、加密离机副本、恢复演练频率、RPO/RTO 和人工审计。
 5. **M6.2 PWA 与移动体验**：manifest/service worker/图标、移动只读事件与 M4 审批；不新增写权限。
 6. **M6.3 通知与引导式配置**：M6.3a/b 已完成生产验证；M6.3c+d 已完成（Telegram、内置通道组合、飞书预留适配位、独立 Delivery 和版本化冻结模板，生产金丝雀通过 2026-07-29）。完整边界见 [M6_NOTIFICATIONS.md](./M6_NOTIFICATIONS.md)。
-7. **M6.4 协作与开源评估**：M6.4a 源码发行安全门、依赖许可证扫描和双许可证目录映射已于 2026-07-30 完成（`714da5a`，四条 CI 全绿，无生产金丝雀）；M6.4b 可信 Principal 与有限只读角色已完成独立审计、四条 CI 和两阶段生产金丝雀；M6.4c（c1/c2/c3）具名 M4 审批已完成审计+CI+生产金丝雀（2026-07-31，运行 `0d75342`，flags OFF，迁移 `0020_m6_named_approval`，含首次具名 operator 创建 + approver 确认 + M4 完整执行 + maker-checker）；M6.4d 正式发行本地实现已完成，待独立审计、Ubuntu CI 与外部发行门，尚未创建 tag/Release、推送 GHCR 或部署生产。SaaS 继续冻结，完整计划见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)、[M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md)、[M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md) 与 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md)。
+7. **M6.4 协作与开源评估**：M6.4a 源码发行安全门、依赖许可证扫描和双许可证目录映射已于 2026-07-30 完成（`714da5a`，四条 CI 全绿）；M6.4b 可信 Principal 与有限只读角色已完成独立审计、四条 CI 和两阶段生产金丝雀；M6.4c（c1/c2/c3）具名 M4 审批已完成审计+CI+生产金丝雀（2026-07-31，运行 `0d75342`，flags OFF，迁移 `0020_m6_named_approval`，含首次具名 operator 创建 + approver 确认 + M4 完整执行 + maker-checker）；M6.4d v0.6.1 已于 2026-08-01 正式公开发行（tag `v0.6.1`、commit `8746182`、32 资产、PVR 启用、四条 CI 全绿、GHCR 公开；生产尚未切换正式镜像）。SaaS 继续冻结，完整计划见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)、[M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md)、[M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md) 与 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md)。
 8. **最后阶段：Web SSH/实时终端/限时高风险会话**，单独威胁建模和验收。
 
 ## 12. P0 / P1 / P2 风险清单

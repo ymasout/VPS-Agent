@@ -1,25 +1,30 @@
 # M6.4d 正式发行与开源分发设计
 
-当前状态：**本地实现已完成，待独立审计与 Ubuntu CI；尚未创建正式 tag、GitHub Release 或
-GHCR 包，也未部署生产。** M6.4a 的源码安全门、双许可证、REUSE、依赖许可证清单和
-review-only 源码包已经完成；M6.4b/c 的可信 Principal 与具名 M4 已完成生产金丝雀。M6.4d
-只负责把这些能力形成可验证的正式自托管发行，不新增运维写能力，也不自动部署生产。
+当前状态：**v0.6.1 已于 2026-08-01 正式公开发行。** tag `v0.6.1` 指向 commit `8746182`，
+Formal Release workflow 四阶段（review → draft → candidate → publish）全部成功，四条 CI 全绿，
+PVR 已启用并通过 create-draft 门，Release `isDraft=false`、`isPrerelease=false`、32 个资产。
+API 镜像 `ghcr.io/ymasout/vps-agent-api:v0.6.1`（manifest digest
+`sha256:7bc0fb29ffcfadc3ff8f76dff066301fa301e525ab361c5bb63a9a1a9661373c`）与 Web 镜像
+`ghcr.io/ymasout/vps-agent-web:v0.6.1`（manifest digest
+`sha256:e05136ea7fee0a8a36155294403350f5b620d7043368982b810034834407af13`）均已公开可匿名拉取。
+生产尚未切换到正式镜像；生产升级仍是独立授权事件。
 
 ## 1. 设计时基线与当前实现状态
 
 - 正式公开仓库为 `https://github.com/ymasout/VPS-Agent`，默认分支 `main`，仓库已公开。
-- GitHub 已有 Agent `v0.2.2`–`v0.4.2` Release；当前没有正式控制平面镜像或统一产品 Release。
-- Agent Go module 已在本地实现中改为 `github.com/ymasout/VPS-Agent/apps/agent`，所有内部 import
-  已同步；该坐标尚待提交与 CI 验证。
+- GitHub 已有 Agent `v0.2.2`–`v0.4.2` Release；v0.6.1 起新增正式控制平面镜像和统一产品 Release。
+- Agent Go module 已改为 `github.com/ymasout/VPS-Agent/apps/agent`，所有内部 import
+  已同步，正式发行 CI 已验证。
 - `Source Distribution` CI 已固定 Action commit，执行 Gitleaks、REUSE、依赖许可证、源码 SPDX
   和安全 archive，但产物仅保留 14 天，不创建 Release。
-- 旧 `Release Agent` 已在本地改为手动 review-only 候选验证；新增的正式 workflow 使用固定
-  Action commit、最小权限、candidate-then-promote、SBOM 与 Sigstore keyless 验证，尚未实际运行。
+- 旧 `Release Agent` 已在本地改为手动 review-only 候选验证；正式 workflow 使用固定
+  Action commit、最小权限、candidate-then-promote、SBOM 与 Sigstore keyless 验证，已于 v0.6.1
+  四阶段全成功。
 - API/Web/Agent 构建基础镜像及 release Compose 的 Caddy/PostgreSQL/Redis 已固定 digest；API/Web
   以非 root 运行。本地临时 registry 的 digest-only Compose 已完成空库迁移到 `0020`、schema、
   health 和 build identity 验证；现有生产 Compose 仍保持源码构建，未被自动切换。
-- GitHub Private Vulnerability Reporting 当前为 disabled；在启用并实测前，不能宣称存在私密
-  漏洞报告通道。
+- GitHub Private Vulnerability Reporting 在设计时为 disabled；已在发行前启用并实测，SECURITY
+  不再含未关闭 blocker。
 
 ## 2. 目标与非目标
 

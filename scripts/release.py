@@ -43,6 +43,36 @@ class ReleaseError(RuntimeError):
     pass
 
 
+def validate_changelog(changelog: str, version: str) -> list[str]:
+    """Return validation errors for the CHANGELOG content of a given release version.
+
+    Rules:
+    - The current version must have a section ``## [<version>] - YYYY-MM-DD``.
+    - The date must be a valid ISO ``YYYY-MM-DD`` date (not ``Unreleased``).
+    - An independent ``## [Unreleased]`` section is permitted for future changes.
+    """
+    errors: list[str] = []
+    version_dates = re.findall(
+        rf"^## \[{re.escape(version)}\] - ([^\r\n]+)$", changelog, re.MULTILINE
+    )
+    if not version_dates:
+        errors.append("CHANGELOG does not contain a section for the release version")
+    elif len(version_dates) != 1:
+        errors.append("CHANGELOG must contain exactly one section for the release version")
+    else:
+        date_str = version_dates[0]
+        try:
+            parsed = datetime.strptime(date_str, "%Y-%m-%d").date()
+            if parsed.isoformat() != date_str:
+                errors.append("CHANGELOG release date is not a valid ISO YYYY-MM-DD date")
+        except ValueError:
+            if date_str == "Unreleased":
+                errors.append("CHANGELOG release section must have an ISO date, not Unreleased")
+            else:
+                errors.append("CHANGELOG release date is not a valid ISO YYYY-MM-DD date")
+    return errors
+
+
 def load_spec(root: Path = ROOT) -> dict[str, object]:
     try:
         value = json.loads((root / "release" / "release.json").read_text(encoding="utf-8"))
@@ -123,8 +153,7 @@ def validate_spec(root: Path = ROOT, expected_version: str | None = None) -> dic
     if f'revision = "{schema_revision}"' not in migrations:
         errors.append("release schema revision is not present in Alembic migrations")
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
-    if f"## [{version}] - Unreleased" not in changelog:
-        errors.append("CHANGELOG does not describe the planned release")
+    errors.extend(validate_changelog(changelog, version))
     for package_file in (root / "package.json", root / "apps" / "web" / "package.json"):
         package = json.loads(package_file.read_text(encoding="utf-8"))
         if package.get("version") != version:

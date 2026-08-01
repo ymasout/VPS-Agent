@@ -62,3 +62,65 @@ def test_agent_installer_pins_sigstore_identity() -> None:
         'COSIGN_CERTIFICATE_IDENTITY="https://github.com/ymasout/VPS-Agent/'
         '.github/workflows/formal-release.yml@refs/heads/main"'
     ) in installer
+
+
+def test_changelog_valid_iso_date_passes() -> None:
+    changelog = "# Changelog\n\n## [0.6.1] - 2026-08-01\n\n### Added\n\n- Feature.\n"
+    assert release.validate_changelog(changelog, "0.6.1") == []
+
+
+def test_changelog_unreleased_current_version_is_rejected() -> None:
+    changelog = "# Changelog\n\n## [0.6.1] - Unreleased\n\n### Added\n\n- Feature.\n"
+    errors = release.validate_changelog(changelog, "0.6.1")
+    assert len(errors) == 1
+    assert "Unreleased" in errors[0]
+
+
+def test_changelog_independent_unreleased_section_is_allowed() -> None:
+    changelog = (
+        "# Changelog\n\n"
+        "## [Unreleased]\n\n"
+        "### Added\n\n- Future work.\n\n"
+        "## [0.6.1] - 2026-08-01\n\n"
+        "### Added\n\n- Feature.\n"
+    )
+    assert release.validate_changelog(changelog, "0.6.1") == []
+
+
+def test_changelog_bad_date_format_is_rejected() -> None:
+    changelog = "# Changelog\n\n## [0.6.1] - 08-01-2026\n\n### Added\n\n- Feature.\n"
+    errors = release.validate_changelog(changelog, "0.6.1")
+    assert len(errors) == 1
+    assert "ISO" in errors[0]
+
+
+def test_changelog_missing_version_section_is_rejected() -> None:
+    changelog = "# Changelog\n\n## [0.5.0] - 2026-07-01\n\n### Added\n\n- Old feature.\n"
+    errors = release.validate_changelog(changelog, "0.6.1")
+    assert len(errors) == 1
+    assert "does not contain" in errors[0]
+
+
+def test_changelog_invalid_date_values_are_rejected() -> None:
+    changelog = "# Changelog\n\n## [0.6.1] - 2026-13-45\n\n### Added\n\n- Feature.\n"
+    errors = release.validate_changelog(changelog, "0.6.1")
+    assert len(errors) == 1
+    assert "ISO" in errors[0]
+
+
+def test_changelog_duplicate_release_sections_are_rejected() -> None:
+    changelog = (
+        "# Changelog\n\n"
+        "## [0.6.1] - 2026-08-01\n\n- First.\n\n"
+        "## [0.6.1] - 2026-08-02\n\n- Duplicate.\n"
+    )
+    errors = release.validate_changelog(changelog, "0.6.1")
+    assert len(errors) == 1
+    assert "exactly one" in errors[0]
+
+
+def test_changelog_release_date_with_trailing_text_is_rejected() -> None:
+    changelog = "# Changelog\n\n## [0.6.1] - 2026-08-01 final\n\n- Feature.\n"
+    errors = release.validate_changelog(changelog, "0.6.1")
+    assert len(errors) == 1
+    assert "ISO" in errors[0]
