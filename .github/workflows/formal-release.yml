@@ -154,8 +154,7 @@ jobs:
             --build-arg CONTROL_PLANE_COMMIT_SHA="${COMMIT_SHA}" \
             --build-arg CONTROL_PLANE_BUILD_TIME="${BUILD_TIME}" \
             --output type=oci,dest=dist/vps-agent-web.oci.tar .
-          syft scan oci-archive:dist/vps-agent-api.oci.tar -o spdx-json=dist/vps-agent-api.spdx.json
-          syft scan oci-archive:dist/vps-agent-web.oci.tar -o spdx-json=dist/vps-agent-web.spdx.json
+          # OCI image SBOMs are generated during push-candidates via docker/build-push-action sbom:true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: formal-release-unsigned-${{ inputs.version }}-${{ inputs.commit_sha }}
