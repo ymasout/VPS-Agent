@@ -33,6 +33,12 @@ sh deploy/control-plane-release.sh preflight
 After explicit approval, run `migrate`, `release-up`, `reload-caddy`, then `postflight`. `release-up` always passes
 `--no-build`; a missing image fails instead of silently rebuilding local source. The preflight backup remains mandatory.
 
+The signed release bundle already contains a deterministically generated, non-secret `deploy/release/images.env` whose
+five values match `release-manifest.json`. The v0.6.1 production canary instead created the host-local copy manually from
+the same verified digests. Automatically verifying/extracting the signed bundle into a staged deployment directory is a
+follow-up hardening item; until then, operators must compare all five values with the signed release manifest before
+`release-check` and retain the exact file for rollback audit.
+
 ## Verification
 
 - Verify `SHA256SUMS` and every cosign bundle against the documented GitHub workflow identity and issuer.

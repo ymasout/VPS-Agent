@@ -34,6 +34,7 @@ docs/        架构与开发约定
 - [M6.4b 可信 Principal 与有限只读角色](docs/M6_PRINCIPAL_READONLY.md)
 - [M6.4c 角色授权与具名 M4 审批设计](docs/M6_NAMED_APPROVAL.md)
 - [M6.4d 正式发行与开源分发设计](docs/M6_RELEASE_DISTRIBUTION.md)
+- [M6 后续可靠性与公开发行安全加固设计](docs/POST_M6_RELIABILITY_SECURITY.md)
 - [正式发行流程](docs/RELEASE_PROCESS.md)
 - [发行兼容矩阵](docs/RELEASE_COMPATIBILITY.md)
 - [版本变更记录](CHANGELOG.md)
@@ -41,7 +42,7 @@ docs/        架构与开发约定
 - [安全报告政策](SECURITY.md)
 - [贡献指南](CONTRIBUTING.md)
 
-当前进度：M0–M5 已完成，M4 的重启、部署与显式回滚均通过生产验证。M6.1a/b 备份恢复基础、M6.2 PWA/移动体验、M6.3 多通道通知、M6.4a 源码发行门、M6.4b Principal 只读授权和 M6.4c 具名 M4 审批均已完成相应审计、CI 与生产门；M6.4d 正式发行也已完成。v0.6.1 已于 2026-08-01 正式公开发行（tag `v0.6.1`、32 资产、PVR 已启用、四条 CI 全绿、GHCR API/Web 公开可拉取），生产已于同日完成升级金丝雀并切换到 digest-pinned release 镜像（commit `8746182`）。M6.1c Agent 安全升级/失败回退与 M6.1d 灾备运行手册仍属 M6 可靠性收尾，因此 M6 整体尚未完成。详细证据见项目状态与路线图。生产现运行 `8746182 + 0020`、Principal flags OFF；任何生产操作前仍须实时核对。拉源码/构建、清理、Web SSH 与任意 Shell 仍不在当前范围。原始项目计划书作为产品基线保留，实际进度以项目状态和路线图为准。
+当前进度：M0–M6 已完成，M4 的重启、部署与显式回滚均通过生产验证。M6 已交付可验证备份/隔离恢复、PWA/移动体验、多通道通知、可信 Principal/具名审批、源码发行门和正式发行。v0.6.1 已于 2026-08-01 正式公开发行（tag `v0.6.1`、32 资产、PVR 已启用、GHCR API/Web 公开可拉取），生产同日完成升级金丝雀并切换到 digest-pinned release 镜像（commit `8746182`、revision `0020`）；升级兼容路径已标记 Passed。M6 于 2026-08-02 完成文档收口。Agent last-known-good/失败回退、灾备 RPO/RTO 与加密离机副本、生产对已签名 release bundle 的自动验证/落地和持续发行安全扫描保留为后续可靠性/安全加固（沿用 M6.1c/d 名称），不宣称已经实现。生产现运行 `8746182 + 0020`、Principal flags OFF；任何生产操作前仍须实时核对。拉源码/构建、清理、Web SSH 与任意 Shell 仍不在当前范围。原始项目计划书作为产品基线保留，实际进度以项目状态和路线图为准。
 
 产品终局不是要求用户逐台维护配置文件，而是“一条命令接入 VPS、自动发现服务、通过自然语言提出运维目标、按权限完成诊断或受控操作，并自动验证和审计”。M3 已增加 Docker 稳定身份、Docker/systemd 显式本地诊断策略、自动证据源目录、Web 单服务确认、GitHub App 授权仓库白名单快照，以及控制平面主动检测的 VPS 失联/恢复事件和机器级只读诊断；手工证据源配置只作为兼容入口。正式接入体验见路线图与 M3 诊断文档。
 

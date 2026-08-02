@@ -23,7 +23,8 @@ Postgres/Redis/Caddy 保持现有缓存版本运行。
   四阶段全成功。
 - API/Web/Agent 构建基础镜像及 release Compose 的 Caddy/PostgreSQL/Redis 已固定 digest；API/Web
   以非 root 运行。本地临时 registry 的 digest-only Compose 已完成空库迁移到 `0020`、schema、
-  health 和 build identity 验证；现有生产 Compose 仍保持源码构建，未被自动切换。
+  health 和 build identity 验证；生产 API/Web 已于 2026-08-01 通过 release override 切换到 v0.6.1
+  精确 digest。PostgreSQL/Redis/Caddy 因当时 Docker Hub DNS 异常继续使用本地缓存版本。
 - GitHub Private Vulnerability Reporting 在设计时为 disabled；已在发行前启用并实测，SECURITY
   不再含未关闭 blocker。
 
