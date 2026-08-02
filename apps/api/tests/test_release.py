@@ -58,6 +58,22 @@ def test_release_action_pin_check_rejects_tags(tmp_path: Path) -> None:
     assert release.validate_action_pins(tmp_path) == []
 
 
+def test_vulnerability_workflow_verifies_the_official_asset_name_before_rename() -> None:
+    workflow = (release.ROOT / ".github" / "workflows" / "vulnerability-scan.yml").read_text(
+        encoding="utf-8"
+    )
+    assert release.validate_vulnerability_workflow(workflow) == []
+
+    broken = workflow.replace(
+        '-o "$RUNNER_TEMP/osv-scanner_linux_amd64"',
+        '-o "$RUNNER_TEMP/osv-scanner"',
+        1,
+    )
+    assert release.validate_vulnerability_workflow(broken) == [
+        'dependency vulnerability workflow is missing: -o "$RUNNER_TEMP/osv-scanner_linux_amd64"'
+    ]
+
+
 def test_release_bundle_archive_is_reproducible(tmp_path: Path) -> None:
     bundle = tmp_path / "vps-agent-0.6.1"
     (bundle / "nested").mkdir(parents=True)

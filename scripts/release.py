@@ -105,6 +105,33 @@ def validate_action_pins(root: Path) -> list[str]:
     return errors
 
 
+def validate_vulnerability_workflow(workflow: str) -> list[str]:
+    errors: list[str] = []
+    required = (
+        "OSV_VERSION: 2.4.0",
+        '-o "$RUNNER_TEMP/osv-scanner_linux_amd64"',
+        "sha256sum --check",
+        'mv "$RUNNER_TEMP/osv-scanner_linux_amd64" "$RUNNER_TEMP/osv-scanner"',
+        '"$RUNNER_TEMP/osv-scanner" --version',
+        "requests==2.19.1",
+    )
+    for invariant in required:
+        if invariant not in workflow:
+            errors.append(f"dependency vulnerability workflow is missing: {invariant}")
+    if errors:
+        return errors
+
+    output_position = workflow.index('-o "$RUNNER_TEMP/osv-scanner_linux_amd64"')
+    checksum_position = workflow.index("sha256sum --check")
+    rename_position = workflow.index(
+        'mv "$RUNNER_TEMP/osv-scanner_linux_amd64" "$RUNNER_TEMP/osv-scanner"'
+    )
+    version_position = workflow.index('"$RUNNER_TEMP/osv-scanner" --version')
+    if not output_position < checksum_position < rename_position < version_position:
+        errors.append("OSV-Scanner must be checksum-verified under its official asset name before rename")
+    return errors
+
+
 def validate_spec(root: Path = ROOT, expected_version: str | None = None) -> dict[str, object]:
     spec = load_spec(root)
     errors: list[str] = []
@@ -224,9 +251,7 @@ def validate_spec(root: Path = ROOT, expected_version: str | None = None) -> dic
     vulnerability_workflow = (root / ".github" / "workflows" / "vulnerability-scan.yml").read_text(
         encoding="utf-8"
     )
-    for required in ("OSV_VERSION: 2.4.0", "sha256sum --check", "requests==2.19.1"):
-        if required not in vulnerability_workflow:
-            errors.append(f"dependency vulnerability workflow is missing: {required}")
+    errors.extend(validate_vulnerability_workflow(vulnerability_workflow))
     codeql_workflow = (root / ".github" / "workflows" / "codeql.yml").read_text(encoding="utf-8")
     for language in ("python", "javascript-typescript", "go"):
         if language not in codeql_workflow:
