@@ -12,11 +12,11 @@ SPEC.loader.exec_module(release)
 
 def test_release_spec_matches_repository_coordinates() -> None:
     result = release.validate_spec()
-    assert result["version"] == "0.6.1"
-    assert result["tag"] == "v0.6.1"
+    assert result["version"] == "0.6.2"
+    assert result["tag"] == "v0.6.2"
     assert result["agent_module"] == "github.com/ymasout/VPS-Agent/apps/agent"
     assert result["schema_revision"] == "0020_m6_named_approval"
-    assert result["agent_upgrade_from"] == ["0.4.2"]
+    assert result["agent_upgrade_from"] == ["0.4.2", "0.6.1"]
 
 
 def test_agent_upgrade_metadata_is_exact_and_commit_bound() -> None:
@@ -25,10 +25,10 @@ def test_agent_upgrade_metadata_is_exact_and_commit_bound() -> None:
     assert result == {
         "format_version": "vps-agent-upgrade-v1",
         "repository": "github.com/ymasout/VPS-Agent",
-        "target_version": "0.6.1",
-        "target_tag": "v0.6.1",
+        "target_version": "0.6.2",
+        "target_tag": "v0.6.2",
         "commit_sha": "a" * 40,
-        "upgrade_from": ["0.4.2"],
+        "upgrade_from": ["0.4.2", "0.6.1"],
     }
     with pytest.raises(release.ReleaseError, match="full lowercase Git SHA"):
         release.build_agent_upgrade_metadata(spec, "short")

@@ -3,6 +3,19 @@
 This changelog records user-visible changes for the first unified VPS Agent release. Historical Agent-only
 tags remain available; `v0.6.1` is the first formal monorepo release covering the control plane and Agent.
 
+## [0.6.2] - 2026-08-02
+
+### Agent transactional upgrade and release security hardening
+
+- Added transactional Agent upgrade with process lock, previous generation, durable
+  journal, 30-second stability window, automatic rollback on failure and cross-boot recovery.
+- Added signed `agent-upgrade.json` metadata with strict version compatibility gate.
+- Added safe release bundle staging CLI with archive path traversal defense and
+  images.env/manifest consistency verification.
+- Added Dependabot, three-language CodeQL, OSV-Scanner dependency gate and multi-arch
+  Trivy OCI vulnerability scanning to the formal release pipeline.
+- Upgraded FastAPI, Alembic, PyJWT and pinned transitive dependencies.
+
 ## [0.6.1] - 2026-08-01
 
 ### M0–M2: self-hosted operations foundation
