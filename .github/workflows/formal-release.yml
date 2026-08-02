@@ -111,6 +111,7 @@ jobs:
       - name: Build committed source and Agent assets
         env:
           VERSION: ${{ inputs.version }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
         run: |
           mkdir -p dist
           "$RUNNER_TEMP/api-deps/bin/python" scripts/dependency_licenses.py --output dist/dependency-licenses.json
