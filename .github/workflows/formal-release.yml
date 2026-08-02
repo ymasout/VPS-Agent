@@ -247,7 +247,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: read
+      contents: write
       packages: write
       id-token: write
     outputs:
