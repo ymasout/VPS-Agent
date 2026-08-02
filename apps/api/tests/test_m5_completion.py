@@ -155,7 +155,7 @@ def test_fleet_snapshot_digest_covers_selected_source_ids() -> None:
 
 
 def test_completion_routes_use_v1_prefix_and_no_execute_endpoint() -> None:
-    paths = {route.path for route in app.routes}
+    paths = set(app.openapi()["paths"])
     expected = {
         "/api/v1/fleet/conversation",
         "/api/v1/fleet/conversation/turns",

@@ -18,14 +18,33 @@ Existing owner deployments use `deploy/compose.production.yaml`, which builds AP
 uses that file plus `deploy/release/compose.release.yaml`; the override removes both `build` sections and requires
 digest-pinned API, Web, Caddy, PostgreSQL and Redis images.
 
-```text
-COMPOSE_OVERRIDE_FILE=deploy/release/compose.release.yaml \
-RELEASE_IMAGE_ENV_FILE=deploy/release/images.env \
+```bash
+cosign verify-blob \
+  --bundle stage-release.py.sigstore.json \
+  --certificate-identity 'https://github.com/ymasout/VPS-Agent/.github/workflows/formal-release.yml@refs/heads/main' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  stage-release.py
+
+sudo python3 stage-release.py \
+  --archive vps-agent-release-0.6.1.tar.gz \
+  --checksum vps-agent-release-0.6.1.tar.gz.sha256 \
+  --archive-bundle vps-agent-release-0.6.1.tar.gz.sigstore.json \
+  --checksum-bundle vps-agent-release-0.6.1.tar.gz.sha256.sigstore.json \
+  --destination /opt/vps-agent/releases
+
+# Use the exact staged_path returned by the command; do not substitute a tag.
+STAGED=/opt/vps-agent/releases/0.6.1-<40-character-commit-sha>
+RELEASE_STAGED_DIR="$STAGED" \
+COMPOSE_FILE="$STAGED/deploy/compose.production.yaml" \
+COMPOSE_OVERRIDE_FILE="$STAGED/deploy/release/compose.release.yaml" \
+RELEASE_IMAGE_ENV_FILE="$STAGED/deploy/release/images.env" \
 ENV_FILE=deploy/.env.production \
 sh deploy/control-plane-release.sh release-pull
 
-COMPOSE_OVERRIDE_FILE=deploy/release/compose.release.yaml \
-RELEASE_IMAGE_ENV_FILE=deploy/release/images.env \
+RELEASE_STAGED_DIR="$STAGED" \
+COMPOSE_FILE="$STAGED/deploy/compose.production.yaml" \
+COMPOSE_OVERRIDE_FILE="$STAGED/deploy/release/compose.release.yaml" \
+RELEASE_IMAGE_ENV_FILE="$STAGED/deploy/release/images.env" \
 ENV_FILE=deploy/.env.production \
 sh deploy/control-plane-release.sh preflight
 ```
@@ -33,11 +52,11 @@ sh deploy/control-plane-release.sh preflight
 After explicit approval, run `migrate`, `release-up`, `reload-caddy`, then `postflight`. `release-up` always passes
 `--no-build`; a missing image fails instead of silently rebuilding local source. The preflight backup remains mandatory.
 
-The signed release bundle already contains a deterministically generated, non-secret `deploy/release/images.env` whose
-five values match `release-manifest.json`. The v0.6.1 production canary instead created the host-local copy manually from
-the same verified digests. Automatically verifying/extracting the signed bundle into a staged deployment directory is a
-follow-up hardening item; until then, operators must compare all five values with the signed release manifest before
-`release-check` and retain the exact file for rollback audit.
+The signed release bundle contains a deterministically generated, non-secret `deploy/release/images.env` whose five
+values match `release-manifest.json`. `scripts/stage_release.py` verifies the archive and checksum signatures against the
+fixed release workflow identity, rejects links/path traversal/unknown members, validates the manifest and five digests,
+and atomically publishes a root-owned staged directory. Release-mode commands reject Compose or `images.env` paths that
+do not come from that verified directory. Staging never runs Compose, migrates a database, or changes production.
 
 ## Verification
 

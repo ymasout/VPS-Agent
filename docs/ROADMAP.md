@@ -281,7 +281,7 @@ M6 按可恢复性基础优先拆分，不一次扩展全部 P6 范围：
 
 M6 总体设计、发布/备份/恢复审计和风险见 [M6_PRODUCTIZATION.md](./M6_PRODUCTIZATION.md)，M6.2 缓存、移动只读与审批边界见 [M6_PWA_MOBILE.md](./M6_PWA_MOBILE.md)。M6.1a/b、M6.2、M6.3、M6.4a/b/c 已完成相应审计、CI 与生产金丝雀。M6.4d v0.6.1 已于 2026-08-01 正式公开发行并同日完成生产升级金丝雀（digest-pinned release 镜像、commit `8746182`、`0020`、Principal flags OFF、通知仅启用钉钉）。任何后续生产操作前必须实时核对。设计与金丝雀记录见 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md) 与 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)，总评估见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)，正式发行边界见 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md)。真实生产库恢复仍属单独事故授权。
 
-M6 收口不把尚未实现的加固写成完成：M6.1c 中剩余的 Agent last-known-good/失败回退与生产对已签名 release bundle 的自动验证/落地、M6.1d 的密钥/配置灾备清单和 RPO/RTO 演练，以及公开发行持续漏洞扫描/证明校验，转入 M6 后续可靠性与安全加固并保留原编号。bundle 内已确定性包含非秘密 `deploy/release/images.env`；本次生产遗留是宿主机手工生成了该文件，而非发行资产缺失。统一设计与测试/金丝雀边界见 [POST_M6_RELIABILITY_SECURITY.md](./POST_M6_RELIABILITY_SECURITY.md)。Web SSH/实时终端不属于 M6 完成范围，继续单独威胁建模。
+M6 收口后的批次 A 已在本地实现 Agent last-known-good/失败回退、签名 release bundle 安全暂存，以及公开发行持续漏洞扫描/证明门，并已通过独立审计和本地提交；当前仍待推送后 CI 和后续单独金丝雀，不改写为已发布或生产完成。M6.1d 的密钥/配置灾备清单、加密异地副本和 RPO/RTO 演练仍仅有设计。bundle 内已确定性包含非秘密 `deploy/release/images.env`；v0.6.1 生产遗留是宿主机手工生成了该文件，而非发行资产缺失。统一设计与测试/金丝雀边界见 [POST_M6_RELIABILITY_SECURITY.md](./POST_M6_RELIABILITY_SECURITY.md)。Web SSH/实时终端不属于 M6 完成范围，继续单独威胁建模。
 
 Web UI 的初步信息架构、首页定位和分阶段设计见 [WEB_UI_PLAN.md](./WEB_UI_PLAN.md)。
 

@@ -16,6 +16,22 @@ def test_release_spec_matches_repository_coordinates() -> None:
     assert result["tag"] == "v0.6.1"
     assert result["agent_module"] == "github.com/ymasout/VPS-Agent/apps/agent"
     assert result["schema_revision"] == "0020_m6_named_approval"
+    assert result["agent_upgrade_from"] == ["0.4.2"]
+
+
+def test_agent_upgrade_metadata_is_exact_and_commit_bound() -> None:
+    spec = release.validate_spec()
+    result = release.build_agent_upgrade_metadata(spec, "a" * 40)
+    assert result == {
+        "format_version": "vps-agent-upgrade-v1",
+        "repository": "github.com/ymasout/VPS-Agent",
+        "target_version": "0.6.1",
+        "target_tag": "v0.6.1",
+        "commit_sha": "a" * 40,
+        "upgrade_from": ["0.4.2"],
+    }
+    with pytest.raises(release.ReleaseError, match="full lowercase Git SHA"):
+        release.build_agent_upgrade_metadata(spec, "short")
 
 
 def test_release_digest_validation_is_canonical_and_repository_bound() -> None:
@@ -62,6 +78,17 @@ def test_agent_installer_pins_sigstore_identity() -> None:
         'COSIGN_CERTIFICATE_IDENTITY="https://github.com/ymasout/VPS-Agent/'
         '.github/workflows/formal-release.yml@refs/heads/main"'
     ) in installer
+
+
+def test_agent_installer_exit_codes_and_boot_recovery_are_fixed() -> None:
+    installer = (release.ROOT / "scripts" / "install-agent.sh").read_text(encoding="utf-8")
+    for exit_code in (20, 21, 30, 31, 32):
+        assert f"exit {exit_code}" in installer
+    assert "Type=oneshot" in installer
+    assert "Before=vps-agent.service" in installer
+    assert "Requires=vps-agent-upgrade-recovery.service" in installer
+    assert "After=vps-agent-upgrade-recovery.service" in installer
+    assert "agent_registration_failed_after_install" in installer
 
 
 def test_changelog_valid_iso_date_passes() -> None:

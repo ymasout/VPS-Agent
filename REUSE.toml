@@ -9,6 +9,7 @@ SPDX-License-Identifier = "AGPL-3.0-only"
 [[annotations]]
 path = [
   "apps/agent/**",
+  "scripts/agent_upgrade.py",
   "scripts/install-agent.sh",
   ".github/workflows/release-agent.yml",
 ]

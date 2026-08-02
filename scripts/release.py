@@ -36,6 +36,11 @@ REQUIRED_BUNDLE_FILES = (
     "deploy/control-plane-release.sh",
     "deploy/control-plane-backup.sh",
     "deploy/control-plane-restore.sh",
+    "scripts/stage_release.py",
+)
+GENERATED_BUNDLE_FILES = (
+    "deploy/release/images.env",
+    "release-manifest.json",
 )
 
 
@@ -111,6 +116,7 @@ def validate_spec(root: Path = ROOT, expected_version: str | None = None) -> dic
     build_images = spec.get("build_images")
     runtime_images = spec.get("runtime_images")
     schema_revision = spec.get("schema_revision")
+    agent_upgrade_from = spec.get("agent_upgrade_from")
 
     if not isinstance(version, str) or not SEMVER.fullmatch(version):
         errors.append("release version must be canonical MAJOR.MINOR.PATCH")
@@ -138,6 +144,18 @@ def validate_spec(root: Path = ROOT, expected_version: str | None = None) -> dic
                 errors.append(f"{name}: {error}")
     if not isinstance(schema_revision, str) or len(schema_revision) > 32:
         errors.append("schema revision is missing or exceeds Alembic version_num")
+    if not isinstance(agent_upgrade_from, list) or not agent_upgrade_from:
+        errors.append("agent_upgrade_from must be a non-empty exact-version list")
+    else:
+        values = [str(item) for item in agent_upgrade_from]
+        if any(not isinstance(item, str) or not SEMVER.fullmatch(item) for item in agent_upgrade_from):
+            errors.append("agent_upgrade_from must contain canonical SemVer strings")
+        if len(values) != len(set(values)):
+            errors.append("agent_upgrade_from must not contain duplicates")
+        if values != sorted(values, key=lambda item: tuple(int(part) for part in item.split("."))):
+            errors.append("agent_upgrade_from must be sorted by semantic version")
+        if isinstance(version, str) and version in values:
+            errors.append("agent_upgrade_from must not contain the target version")
 
     module = (root / "apps" / "agent" / "go.mod").read_text(encoding="utf-8").splitlines()[0]
     if module != f"module {agent_module}":
@@ -188,6 +206,35 @@ def validate_spec(root: Path = ROOT, expected_version: str | None = None) -> dic
             errors.append(f"formal release workflow is missing invariant: {required}")
     if re.search(r"^\s{2}push:\s*$", formal_workflow, re.MULTILINE):
         errors.append("formal release workflow must not trigger from a Git push")
+    for required in (
+        "dependency-vulnerabilities",
+        "codeql-python",
+        "codeql-javascript-typescript",
+        "codeql-go",
+        "scan-candidates:",
+        "needs: [prepare, push-candidates, scan-candidates]",
+        "--platform \"$platform\" --scanners vuln",
+    ):
+        if required not in formal_workflow:
+            errors.append(f"formal release security gate is missing: {required}")
+    scan_job = formal_workflow.partition("  scan-candidates:")[2].partition("\n  candidate-bundle:")[0]
+    if "packages: write" in scan_job or "id-token: write" in scan_job:
+        errors.append("candidate vulnerability scan must not hold package write or OIDC permission")
+
+    vulnerability_workflow = (root / ".github" / "workflows" / "vulnerability-scan.yml").read_text(
+        encoding="utf-8"
+    )
+    for required in ("OSV_VERSION: 2.4.0", "sha256sum --check", "requests==2.19.1"):
+        if required not in vulnerability_workflow:
+            errors.append(f"dependency vulnerability workflow is missing: {required}")
+    codeql_workflow = (root / ".github" / "workflows" / "codeql.yml").read_text(encoding="utf-8")
+    for language in ("python", "javascript-typescript", "go"):
+        if language not in codeql_workflow:
+            errors.append(f"CodeQL workflow is missing language: {language}")
+    dependabot = (root / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+    for ecosystem in ("github-actions", "pip", "npm", "gomod"):
+        if f"package-ecosystem: {ecosystem}" not in dependabot:
+            errors.append(f"Dependabot is missing ecosystem: {ecosystem}")
     legacy_workflow = (root / ".github" / "workflows" / "release-agent.yml").read_text(encoding="utf-8")
     if "contents: write" in legacy_workflow or "gh release" in legacy_workflow:
         errors.append("Agent candidate workflow must remain review-only")
@@ -203,6 +250,16 @@ def validate_spec(root: Path = ROOT, expected_version: str | None = None) -> dic
         errors.append("Agent installer must verify formal signatures and explicitly gate legacy bypass")
     if "VPS_AGENT_COSIGN_CERTIFICATE_IDENTITY" in installer or "VPS_AGENT_COSIGN_OIDC_ISSUER" in installer:
         errors.append("Agent installer must not allow release identity or issuer overrides")
+    for required in (
+        "agent-upgrade.json",
+        "agent-upgrade.py",
+        "flock",
+        "vps-agent-upgrade-recovery.service",
+    ):
+        if required not in installer:
+            errors.append(f"Agent installer is missing transactional upgrade invariant: {required}")
+    if "cp scripts/stage_release.py dist/stage-release.py" not in formal_workflow:
+        errors.append("formal release must publish the standalone signed staging CLI")
 
     errors.extend(validate_action_pins(root))
     for relative in REQUIRED_BUNDLE_FILES:
@@ -211,6 +268,23 @@ def validate_spec(root: Path = ROOT, expected_version: str | None = None) -> dic
     if errors:
         raise ReleaseError("\n".join(errors))
     return spec
+
+
+def build_agent_upgrade_metadata(spec: dict[str, object], commit: str) -> dict[str, object]:
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ReleaseError("Agent upgrade metadata commit must be a full lowercase Git SHA")
+    version = spec.get("version")
+    upgrade_from = spec.get("agent_upgrade_from")
+    if not isinstance(version, str) or not isinstance(upgrade_from, list):
+        raise ReleaseError("release specification is missing Agent upgrade coordinates")
+    return {
+        "format_version": "vps-agent-upgrade-v1",
+        "repository": spec["repository"],
+        "target_version": version,
+        "target_tag": f"v{version}",
+        "commit_sha": commit,
+        "upgrade_from": upgrade_from,
+    }
 
 
 def checked_image(reference: str, expected_repository: str | None = None) -> str:
@@ -304,6 +378,21 @@ def build_bundle(args: argparse.Namespace, root: Path = ROOT) -> dict[str, objec
     manifest_path = bundle / "release-manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+    generated = {path.relative_to(bundle).as_posix() for path in bundle.rglob("*") if path.is_file()}
+    for relative in GENERATED_BUNDLE_FILES:
+        if relative not in generated:
+            raise ReleaseError(f"generated release file is missing: {relative}")
+    parsed_env: dict[str, str] = {}
+    for line in image_env.read_text(encoding="ascii").splitlines():
+        if "=" not in line:
+            raise ReleaseError("generated images.env contains an invalid line")
+        key, value = line.split("=", 1)
+        if key in parsed_env:
+            raise ReleaseError("generated images.env contains a duplicate key")
+        parsed_env[key] = value
+    if parsed_env != image_values:
+        raise ReleaseError("generated images.env does not match release-manifest.json")
+
     output_root.mkdir(parents=True, exist_ok=True)
     archive = output_root / f"vps-agent-release-{version}.tar.gz"
     build_deterministic_archive(bundle, archive, output_root, commit_epoch)
@@ -332,9 +421,21 @@ def main() -> int:
     bundle.add_argument("--postgres-image")
     bundle.add_argument("--redis-image")
     bundle.add_argument("--output-dir", type=Path, default=ROOT / "dist")
+    metadata = subparsers.add_parser("agent-metadata")
+    metadata.add_argument("--version", required=True)
+    metadata.add_argument("--commit", required=True)
+    metadata.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
-        result = validate_spec(ROOT, args.version) if args.command == "check" else build_bundle(args, ROOT)
+        if args.command == "check":
+            result = validate_spec(ROOT, args.version)
+        elif args.command == "bundle":
+            result = build_bundle(args, ROOT)
+        else:
+            spec = validate_spec(ROOT, args.version)
+            result = build_agent_upgrade_metadata(spec, args.commit)
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     except (OSError, ReleaseError, subprocess.CalledProcessError) as error:
         print(f"release check failed: {error}", file=__import__("sys").stderr)
         return 1

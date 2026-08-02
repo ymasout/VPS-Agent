@@ -9,5 +9,14 @@
     "lint:web": "pnpm --filter @vps-agent/web lint",
     "test:web": "pnpm --filter @vps-agent/web test",
     "check": "pnpm lint:web && pnpm test:web && pnpm build:web"
+  },
+  "pnpm": {
+    "overrides": {
+      "brace-expansion@1": "1.1.18",
+      "brace-expansion@2": "2.1.4",
+      "brace-expansion@5": "5.0.9",
+      "postcss": "8.5.25",
+      "sharp": "0.35.3"
+    }
   }
 }

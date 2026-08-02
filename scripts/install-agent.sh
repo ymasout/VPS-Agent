@@ -49,7 +49,16 @@ EOF
 
 fail() {
   printf 'Error: %s\n' "$*" >&2
-  exit 1
+  printf '{"audit_code":"rejected_before_change"}\n' >&2
+  exit 20
+}
+
+download() {
+  local url="$1"
+  local output="$2"
+  local label="$3"
+  curl --fail --location --proto '=https' --tlsv1.2 --silent --show-error "$url" -o "$output" || \
+    fail "download failed: ${label}"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -69,7 +78,7 @@ while [[ $# -gt 0 ]]; do
     --download-base-url) DOWNLOAD_BASE_URL="${2:-}"; shift 2 ;;
     --allow-legacy-checksum-only) ALLOW_LEGACY_CHECKSUM_ONLY="true"; shift ;;
     -h|--help) usage; exit 0 ;;
-    *) fail "unknown option: $1" ;;
+    *) printf 'Error: unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
 done
 
@@ -78,6 +87,11 @@ done
 command -v systemctl >/dev/null || fail "systemd is required"
 command -v curl >/dev/null || fail "curl is required"
 command -v sha256sum >/dev/null || fail "sha256sum is required"
+command -v flock >/dev/null || fail "flock is required"
+command -v python3 >/dev/null || fail "python3 is required"
+install -d -m 0755 /run/lock
+exec 9>/run/lock/vps-agent-install.lock
+flock -n 9 || { printf '{"audit_code":"upgrade_locked"}\n' >&2; exit 21; }
 
 case "$(uname -m)" in
   x86_64|amd64) ARCH="amd64" ;;
@@ -174,29 +188,90 @@ fi
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
 BINARY="vps-agent-linux-${ARCH}"
+UPGRADE_HELPER="agent-upgrade.py"
+UPGRADE_METADATA="agent-upgrade.json"
+UPGRADE_STATE_DIR="${DATA_DIR}/upgrades"
+INSTALLED_HELPER="/usr/local/libexec/vps-agent-upgrade.py"
+RECOVERY_WRAPPER="/usr/local/libexec/vps-agent-upgrade-recover"
+RECOVERY_UNIT="/etc/systemd/system/vps-agent-upgrade-recovery.service"
+AGENT_UNIT="/etc/systemd/system/vps-agent.service"
+EXISTING_INSTALL="false"
+CURRENT_VERSION=""
+if [[ -x "${INSTALL_DIR}/vps-agent" ]]; then
+  EXISTING_INSTALL="true"
+  CURRENT_VERSION="$("${INSTALL_DIR}/vps-agent" --version | sed -n 's/^vps-agent //p')"
+  [[ "${CURRENT_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { printf '{"audit_code":"rejected_before_change","reason":"current_version_invalid"}\n' >&2; exit 20; }
+fi
+
+if [[ -f "${UPGRADE_STATE_DIR}/transaction.json" ]]; then
+  [[ -x "${INSTALLED_HELPER}" ]] || { printf '{"audit_code":"interrupted_transaction_recovery_failed"}\n' >&2; exit 32; }
+  if ! python3 "${INSTALLED_HELPER}" rollback --state-dir "${UPGRADE_STATE_DIR}"; then
+    printf '{"audit_code":"interrupted_transaction_recovery_failed"}\n' >&2
+    exit 32
+  fi
+  systemctl daemon-reload
+  systemctl restart vps-agent.service || { printf '{"audit_code":"interrupted_transaction_recovery_failed"}\n' >&2; exit 32; }
+fi
+
 printf 'Downloading VPS Agent (%s)...\n' "${ARCH}"
-curl --fail --location --proto '=https' --tlsv1.2 --silent --show-error "${BASE_URL}/${BINARY}" -o "${TMP_DIR}/${BINARY}"
-curl --fail --location --proto '=https' --tlsv1.2 --silent --show-error "${BASE_URL}/SHA256SUMS" -o "${TMP_DIR}/SHA256SUMS"
-(
-  cd "${TMP_DIR}"
-  grep " ${BINARY}$" SHA256SUMS | sha256sum --check --status -
-) || fail "binary checksum verification failed"
+download "${BASE_URL}/${BINARY}" "${TMP_DIR}/${BINARY}" "Agent binary"
+download "${BASE_URL}/SHA256SUMS" "${TMP_DIR}/SHA256SUMS" "SHA256SUMS"
 
 if [[ "${ALLOW_LEGACY_CHECKSUM_ONLY}" == "true" ]]; then
+  (cd "${TMP_DIR}" && grep " ${BINARY}$" SHA256SUMS | sha256sum --check --status -) || fail "binary checksum verification failed"
   printf 'WARNING: signature verification was explicitly bypassed for a legacy release; checksum does not prove publisher identity.\n' >&2
 else
   command -v cosign >/dev/null || fail "cosign is required to verify formal releases; install cosign or explicitly use --allow-legacy-checksum-only for an old release"
-  curl --fail --location --proto '=https' --tlsv1.2 --silent --show-error \
-    "${BASE_URL}/${BINARY}.sigstore.json" -o "${TMP_DIR}/${BINARY}.sigstore.json"
-  cosign verify-blob \
-    --bundle "${TMP_DIR}/${BINARY}.sigstore.json" \
-    --certificate-identity "${COSIGN_CERTIFICATE_IDENTITY}" \
-    --certificate-oidc-issuer "${COSIGN_OIDC_ISSUER}" \
-    "${TMP_DIR}/${BINARY}" >/dev/null || fail "binary publisher signature verification failed"
+  for asset in "${BINARY}" "${UPGRADE_HELPER}" "${UPGRADE_METADATA}"; do
+    download "${BASE_URL}/${asset}" "${TMP_DIR}/${asset}" "${asset}"
+    download "${BASE_URL}/${asset}.sigstore.json" "${TMP_DIR}/${asset}.sigstore.json" "${asset} signature"
+    (cd "${TMP_DIR}" && grep " ${asset}$" SHA256SUMS | sha256sum --check --status -) || fail "${asset} checksum verification failed"
+    cosign verify-blob --bundle "${TMP_DIR}/${asset}.sigstore.json" \
+      --certificate-identity "${COSIGN_CERTIFICATE_IDENTITY}" \
+      --certificate-oidc-issuer "${COSIGN_OIDC_ISSUER}" "${TMP_DIR}/${asset}" >/dev/null || \
+      fail "${asset} publisher signature verification failed"
+  done
+  if ! DISCOVERED_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["target_version"])' "${TMP_DIR}/${UPGRADE_METADATA}")"; then
+    fail "upgrade metadata is not valid JSON"
+  fi
+  [[ "${DISCOVERED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "upgrade metadata target version is invalid"
+  if [[ "${VERSION}" == "latest" ]]; then
+    VERSION="${DISCOVERED_VERSION}"
+    if [[ -n "${DOWNLOAD_BASE_URL}" ]]; then
+      BASE_URL="${DOWNLOAD_BASE_URL%/}/v${VERSION}"
+    else
+      BASE_URL="https://github.com/${REPOSITORY}/releases/download/v${VERSION}"
+    fi
+    for asset in "${BINARY}" "SHA256SUMS" "${UPGRADE_HELPER}" "${UPGRADE_METADATA}" \
+      "${BINARY}.sigstore.json" "${UPGRADE_HELPER}.sigstore.json" "${UPGRADE_METADATA}.sigstore.json"; do
+      download "${BASE_URL}/${asset}" "${TMP_DIR}/${asset}" "immutable ${asset}"
+    done
+    for asset in "${BINARY}" "${UPGRADE_HELPER}" "${UPGRADE_METADATA}"; do
+      (cd "${TMP_DIR}" && grep " ${asset}$" SHA256SUMS | sha256sum --check --status -) || fail "${asset} checksum verification failed"
+      cosign verify-blob --bundle "${TMP_DIR}/${asset}.sigstore.json" \
+        --certificate-identity "${COSIGN_CERTIFICATE_IDENTITY}" --certificate-oidc-issuer "${COSIGN_OIDC_ISSUER}" \
+        "${TMP_DIR}/${asset}" >/dev/null || fail "${asset} publisher signature verification failed"
+    done
+  else
+    VERSION="${VERSION#v}"
+  fi
+  [[ "${DISCOVERED_VERSION}" == "${VERSION}" ]] || fail "upgrade metadata does not match requested version"
+  if [[ "${EXISTING_INSTALL}" == "true" ]]; then
+    python3 "${TMP_DIR}/${UPGRADE_HELPER}" validate-metadata --metadata "${TMP_DIR}/${UPGRADE_METADATA}" \
+      --current "${CURRENT_VERSION}" --target "${VERSION}" >/dev/null || { printf '{"audit_code":"rejected_before_change","reason":"unsupported_upgrade_path"}\n' >&2; exit 20; }
+  fi
 fi
 
-install -d -m 0755 "${INSTALL_DIR}" "${CONFIG_DIR}"
-install -d -m 0700 "${DATA_DIR}"
+if ! TARGET_VERSION="$("${TMP_DIR}/${BINARY}" --version | sed -n 's/^vps-agent //p')"; then
+  fail "target binary version check failed"
+fi
+if [[ "${ALLOW_LEGACY_CHECKSUM_ONLY}" == "true" && "${VERSION}" == "latest" ]]; then
+  VERSION="${TARGET_VERSION}"
+fi
+[[ "${TARGET_VERSION}" == "${VERSION#v}" ]] || { printf '{"audit_code":"rejected_before_change","reason":"target_version_mismatch"}\n' >&2; exit 20; }
+
+install -d -m 0755 "${INSTALL_DIR}" "${CONFIG_DIR}" /usr/local/libexec
+install -d -m 0700 "${DATA_DIR}" "${UPGRADE_STATE_DIR}"
 if [[ ! -f "${MACHINE_ID_FILE}" ]]; then
   if [[ -f "${IDENTITY_FILE}" && -r /etc/machine-id ]]; then
     tr -d '\n' </etc/machine-id >"${MACHINE_ID_FILE}"
@@ -206,9 +281,9 @@ if [[ ! -f "${MACHINE_ID_FILE}" ]]; then
   fi
   chmod 0600 "${MACHINE_ID_FILE}"
 fi
-systemctl stop vps-agent.service 2>/dev/null || true
-install -m 0755 "${TMP_DIR}/${BINARY}" "${INSTALL_DIR}/vps-agent"
 
+CANDIDATE_ENV="${TMP_DIR}/agent.env"
+CANDIDATE_UNIT="${TMP_DIR}/vps-agent.service"
 umask 077
 {
   printf 'CONTROL_PLANE_URL=%s\n' "${CONTROL_PLANE_URL}"
@@ -230,14 +305,23 @@ umask 077
   if [[ ! -f "${IDENTITY_FILE}" ]]; then
     printf 'AGENT_REGISTRATION_TOKEN=%s\n' "${REGISTRATION_TOKEN}"
   fi
-} >"${ENV_FILE}"
-chmod 0600 "${ENV_FILE}"
+} >"${CANDIDATE_ENV}"
+chmod 0600 "${CANDIDATE_ENV}"
 
-cat > /etc/systemd/system/vps-agent.service <<'EOF'
+{
+cat <<'EOF'
 [Unit]
 Description=AI VPS Operations Agent
 Wants=network-online.target
 After=network-online.target
+EOF
+if [[ "${ALLOW_LEGACY_CHECKSUM_ONLY}" != "true" ]]; then
+cat <<'EOF'
+Requires=vps-agent-upgrade-recovery.service
+After=vps-agent-upgrade-recovery.service
+EOF
+fi
+cat <<'EOF'
 
 [Service]
 Type=simple
@@ -255,9 +339,98 @@ ReadWritePaths=/var/lib/vps-agent
 [Install]
 WantedBy=multi-user.target
 EOF
+} >"${CANDIDATE_UNIT}"
+chmod 0644 "${CANDIDATE_UNIT}"
+
+if [[ "${ALLOW_LEGACY_CHECKSUM_ONLY}" != "true" ]]; then
+  install -m 0755 "${TMP_DIR}/${UPGRADE_HELPER}" "${INSTALLED_HELPER}"
+  cat >"${RECOVERY_WRAPPER}" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+state=/var/lib/vps-agent/upgrades
+if [[ -f "$state/transaction.json" ]]; then
+  python3 /usr/local/libexec/vps-agent-upgrade.py recover-if-new-boot \
+    --state-dir "$state" --boot-id "$(tr -d '\n' </proc/sys/kernel/random/boot_id)"
+  systemctl daemon-reload
+fi
+EOF
+  chmod 0755 "${RECOVERY_WRAPPER}"
+  cat >"${RECOVERY_UNIT}" <<'EOF'
+[Unit]
+Description=Recover interrupted VPS Agent upgrade
+Before=vps-agent.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/vps-agent-upgrade-recover
+EOF
+  chmod 0644 "${RECOVERY_UNIT}"
+fi
+
+if [[ "${EXISTING_INSTALL}" == "true" && "${ALLOW_LEGACY_CHECKSUM_ONLY}" != "true" ]]; then
+  TRANSACTION_ID="$(tr -d '\n' </proc/sys/kernel/random/uuid)"
+  BOOT_ID="$(tr -d '\n' </proc/sys/kernel/random/boot_id)"
+  if ! python3 "${INSTALLED_HELPER}" prepare --state-dir "${UPGRADE_STATE_DIR}" \
+    --candidate-binary "${TMP_DIR}/${BINARY}" --candidate-env "${CANDIDATE_ENV}" --candidate-unit "${CANDIDATE_UNIT}" \
+    --binary "${INSTALL_DIR}/vps-agent" --env "${ENV_FILE}" --unit "${AGENT_UNIT}" \
+    --current-version "${CURRENT_VERSION}" --target-version "${TARGET_VERSION}" \
+    --boot-id "${BOOT_ID}" --transaction-id "${TRANSACTION_ID}"; then
+    printf '{"audit_code":"rejected_before_change","reason":"transaction_prepare_failed"}\n' >&2
+    exit 20
+  fi
+else
+  install -m 0755 "${TMP_DIR}/${BINARY}" "${INSTALL_DIR}/vps-agent"
+  install -m 0600 "${CANDIDATE_ENV}" "${ENV_FILE}"
+  install -m 0644 "${CANDIDATE_UNIT}" "${AGENT_UNIT}"
+fi
 
 systemctl daemon-reload
-systemctl enable --now vps-agent.service
+if [[ "${EXISTING_INSTALL}" == "true" ]]; then
+  if ! systemctl restart vps-agent.service; then
+    if [[ "${ALLOW_LEGACY_CHECKSUM_ONLY}" != "true" ]] && python3 "${INSTALLED_HELPER}" rollback --state-dir "${UPGRADE_STATE_DIR}"; then
+      systemctl daemon-reload
+      systemctl restart vps-agent.service || { printf '{"audit_code":"activation_failed_rollback_failed"}\n' >&2; exit 31; }
+      printf '{"audit_code":"activation_failed_rollback_succeeded"}\n' >&2
+      exit 30
+    fi
+    printf '{"audit_code":"activation_failed_rollback_failed"}\n' >&2
+    exit 31
+  fi
+  stable=true
+  for _ in {1..30}; do
+    if ! systemctl is-active --quiet vps-agent.service; then stable=false; break; fi
+    sleep 1
+  done
+  if [[ "${stable}" != "true" ]]; then
+    if [[ "${ALLOW_LEGACY_CHECKSUM_ONLY}" != "true" ]] && python3 "${INSTALLED_HELPER}" rollback --state-dir "${UPGRADE_STATE_DIR}"; then
+      systemctl daemon-reload
+      systemctl restart vps-agent.service || { printf '{"audit_code":"activation_failed_rollback_failed"}\n' >&2; exit 31; }
+      printf '{"audit_code":"activation_failed_rollback_succeeded"}\n' >&2
+      exit 30
+    fi
+    printf '{"audit_code":"activation_failed_rollback_failed"}\n' >&2
+    exit 31
+  fi
+  ACTIVE_VERSION="$("${INSTALL_DIR}/vps-agent" --version | sed -n 's/^vps-agent //p')"
+  if [[ "${ACTIVE_VERSION}" != "${TARGET_VERSION}" ]]; then
+    if [[ "${ALLOW_LEGACY_CHECKSUM_ONLY}" != "true" ]] && python3 "${INSTALLED_HELPER}" rollback --state-dir "${UPGRADE_STATE_DIR}"; then
+      systemctl daemon-reload
+      systemctl restart vps-agent.service || { printf '{"audit_code":"activation_failed_rollback_failed"}\n' >&2; exit 31; }
+      printf '{"audit_code":"activation_failed_rollback_succeeded","reason":"active_version_mismatch"}\n' >&2
+      exit 30
+    fi
+    printf '{"audit_code":"activation_failed_rollback_failed","reason":"active_version_mismatch"}\n' >&2
+    exit 31
+  fi
+  if [[ "${ALLOW_LEGACY_CHECKSUM_ONLY}" != "true" ]]; then
+    if ! python3 "${INSTALLED_HELPER}" commit --state-dir "${UPGRADE_STATE_DIR}" >/dev/null; then
+      printf '{"audit_code":"upgrade_commit_failed_pending_recovery"}\n' >&2
+      exit 32
+    fi
+  fi
+else
+  systemctl enable --now vps-agent.service
+fi
 
 if [[ ! -f "${IDENTITY_FILE}" ]]; then
   for _ in {1..15}; do
@@ -269,7 +442,8 @@ if [[ ! -f "${IDENTITY_FILE}" ]]; then
     systemctl restart vps-agent.service
   else
     journalctl -u vps-agent.service -n 20 --no-pager >&2 || true
-    fail "agent did not register; inspect the service logs above"
+    printf '{"audit_code":"agent_registration_failed_after_install"}\n' >&2
+    exit 1
   fi
 fi
 

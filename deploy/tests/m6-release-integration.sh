@@ -7,9 +7,13 @@ REGISTRY_NAME="m6-release-registry-$$"
 REGISTRY_PORT=5007
 export COMPOSE_PROJECT_NAME="m6-release-integration-$$"
 export ENV_FILE="$TMP_ROOT/production.env"
-export COMPOSE_FILE="$REPO_ROOT/deploy/compose.production.yaml"
-export COMPOSE_OVERRIDE_FILE="$REPO_ROOT/deploy/release/compose.release.yaml"
-export RELEASE_IMAGE_ENV_FILE="$TMP_ROOT/images.env"
+export RELEASE_STAGED_DIR="$TMP_ROOT/staged-release"
+mkdir -p "$RELEASE_STAGED_DIR/deploy/release"
+cp "$REPO_ROOT/deploy/compose.production.yaml" "$RELEASE_STAGED_DIR/deploy/compose.production.yaml"
+cp "$REPO_ROOT/deploy/release/compose.release.yaml" "$RELEASE_STAGED_DIR/deploy/release/compose.release.yaml"
+export COMPOSE_FILE="$RELEASE_STAGED_DIR/deploy/compose.production.yaml"
+export COMPOSE_OVERRIDE_FILE="$RELEASE_STAGED_DIR/deploy/release/compose.release.yaml"
+export RELEASE_IMAGE_ENV_FILE="$RELEASE_STAGED_DIR/deploy/release/images.env"
 RELEASE_SCRIPT="$REPO_ROOT/deploy/control-plane-release.sh"
 REGISTRY_IMAGE="registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
 VERSION=0.6.1
@@ -59,6 +63,31 @@ VPS_AGENT_CADDY_IMAGE=docker.io/library/caddy@sha256:5f5c8640aae01df9654968d946d
 VPS_AGENT_POSTGRES_IMAGE=docker.io/library/postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
 VPS_AGENT_REDIS_IMAGE=docker.io/library/redis@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
 EOF
+
+python3 - "$RELEASE_IMAGE_ENV_FILE" "$RELEASE_STAGED_DIR" "$VERSION" "$COMMIT_SHA" <<'PY'
+import hashlib, json, sys
+from pathlib import Path
+images_path, root, version, commit = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], sys.argv[4]
+images = dict(line.split("=", 1) for line in images_path.read_text(encoding="ascii").splitlines())
+manifest = {
+    "format_version": "m6.4d-release-v1",
+    "version": version,
+    "tag": f"v{version}",
+    "commit_sha": commit,
+    "schema_revision": "0020_m6_named_approval",
+    "images": images,
+    "created_at": "2026-08-01T00:00:00Z",
+}
+(root / "release-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+marker = {
+    "format_version": "vps-agent-staged-release-v1",
+    "archive_sha256": hashlib.sha256(b"integration-fixture").hexdigest(),
+    "version": version,
+    "commit_sha": commit,
+    "schema_revision": "0020_m6_named_approval",
+}
+(root / ".verified-release.json").write_text(json.dumps(marker), encoding="utf-8")
+PY
 
 CADDY_ADMIN_HASH=$(docker run --rm docker.io/library/caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648 \
     caddy hash-password --plaintext admin-password | sed 's/\$/$$/g')

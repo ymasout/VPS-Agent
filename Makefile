@@ -34,4 +34,4 @@ license-check:
 	reuse lint
 release-check: check source-check license-check
 	python scripts/release.py check --version 0.6.1
-	ENV_FILE=deploy/.env.production.example COMPOSE_OVERRIDE_FILE=deploy/release/compose.release.yaml RELEASE_IMAGE_ENV_FILE=deploy/release/.env.release.example sh deploy/control-plane-release.sh release-check
+	sh deploy/tests/m6-release-policy.sh

@@ -150,16 +150,23 @@ sudo journalctl -u vps-agent -n 30 --no-pager
 
 ## 5. 升级
 
-重新下载最新安装脚本并执行即可。已有身份的机器不需要注册令牌，现有控制平面地址、名称、健康检查和上报间隔会自动保留：
+正式发行的升级会同时校验 Agent、事务助手和精确升级路径元数据的 checksum 与 Sigstore 签名。已有身份的机器不需要注册令牌；
+现有控制平面地址、名称、健康检查、能力策略、签名公钥和部署 allowlist 会进入受保护的 previous generation，并在新版本启动失败时
+自动恢复。升级不会复制或回退 `identity.json`、`machine-id` 或 operation ledger。
+
+重新下载最新安装脚本并执行：
 
 ```bash
 sudo bash install-agent.sh --url https://ops.ymast.shop
 ```
 
-指定版本回滚：
+只允许 `agent-upgrade.json` 明确列出的“当前版本 → 目标版本”路径。`latest` 仅用于发现版本，安装器随后从不可变的精确 SemVer
+Release 重新下载并复验全部资产。不要把 `--version` 当成任意降级入口；本地回退只恢复安装器保存的 previous generation。
+
+指定目标版本升级：
 
 ```bash
-sudo bash install-agent.sh --url https://ops.ymast.shop --version 0.2.4
+sudo bash install-agent.sh --url https://ops.ymast.shop --version 0.6.2
 ```
 
 升级已有机器时必须保留以下文件：
@@ -168,6 +175,11 @@ sudo bash install-agent.sh --url https://ops.ymast.shop --version 0.2.4
 - `/var/lib/vps-agent/machine-id`
 
 不要为正常升级生成新的注册令牌，也不要删除身份文件。否则可能创建重复机器，或者触发在线机器的重新绑定保护。
+
+升级使用 `/run/lock/vps-agent-install.lock` 防止并发执行，并安装 root-owned
+`vps-agent-upgrade-recovery.service`（`Type=oneshot`，在 Agent 前运行）。本地连续稳定 30 秒且版本匹配后才提交新 generation；
+失败回退成功仍以非零退出码结束，便于自动化和审计识别。`--allow-legacy-checksum-only` 只用于明确接受风险的旧版兼容，
+不提供事务式安全升级保证。
 
 ### 控制平面宿主机升级
 

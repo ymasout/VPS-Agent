@@ -59,7 +59,9 @@ jobs:
           python3 scripts/release.py check --version "${VERSION}"
           gh api "repos/${GITHUB_REPOSITORY}/commits/${COMMIT_SHA}/check-runs" --paginate \
             --jq '.check_runs[] | [.name,.conclusion] | @tsv' > "$RUNNER_TEMP/check-runs"
-          for required in backup-restore release-compose create-all-adoption standalone-pwa-assets source-distribution; do
+          for required in backup-restore release-compose create-all-adoption standalone-pwa-assets \
+            source-distribution dependency-vulnerabilities codeql-python \
+            codeql-javascript-typescript codeql-go; do
             grep -Fqx "${required}"$'\t'"success" "$RUNNER_TEMP/check-runs" || {
               echo "required successful check is missing: ${required}" >&2
               exit 1
@@ -115,6 +117,10 @@ jobs:
           "$RUNNER_TEMP/release-tools/bin/reuse" spdx --output dist/source.spdx
           "$RUNNER_TEMP/api-deps/bin/python" scripts/source_release.py build --output-dir dist
           cp scripts/install-agent.sh dist/install-agent.sh
+          cp scripts/agent_upgrade.py dist/agent-upgrade.py
+          cp scripts/stage_release.py dist/stage-release.py
+          python3 scripts/release.py agent-metadata --version "${VERSION}" \
+            --commit "${COMMIT_SHA}" --output dist/agent-upgrade.json
           which syft || { echo "syft not found in PATH"; exit 1; }
           for arch in amd64 arm64; do
             (cd apps/agent && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" \
@@ -211,6 +217,7 @@ jobs:
       - name: Require private vulnerability reporting and create immutable tag plus draft
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           VERSION: ${{ inputs.version }}
           COMMIT_SHA: ${{ inputs.commit_sha }}
         run: |
@@ -239,7 +246,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: write
+      contents: read
       packages: write
       id-token: write
     outputs:
@@ -304,10 +311,65 @@ jobs:
             cosign verify "$image" --certificate-identity "${COSIGN_IDENTITY}" --certificate-oidc-issuer "${COSIGN_ISSUER}" >/dev/null
             docker buildx imagetools inspect "$image" >/dev/null
           done
+  scan-candidates:
+    if: inputs.phase == 'candidate'
+    needs: [prepare, push-candidates]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install checksum-pinned Trivy
+        env:
+          TRIVY_VERSION: 0.72.0
+        run: |
+          curl --fail --location --proto '=https' --tlsv1.2 --silent --show-error \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            -o "$RUNNER_TEMP/trivy.tar.gz"
+          curl --fail --location --proto '=https' --tlsv1.2 --silent --show-error \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_checksums.txt" \
+            -o "$RUNNER_TEMP/trivy-checksums.txt"
+          (cd "$RUNNER_TEMP" && cp trivy.tar.gz "trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" && \
+            grep " trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz$" trivy-checksums.txt | sha256sum --check --status -)
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+          test "$($RUNNER_TEMP/trivy --version | head -n1)" = "Version: ${TRIVY_VERSION}"
+      - name: Scan both candidate image platforms
+        env:
+          API_DIGEST: ${{ needs.push-candidates.outputs.api_digest }}
+          WEB_DIGEST: ${{ needs.push-candidates.outputs.web_digest }}
+        run: |
+          for image in "${API_IMAGE}@${API_DIGEST}" "${WEB_IMAGE}@${WEB_DIGEST}"; do
+            for platform in linux/amd64 linux/arm64; do
+              "$RUNNER_TEMP/trivy" image --exit-code 1 --severity HIGH,CRITICAL \
+                --platform "$platform" --scanners vuln "$image"
+            done
+          done
+
+  candidate-bundle:
+    if: inputs.phase == 'candidate'
+    needs: [prepare, push-candidates, scan-candidates]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.commit_sha }}
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
       - name: Build and sign the digest-pinned release bundle
         env:
-          API_DIGEST: ${{ steps.api.outputs.digest }}
-          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+          API_DIGEST: ${{ needs.push-candidates.outputs.api_digest }}
+          WEB_DIGEST: ${{ needs.push-candidates.outputs.web_digest }}
           VERSION: ${{ inputs.version }}
           COMMIT_SHA: ${{ inputs.commit_sha }}
         run: |
@@ -319,9 +381,32 @@ jobs:
           for file in dist/vps-agent-release-*.tar.gz dist/vps-agent-release-*.tar.gz.sha256 dist/image-digests.json; do
             cosign sign-blob --yes --bundle "${file}.sigstore.json" "$file"
           done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: candidate-bundle-${{ inputs.version }}-${{ inputs.commit_sha }}
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            dist/vps-agent-release-*.tar.gz*
+            dist/image-digests.json
+            dist/image-digests.json.sigstore.json
+
+  candidate-upload:
+    if: inputs.phase == 'candidate'
+    needs: [prepare, candidate-bundle]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: candidate-bundle-${{ inputs.version }}-${{ inputs.commit_sha }}
+          path: dist
       - name: Add candidate metadata to the existing draft without replacement
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           VERSION: ${{ inputs.version }}
         run: gh release upload "v${VERSION}" dist/vps-agent-release-*.tar.gz* dist/image-digests.json dist/image-digests.json.sigstore.json
 

@@ -22,5 +22,8 @@
   "supported_agent_versions": [
     "0.4.2",
     "0.6.1"
+  ],
+  "agent_upgrade_from": [
+    "0.4.2"
   ]
 }

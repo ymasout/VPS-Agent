@@ -7,6 +7,7 @@ ENV_FILE=${ENV_FILE:-$REPO_ROOT/deploy/.env.production}
 COMPOSE_FILE=${COMPOSE_FILE:-$REPO_ROOT/deploy/compose.production.yaml}
 COMPOSE_OVERRIDE_FILE=${COMPOSE_OVERRIDE_FILE:-}
 RELEASE_IMAGE_ENV_FILE=${RELEASE_IMAGE_ENV_FILE:-}
+RELEASE_STAGED_DIR=${RELEASE_STAGED_DIR:-}
 BACKUP_DIR=${BACKUP_DIR:-/var/backups/vps-agent-console}
 ADOPTION_REVISION=0006_m4_safe_operations
 
@@ -116,12 +117,59 @@ postflight() {
 }
 
 require_release_mode() {
-    if [ -z "$COMPOSE_OVERRIDE_FILE" ] || [ -z "$RELEASE_IMAGE_ENV_FILE" ]; then
-        echo "release mode requires COMPOSE_OVERRIDE_FILE and RELEASE_IMAGE_ENV_FILE" >&2
+    if [ -z "$RELEASE_STAGED_DIR" ] || [ -z "$COMPOSE_OVERRIDE_FILE" ] || [ -z "$RELEASE_IMAGE_ENV_FILE" ]; then
+        echo "release mode requires RELEASE_STAGED_DIR, COMPOSE_OVERRIDE_FILE and RELEASE_IMAGE_ENV_FILE" >&2
         exit 1
     fi
+    for managed_path in \
+        "$RELEASE_STAGED_DIR" \
+        "$RELEASE_STAGED_DIR/.verified-release.json" \
+        "$RELEASE_STAGED_DIR/release-manifest.json" \
+        "$RELEASE_STAGED_DIR/deploy" \
+        "$RELEASE_STAGED_DIR/deploy/release" \
+        "$COMPOSE_FILE" "$COMPOSE_OVERRIDE_FILE" "$RELEASE_IMAGE_ENV_FILE"; do
+        if [ -L "$managed_path" ]; then
+            echo "verified staged release paths must not be symbolic links: $managed_path" >&2
+            exit 1
+        fi
+    done
+    require_file "$RELEASE_STAGED_DIR/.verified-release.json"
+    require_file "$RELEASE_STAGED_DIR/release-manifest.json"
     require_file "$COMPOSE_OVERRIDE_FILE"
     require_file "$RELEASE_IMAGE_ENV_FILE"
+    staged=$(realpath "$RELEASE_STAGED_DIR")
+    expected_compose=$(realpath "$RELEASE_STAGED_DIR/deploy/compose.production.yaml")
+    expected_override=$(realpath "$RELEASE_STAGED_DIR/deploy/release/compose.release.yaml")
+    expected_images=$(realpath "$RELEASE_STAGED_DIR/deploy/release/images.env")
+    if [ "$(realpath "$COMPOSE_FILE")" != "$expected_compose" ] || \
+       [ "$(realpath "$COMPOSE_OVERRIDE_FILE")" != "$expected_override" ] || \
+       [ "$(realpath "$RELEASE_IMAGE_ENV_FILE")" != "$expected_images" ]; then
+        echo "release Compose and images must come from the verified staged directory: $staged" >&2
+        exit 1
+    fi
+    python3 - "$RELEASE_STAGED_DIR/.verified-release.json" "$RELEASE_STAGED_DIR/release-manifest.json" \
+        "$RELEASE_IMAGE_ENV_FILE" <<'PY'
+import json, re, sys
+from pathlib import Path
+marker = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+manifest = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+expected_marker = {"format_version", "archive_sha256", "version", "commit_sha", "schema_revision"}
+if set(marker) != expected_marker or marker.get("format_version") != "vps-agent-staged-release-v1":
+    raise SystemExit("verified release marker schema is invalid")
+for key in ("version", "commit_sha", "schema_revision"):
+    if marker.get(key) != manifest.get(key):
+        raise SystemExit(f"verified release marker mismatch: {key}")
+if not re.fullmatch(r"[0-9a-f]{64}", str(marker.get("archive_sha256", ""))):
+    raise SystemExit("verified release archive hash is invalid")
+images = {}
+for line in Path(sys.argv[3]).read_text(encoding="ascii").splitlines():
+    key, separator, value = line.partition("=")
+    if not separator or key in images:
+        raise SystemExit("release images.env is invalid")
+    images[key] = value
+if images != manifest.get("images"):
+    raise SystemExit("release images.env does not match the staged manifest")
+PY
     images=$(dc config --images)
     count=0
     for image in $images; do

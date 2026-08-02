@@ -55,11 +55,16 @@ jobs:
           "$RUNNER_TEMP/api-deps/bin/python" scripts/source_release.py check
           "$RUNNER_TEMP/api-deps/bin/python" scripts/release.py check --version 0.6.1
           "$RUNNER_TEMP/api-deps/bin/python" -m pytest apps/api/tests/test_source_release.py
-          "$RUNNER_TEMP/api-deps/bin/python" -m pytest apps/api/tests/test_release.py
+          "$RUNNER_TEMP/api-deps/bin/python" -m pytest \
+            apps/api/tests/test_release.py apps/api/tests/test_stage_release.py apps/api/tests/test_agent_upgrade.py
           "$RUNNER_TEMP/api-deps/bin/python" -m ruff check \
-            scripts/source_release.py scripts/dependency_licenses.py scripts/release.py \
-            apps/api/tests/test_source_release.py apps/api/tests/test_release.py
+            scripts/source_release.py scripts/dependency_licenses.py scripts/release.py scripts/stage_release.py scripts/agent_upgrade.py \
+            apps/api/tests/test_source_release.py apps/api/tests/test_release.py apps/api/tests/test_stage_release.py \
+            apps/api/tests/test_agent_upgrade.py
           "$RUNNER_TEMP/release-tools/bin/reuse" lint
+
+      - name: Exercise Agent upgrade and rollback with real systemd
+        run: sudo sh deploy/tests/m6-agent-upgrade-systemd.sh
 
       - name: Build license inventory, source SBOM, and source archive
         run: |

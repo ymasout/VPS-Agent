@@ -364,6 +364,8 @@ M6.4a 随后以 `ed4e584` 提交，并按 CI 失败证据完成三轮收敛：`3
 
 2026-08-02 完成 M6 文档收口：兼容矩阵中“`0d75342 + 0020` → v0.6.1”路径依据上述生产金丝雀标记为 Passed。M6 的已冻结交付范围至此完成。Agent last-known-good/失败回退、生产对已签名 release bundle 的自动验证/落地、密钥与配置的加密离机灾备及 RPO/RTO 演练、持续发行安全扫描仍是明确的后续加固项，沿用 M6.1c/d 名称但不被误写成已实现；Web SSH/实时终端继续独立设计。正式 bundle 已确定性包含非秘密 `deploy/release/images.env`，本次生产只是手工生成了宿主机副本。Docker Hub DNS 异常未影响 API/Web 精确 digest 升级，Postgres/Redis/Caddy 本次未拉取新镜像。
 
+2026-08-02 随后开始 M6 后续批次 A：Agent 事务式 last-known-good/失败回退、精确签名升级元数据、boot-ID recovery oneshot、签名 release bundle 安全暂存，以及 Dependabot/CodeQL/OSV/Trivy 持续发行门已完成本地实现、验证和独立审计并已本地提交。该批次尚未推送或执行 GitHub CI/正式发行/生产金丝雀，因此不得改写为已发布或生产完成；M6.1d 灾备闭环仍仅有设计。详见 `POST_M6_RELIABILITY_SECURITY.md` §12。
+
 2026-07-27 M6.1 生产金丝雀通过：部署 `38b8d40`（注入 build version/commit/build time）+ postflight；`/api/v1/system-info` 返回 `commit_sha=38b8d40e76ea1c30497bbfa0f17d2b87aaa27977`、`version=0.6.1`、`schema_current=true`、`alembic_revision=["0017_m5_runbook_drafts"]`；`preflight` 生成原子备份包 `control-plane-pre-migration-20260727T131115Z`，`inspect` + 隔离空库 `restore` 成功，审计摘要 `schema_current=true`/`key_table_counts_match=true`/`active_operation_count=0`；恢复后 `ops=13/trans=81/agents=5` 与生产一致；生产 `ops/trans` 前后不变、日志无秘密、开关未变；隔离项目已清理，首份原子备份包保留（0700/0600）。M6.1 无 feature flag，`38b8d40` 留作运行基线。
 
 ## 9. 文档维护规则
