@@ -11,7 +11,7 @@ on:
       version:
         description: Canonical SemVer from release/release.json
         required: true
-        default: "0.6.2"
+        default: "0.6.3"
       commit_sha:
         description: Full audited main commit SHA
         required: true
@@ -340,17 +340,73 @@ jobs:
             grep " trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz$" trivy-checksums.txt | sha256sum --check --status -)
           tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
           test "$($RUNNER_TEMP/trivy --version | head -n1)" = "Version: ${TRIVY_VERSION}"
-      - name: Scan both candidate image platforms
+      - name: Scan all four candidate image/platform combinations
         env:
           API_DIGEST: ${{ needs.push-candidates.outputs.api_digest }}
           WEB_DIGEST: ${{ needs.push-candidates.outputs.web_digest }}
         run: |
-          for image in "${API_IMAGE}@${API_DIGEST}" "${WEB_IMAGE}@${WEB_DIGEST}"; do
-            for platform in linux/amd64 linux/arm64; do
-              "$RUNNER_TEMP/trivy" image --exit-code 1 --severity HIGH,CRITICAL \
-                --platform "$platform" --scanners vuln "$image"
-            done
+          mkdir -p "$RUNNER_TEMP/trivy-reports"
+          scan_failed=0
+          run_scan() {
+            local name="$1" ref="$2" platform="$3"
+            local report="$RUNNER_TEMP/trivy-reports/${name}.json"
+            echo "::group::Scanning ${name} (${platform})"
+            local rc=0
+            # --exit-code 0: Trivy exits 0 on a completed scan regardless of findings.
+            # A non-zero exit therefore means a scanner failure (DB download, image
+            # pull, or parse error), not the presence of vulnerabilities.
+            "$RUNNER_TEMP/trivy" image --exit-code 0 --severity HIGH,CRITICAL \
+              --platform "$platform" --scanners vuln --format json \
+              --output "$report" "$ref" || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::Trivy scanner failed for ${name} (exit code ${rc})"
+              scan_failed=1
+            fi
+            echo "::endgroup::"
+          }
+          run_scan "api-linux-amd64" "${API_IMAGE}@${API_DIGEST}" "linux/amd64"
+          run_scan "api-linux-arm64" "${API_IMAGE}@${API_DIGEST}" "linux/arm64"
+          run_scan "web-linux-amd64" "${WEB_IMAGE}@${WEB_DIGEST}" "linux/amd64"
+          run_scan "web-linux-arm64" "${WEB_IMAGE}@${WEB_DIGEST}" "linux/arm64"
+          if [ "$scan_failed" -ne 0 ]; then
+            echo "one or more Trivy scanner runs failed" >&2
+            exit 1
+          fi
+          total=0
+          for name in api-linux-amd64 api-linux-arm64 web-linux-amd64 web-linux-arm64; do
+            report="$RUNNER_TEMP/trivy-reports/${name}.json"
+            if [ ! -f "$report" ]; then
+              echo "missing Trivy report: ${name}.json" >&2
+              exit 1
+            fi
+            count=$(python3 - "$report" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          findings = [
+              v
+              for result in data.get("Results", [])
+              for v in result.get("Vulnerabilities", [])
+              if v.get("Severity") in ("HIGH", "CRITICAL")
+          ]
+          print(len(findings))
+          PY
+            ) || { echo "unable to parse Trivy report: ${name}.json" >&2; exit 1; }
+            echo "${name}: ${count} HIGH/CRITICAL findings"
+            total=$((total + count))
           done
+          echo "total HIGH/CRITICAL findings across all four platforms: ${total}"
+          if [ "$total" -gt 0 ]; then
+            echo "unapproved HIGH/CRITICAL vulnerabilities found in candidate images" >&2
+            exit 1
+          fi
+      - name: Upload Trivy reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: trivy-reports-${{ inputs.version }}-${{ inputs.commit_sha }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: ${{ runner.temp }}/trivy-reports/*.json
 
   candidate-bundle:
     if: inputs.phase == 'candidate'

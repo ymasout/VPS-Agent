@@ -29,6 +29,19 @@ LABEL org.opencontainers.image.version=${CONTROL_PLANE_VERSION} \
       org.opencontainers.image.created=${CONTROL_PLANE_BUILD_TIME} \
       org.opencontainers.image.source=https://github.com/ymasout/VPS-Agent \
       org.opencontainers.image.licenses=AGPL-3.0-only
+# The Next.js standalone runtime only needs the node binary. Remove the base
+# image's global npm/corepack/yarn toolchain (and their bundled dependencies)
+# so their vulnerabilities are not shipped in the runtime image. Runs as root
+# before USER node; the standalone app's own node_modules is copied below and
+# is NOT touched.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+      /usr/local/lib/node_modules/corepack \
+      /opt/yarn-v1.22.22 \
+    && rm -f /usr/local/bin/npm \
+      /usr/local/bin/npx \
+      /usr/local/bin/corepack \
+      /usr/local/bin/yarn \
+      /usr/local/bin/yarnpkg
 COPY --chown=node:node --from=build /repo/apps/web/.next/standalone ./
 COPY --chown=node:node --from=build /repo/apps/web/.next/static ./apps/web/.next/static
 COPY --chown=node:node --from=build /repo/apps/web/public ./apps/web/public

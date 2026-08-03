@@ -1,6 +1,6 @@
 {
-  "version": "0.6.2",
-  "tag": "v0.6.2",
+  "version": "0.6.3",
+  "tag": "v0.6.3",
   "repository": "github.com/ymasout/VPS-Agent",
   "agent_module": "github.com/ymasout/VPS-Agent/apps/agent",
   "images": {
@@ -8,7 +8,7 @@
     "web": "ghcr.io/ymasout/vps-agent-web"
   },
   "build_images": {
-    "python": "docker.io/library/python@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de",
+    "python": "docker.io/library/python@sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df",
     "node": "docker.io/library/node@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32",
     "golang": "docker.io/library/golang@sha256:383395b794dffa5b53012a212365d40c8e37109a626ca30d6151c8348d380b5f",
     "alpine": "docker.io/library/alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce"
@@ -22,7 +22,7 @@
   "supported_agent_versions": [
     "0.4.2",
     "0.6.1",
-    "0.6.2"
+    "0.6.3"
   ],
   "agent_upgrade_from": [
     "0.4.2",

@@ -3,7 +3,7 @@
 This changelog records user-visible changes for the first unified VPS Agent release. Historical Agent-only
 tags remain available; `v0.6.1` is the first formal monorepo release covering the control plane and Agent.
 
-## [0.6.2] - 2026-08-02
+## [0.6.3] - 2026-08-04
 
 ### Agent transactional upgrade and release security hardening
 
@@ -15,6 +15,22 @@ tags remain available; `v0.6.1` is the first formal monorepo release covering th
 - Added Dependabot, three-language CodeQL, OSV-Scanner dependency gate and multi-arch
   Trivy OCI vulnerability scanning to the formal release pipeline.
 - Upgraded FastAPI, Alembic, PyJWT and pinned transitive dependencies.
+
+### Container image hardening (zero HIGH/CRITICAL vulnerabilities)
+
+- Release candidate vulnerability scanning now covers all four image/platform combinations
+  (API/Web x amd64/arm64), distinguishes scanner failure from findings, and uploads the
+  full unfiltered reports as artifacts.
+- Switched the API image base from Debian slim to `python:3.12-alpine`, eliminating the
+  Debian OS packages (perl, util-linux, ncurses, gzip, libacl1) flagged by Trivy.
+- Removed the global npm/corepack/yarn toolchain from the Web runtime image; the Next.js
+  standalone runtime only needs the node binary.
+- Result: all four candidate images scan clean with zero HIGH/CRITICAL findings.
+
+### Release note
+
+- `v0.6.2` was blocked by the vulnerability gate before publish and is superseded by this
+  release; the `v0.6.2` tag remains an unpublished draft and is not moved.
 
 ## [0.6.1] - 2026-08-01
 
