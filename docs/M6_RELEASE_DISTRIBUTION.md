@@ -1,13 +1,25 @@
 # M6.4d 正式发行与开源分发设计
 
-当前状态：**v0.6.1 已于 2026-08-01 正式公开发行。** tag `v0.6.1` 指向 commit `8746182`，
+当前状态：**最新正式发行为 v0.6.3（2026-08-04）。** tag `v0.6.3` 指向 commit `7c1d2b2`，
+Formal Release workflow 四阶段全部成功；四条 CI + Dependabot/CodeQL/OSV 全绿；Release
+`isDraft=false`、`isPrerelease=false`、38 个资产。本版本核心是控制平面镜像漏洞结构性清零：
+API 基础镜像切换为 `python:3.12-alpine`，Web runtime 剔除 npm/corepack/yarn 工具链；候选
+API/Web 四平台（amd64/arm64）Trivy 复扫均 **0 HIGH/CRITICAL**，未添加任何例外。API 镜像
+`ghcr.io/ymasout/vps-agent-api:v0.6.3`（digest
+`sha256:2d302d6d5472c98c9042b8d2c93ef89781ba573e84d9719d67e44dfb0655142f`）与 Web 镜像
+`ghcr.io/ymasout/vps-agent-web:v0.6.3`（digest
+`sha256:411e7c14bb6068797ecd3f365b9718eabfbe8026f3b06f490face0248c012084`）均已公开可匿名拉取。
+`v0.6.2` 被漏洞门阻断于发布前，tag 保留为未发布 draft、不移动。v0.6.3 生产升级与 Agent
+事务式升级为独立授权金丝雀，尚未执行。
+
+历史发行：**v0.6.1 已于 2026-08-01 正式公开发行。** tag `v0.6.1` 指向 commit `8746182`，
 Formal Release workflow 四阶段（review → draft → candidate → publish）全部成功，四条 CI 全绿，
 PVR 已启用并通过 create-draft 门，Release `isDraft=false`、`isPrerelease=false`、32 个资产。
 API 镜像 `ghcr.io/ymasout/vps-agent-api:v0.6.1`（manifest digest
 `sha256:7bc0fb29ffcfadc3ff8f76dff066301fa301e525ab361c5bb63a9a1a9661373c`）与 Web 镜像
 `ghcr.io/ymasout/vps-agent-web:v0.6.1`（manifest digest
 `sha256:e05136ea7fee0a8a36155294403350f5b620d7043368982b810034834407af13`）均已公开可匿名拉取。
-生产已于 2026-08-01 完成升级金丝雀，切换到 digest-pinned release 镜像（API/Web）；
+生产已于 2026-08-01 完成 v0.6.1 升级金丝雀，切换到 digest-pinned release 镜像（API/Web）；
 Postgres/Redis/Caddy 保持现有缓存版本运行。
 
 ## 1. 设计时基线与当前实现状态

@@ -166,7 +166,7 @@ Release 重新下载并复验全部资产。不要把 `--version` 当成任意�
 指定目标版本升级：
 
 ```bash
-sudo bash install-agent.sh --url https://ops.ymast.shop --version 0.6.2
+sudo bash install-agent.sh --url https://ops.ymast.shop --version 0.6.3
 ```
 
 升级已有机器时必须保留以下文件：

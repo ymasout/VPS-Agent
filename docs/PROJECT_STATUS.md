@@ -1,7 +1,7 @@
 # 项目状态
 
-最后同步：2026-08-02
-当前阶段：**M0–M6 已完成；v0.6.1 正式发行 + digest-pinned 生产升级金丝雀通过 2026-08-01；M6 于 2026-08-02 完成收口**
+最后同步：2026-08-04
+当前阶段：**M0–M6 已完成；v0.6.1 生产升级金丝雀通过 2026-08-01；批次 A（事务式升级 + 四平台漏洞扫描 + 镜像瘦身）以 v0.6.3 正式发行 2026-08-04，零 HIGH/CRITICAL；v0.6.3 生产升级与 Agent 事务式升级金丝雀待执行**
 
 ## 1. 当前结论
 
@@ -364,7 +364,9 @@ M6.4a 随后以 `ed4e584` 提交，并按 CI 失败证据完成三轮收敛：`3
 
 2026-08-02 完成 M6 文档收口：兼容矩阵中“`0d75342 + 0020` → v0.6.1”路径依据上述生产金丝雀标记为 Passed。M6 的已冻结交付范围至此完成。Agent last-known-good/失败回退、生产对已签名 release bundle 的自动验证/落地、密钥与配置的加密离机灾备及 RPO/RTO 演练、持续发行安全扫描仍是明确的后续加固项，沿用 M6.1c/d 名称但不被误写成已实现；Web SSH/实时终端继续独立设计。正式 bundle 已确定性包含非秘密 `deploy/release/images.env`，本次生产只是手工生成了宿主机副本。Docker Hub DNS 异常未影响 API/Web 精确 digest 升级，Postgres/Redis/Caddy 本次未拉取新镜像。
 
-2026-08-02 随后开始 M6 后续批次 A：Agent 事务式 last-known-good/失败回退、精确签名升级元数据、boot-ID recovery oneshot、签名 release bundle 安全暂存，以及 Dependabot/CodeQL/OSV/Trivy 持续发行门已完成本地实现、验证和独立审计并已本地提交。该批次尚未推送或执行 GitHub CI/正式发行/生产金丝雀，因此不得改写为已发布或生产完成；M6.1d 灾备闭环仍仅有设计。详见 `POST_M6_RELIABILITY_SECURITY.md` §12。
+2026-08-02 随后开始 M6 后续批次 A：Agent 事务式 last-known-good/失败回退、精确签名升级元数据、boot-ID recovery oneshot、签名 release bundle 安全暂存，以及 Dependabot/CodeQL/OSV/Trivy 持续发行门已完成本地实现、验证和独立审计。
+
+2026-08-04 批次 A 以 **v0.6.3 正式公开发行**：tag `v0.6.3` 指向 `7c1d2b2`，Formal Release 四阶段全部成功；四条 CI + Dependabot/CodeQL/OSV 全绿；Release `isDraft=false`、`isPrerelease=false`、38 个资产。本批次核心成果是控制平面镜像漏洞结构性清零：API 基础镜像由 Debian slim 切换为 `python:3.12-alpine`，Web runtime 剔除全局 npm/corepack/yarn 工具链；候选 API/Web 四平台（amd64/arm64）Trivy 复扫均为 **0 HIGH/CRITICAL**（CI artifact 已验证），未添加任何例外清单。API 镜像 `ghcr.io/ymasout/vps-agent-api:v0.6.3`（digest `sha256:2d302d6d5472c98c9042b8d2c93ef89781ba573e84d9719d67e44dfb0655142f`）与 Web 镜像 `ghcr.io/ymasout/vps-agent-web:v0.6.3`（digest `sha256:411e7c14bb6068797ecd3f365b9718eabfbe8026f3b06f490face0248c012084`）均已公开可匿名拉取。`v0.6.2` 被漏洞门阻断于发布前，tag 保留为未发布 draft、不移动。v0.6.3 生产升级与 Agent 事务式升级金丝雀为独立授权事件，尚未执行。详见 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md) 与 `POST_M6_RELIABILITY_SECURITY.md`。
 
 2026-07-27 M6.1 生产金丝雀通过：部署 `38b8d40`（注入 build version/commit/build time）+ postflight；`/api/v1/system-info` 返回 `commit_sha=38b8d40e76ea1c30497bbfa0f17d2b87aaa27977`、`version=0.6.1`、`schema_current=true`、`alembic_revision=["0017_m5_runbook_drafts"]`；`preflight` 生成原子备份包 `control-plane-pre-migration-20260727T131115Z`，`inspect` + 隔离空库 `restore` 成功，审计摘要 `schema_current=true`/`key_table_counts_match=true`/`active_operation_count=0`；恢复后 `ops=13/trans=81/agents=5` 与生产一致；生产 `ops/trans` 前后不变、日志无秘密、开关未变；隔离项目已清理，首份原子备份包保留（0700/0600）。M6.1 无 feature flag，`38b8d40` 留作运行基线。
 
