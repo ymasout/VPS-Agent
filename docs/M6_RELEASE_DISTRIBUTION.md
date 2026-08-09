@@ -1,6 +1,23 @@
 # M6.4d 正式发行与开源分发设计
 
-当前状态：**最新正式发行为 v0.6.3（2026-08-04）。** tag `v0.6.3` 指向 commit `7c1d2b2`，
+当前状态：**最新正式发行为 v0.6.4（2026-08-12）。** tag `v0.6.4` 精确指向 commit
+`2bcc305002c3b034ab849f9a88d80de5c738be18`，Formal Release workflow 四阶段（review → draft → candidate →
+publish）全部成功；四条 CI（Control Plane Recovery、Migrations、Web、Source Distribution）+ Dependabot/CodeQL/OSV
+全绿；Release `isDraft=false`、`isPrerelease=false`、38 个资产。本版本修复两个阻塞：其一，Agent `--version`
+此前用 Go 内建 `println()` 打印到 stderr，v0.6.3 事务式安装器只捕获 stdout，导致任何现网 Agent 都被判为
+`current_version_invalid`、整批升级在写入前被拒（`rejected_before_change`）——`155e2cf` 把 `--version` 改为
+`fmt.Fprintf(os.Stdout)`，安装器 `read_agent_version()` 同时捕获两流、要求精确单行 `vps-agent X.Y.Z` 并对多行/畸形/空/
+非零退出 fail-closed；其二，OSV-Scanner 报 `nanoid 3.3.16`（GHSA-2v37-7h3g-55p8，CVSS 8.2，postcss 传递依赖）
+——`2bcc305` 用 pnpm override 把 `nanoid` 升到 3.3.17（向后兼容 patch），`agent_upgrade_from` 兼容矩阵纳入 0.6.3，未添加
+任何漏洞例外。API 镜像 `ghcr.io/ymasout/vps-agent-api:v0.6.4`（digest
+`sha256:6cf3e61bab85c70147121357f5ae7d74f3047e871d0bf9fb1dc8f4dd0841999c`）与 Web 镜像
+`ghcr.io/ymasout/vps-agent-web:v0.6.4`（digest
+`sha256:a17c7e62346dfeab4514a5aabd0a4c7f9a8fd832f2b4f05e1e75c9c59538b546`）均已公开可匿名拉取；publish 阶段以
+`docker buildx imagetools create` 把 candidate digest 提升为 SemVer tag，并用 `inspect` 做 digest 对比断言
+（不一致即失败，永不移动已存在的 SemVer 坐标）。v0.6.4 生产升级与 Agent v0.4.2 → v0.6.4 事务式升级金丝雀
+为独立授权事件，尚未执行，不提前把批次 A 标记为生产完成。
+
+历史发行：**v0.6.3 已于 2026-08-04 正式公开发行。** tag `v0.6.3` 指向 commit `7c1d2b2`，
 Formal Release workflow 四阶段全部成功；四条 CI + Dependabot/CodeQL/OSV 全绿；Release
 `isDraft=false`、`isPrerelease=false`、38 个资产。本版本核心是控制平面镜像漏洞结构性清零：
 API 基础镜像切换为 `python:3.12-alpine`，Web runtime 剔除 npm/corepack/yarn 工具链；候选

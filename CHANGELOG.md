@@ -3,7 +3,7 @@
 This changelog records user-visible changes for the first unified VPS Agent release. Historical Agent-only
 tags remain available; `v0.6.1` is the first formal monorepo release covering the control plane and Agent.
 
-## [0.6.4] - 2026-08-10
+## [0.6.4] - 2026-08-12
 
 ### Fixed
 
@@ -16,11 +16,19 @@ tags remain available; `v0.6.1` is the first formal monorepo release covering th
   empty, or non-zero output. Existing-version, target-version and post-activation checks all
   use it, so agents on `<= 0.6.3` (stderr) and newer (stdout) are both recognized.
 
+### Security
+
+- Bumped `nanoid` to 3.3.17 via a pnpm override to close GHSA-2v37-7h3g-55p8 (CVSS 8.2 High;
+  a transitive dependency of `postcss`). Fixed by upgrading the dependency rather than adding
+  a vulnerability allowlist, so the Dependabot/OSV-Scanner release gate stays fail-closed.
+
 ### Added
 
 - `deploy/tests/m6-agent-version-detection.sh` regression test covering real-agent
   stdout/stderr, old-style stderr, new-style stdout, and fail-closed edge cases. The systemd
   upgrade integration test now models the v0.4.2 agent on stderr and newer candidates on stdout.
+- `agent_upgrade_from` compatibility matrix now includes 0.6.3, so existing v0.6.3 agents can
+  transactionally upgrade to 0.6.4.
 
 ## [0.6.3] - 2026-08-04
 

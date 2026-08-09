@@ -1,7 +1,7 @@
 # 项目状态
 
-最后同步：2026-08-04
-当前阶段：**M0–M6 已完成；v0.6.1 生产升级金丝雀通过 2026-08-01；批次 A（事务式升级 + 四平台漏洞扫描 + 镜像瘦身）以 v0.6.3 正式发行 2026-08-04，零 HIGH/CRITICAL；v0.6.3 生产升级与 Agent 事务式升级金丝雀待执行**
+最后同步：2026-08-12
+当前阶段：**M0–M6 已完成；v0.6.1 生产升级金丝雀通过 2026-08-01；批次 A（事务式升级 + 四平台漏洞扫描 + 镜像瘦身）以 v0.6.3 正式发行 2026-08-04（零 HIGH/CRITICAL），并以 v0.6.4 正式发行 2026-08-12（修复 Agent 版本检测缺陷 + 闭合 nanoid GHSA→OSV 门）；v0.6.4 生产升级与 Agent v0.4.2 → v0.6.4 事务式升级金丝雀待执行**
 
 ## 1. 当前结论
 
@@ -366,7 +366,7 @@ M6.4a 随后以 `ed4e584` 提交，并按 CI 失败证据完成三轮收敛：`3
 
 2026-08-02 随后开始 M6 后续批次 A：Agent 事务式 last-known-good/失败回退、精确签名升级元数据、boot-ID recovery oneshot、签名 release bundle 安全暂存，以及 Dependabot/CodeQL/OSV/Trivy 持续发行门已完成本地实现、验证和独立审计。
 
-2026-08-04 批次 A 以 **v0.6.3 正式公开发行**：tag `v0.6.3` 指向 `7c1d2b2`，Formal Release 四阶段全部成功；四条 CI + Dependabot/CodeQL/OSV 全绿；Release `isDraft=false`、`isPrerelease=false`、38 个资产。本批次核心成果是控制平面镜像漏洞结构性清零：API 基础镜像由 Debian slim 切换为 `python:3.12-alpine`，Web runtime 剔除全局 npm/corepack/yarn 工具链；候选 API/Web 四平台（amd64/arm64）Trivy 复扫均为 **0 HIGH/CRITICAL**（CI artifact 已验证），未添加任何例外清单。API 镜像 `ghcr.io/ymasout/vps-agent-api:v0.6.3`（digest `sha256:2d302d6d5472c98c9042b8d2c93ef89781ba573e84d9719d67e44dfb0655142f`）与 Web 镜像 `ghcr.io/ymasout/vps-agent-web:v0.6.3`（digest `sha256:411e7c14bb6068797ecd3f365b9718eabfbe8026f3b06f490face0248c012084`）均已公开可匿名拉取。`v0.6.2` 被漏洞门阻断于发布前，tag 保留为未发布 draft、不移动。v0.6.3 生产升级与 Agent 事务式升级金丝雀为独立授权事件，尚未执行。详见 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md) 与 `POST_M6_RELIABILITY_SECURITY.md`。
+2026-08-12 批次 A 以 **v0.6.4 正式公开发行**：tag `v0.6.4` 精确指向 `2bcc305002c3b034ab849f9a88d80de5c738be18`，Formal Release workflow 四阶段（review → draft → candidate → publish）全部成功；四条 CI（Control Plane Recovery、Migrations、Web、Source Distribution）+ Dependabot/CodeQL/OSV 全绿；Release `isDraft=false`、`isPrerelease=false`、38 个资产。本版本修复两个阻塞性问题：其一，Agent `--version` 此前用 Go 内建 `println()` 打印到 stderr，v0.6.3 事务式安装器只捕获 stdout，导致任何现网 Agent 都被判为 `current_version_invalid`、整批升级在写入前被拒（`rejected_before_change`）；`155e2cf` 把 `--version` 改为 `fmt.Fprintf(os.Stdout)`，安装器 `read_agent_version()` 同时捕获两流并要求精确单行 `vps-agent X.Y.Z`，fail-closed 对多行/畸形/空/非零退出；其二，OSV-Scanner 报 `nanoid 3.3.16`（GHSA-2v37-7h3g-55p8，CVSS 8.2，postcss 的传递依赖），`2bcc305` 用 pnpm override 把 `nanoid` 升到 3.3.17（向后兼容 patch），加 `agent_upgrade_from` 兼容矩阵纳入 0.6.3，未添加任何漏洞例外。API 镜像 `ghcr.io/ymasout/vps-agent-api:v0.6.4`（digest `sha256:6cf3e61bab85c70147121357f5ae7d74f3047e871d0bf9fb1dc8f4dd0841999c`）与 Web 镜像 `ghcr.io/ymasout/vps-agent-web:v0.6.4`（digest `sha256:a17c7e62346dfeab4514a5aabd0a4c7f9a8fd832f2b4f05e1e75c9c59538b546`）均已公开可匿名拉取；publish 阶段以 `imagetools create` 把 candidate digest 提升为 SemVer tag 并用 `inspect` 做 digest 对比断言。生产当前仍运行 v0.6.1 镜像（`8746182 + 0020`），Principal flags OFF；v0.6.4 生产升级与 Agent 事务式升级金丝雀为独立授权事件，尚未执行，不提前把批次 A 标记为生产完成。详见 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md) 与 `POST_M6_RELIABILITY_SECURITY.md`。
 
 2026-07-27 M6.1 生产金丝雀通过：部署 `38b8d40`（注入 build version/commit/build time）+ postflight；`/api/v1/system-info` 返回 `commit_sha=38b8d40e76ea1c30497bbfa0f17d2b87aaa27977`、`version=0.6.1`、`schema_current=true`、`alembic_revision=["0017_m5_runbook_drafts"]`；`preflight` 生成原子备份包 `control-plane-pre-migration-20260727T131115Z`，`inspect` + 隔离空库 `restore` 成功，审计摘要 `schema_current=true`/`key_table_counts_match=true`/`active_operation_count=0`；恢复后 `ops=13/trans=81/agents=5` 与生产一致；生产 `ops/trans` 前后不变、日志无秘密、开关未变；隔离项目已清理，首份原子备份包保留（0700/0600）。M6.1 无 feature flag，`38b8d40` 留作运行基线。
 
