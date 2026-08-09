@@ -49,14 +49,23 @@ printf '{"operation":"ledger-must-not-change"}\n' >"$TEST_ROOT/data/operations.j
 printf 'AGENT_OPERATION_POLICY=docker_restart\nAGENT_DEPLOY_POLICY=plan_only\n' >"$TEST_ROOT/live/env"
 chmod 0600 "$TEST_ROOT/live/env"
 
+# write_agent <path> <version> <mode> [stream]
+# stream defaults to stdout (new-style agents); pass "stderr" to emulate the
+# real <= 0.6.3 agents whose Go println() writes --version to stderr.
 write_agent() {
     path=$1
     version=$2
     mode=$3
+    stream=${4:-stdout}
+    if [ "$stream" = stderr ]; then
+        redirect=' >&2'
+    else
+        redirect=''
+    fi
     cat >"$path" <<EOF
 #!/bin/sh
 if [ "\${1:-}" = --version ]; then
-    echo "vps-agent $version"
+    echo "vps-agent $version"$redirect
     exit 0
 fi
 if [ "$mode" = fail ]; then
@@ -82,7 +91,7 @@ EOF
     chmod 0644 "$path"
 }
 
-write_agent "$TEST_ROOT/live/binary" 0.4.2 ok
+write_agent "$TEST_ROOT/live/binary" 0.4.2 ok stderr
 write_unit "$UNIT_PATH"
 systemctl daemon-reload
 systemctl start "$UNIT_NAME"
@@ -104,7 +113,7 @@ systemctl daemon-reload
 systemctl restart "$UNIT_NAME"
 sleep 1
 systemctl is-active --quiet "$UNIT_NAME"
-test "$("$TEST_ROOT/live/binary" --version)" = "vps-agent 0.6.1"
+test "$("$TEST_ROOT/live/binary" --version 2>&1)" = "vps-agent 0.6.1"
 python3 "$REPO_ROOT/scripts/agent_upgrade.py" commit --state-dir "$TEST_ROOT/state" >/dev/null
 
 write_agent "$TEST_ROOT/candidate/binary" 0.6.2 fail
@@ -130,7 +139,7 @@ python3 "$REPO_ROOT/scripts/agent_upgrade.py" rollback --state-dir "$TEST_ROOT/s
 systemctl daemon-reload
 systemctl restart "$UNIT_NAME"
 systemctl is-active --quiet "$UNIT_NAME"
-test "$("$TEST_ROOT/live/binary" --version)" = "vps-agent 0.6.1"
+test "$("$TEST_ROOT/live/binary" --version 2>&1)" = "vps-agent 0.6.1"
 
 grep -Fqx 'AGENT_OPERATION_POLICY=docker_restart' "$TEST_ROOT/live/env"
 grep -Fqx 'AGENT_DEPLOY_POLICY=plan_only' "$TEST_ROOT/live/env"
@@ -161,7 +170,7 @@ EOF
 systemctl daemon-reload
 systemctl start "$RECOVERY_UNIT_NAME"
 test ! -f "$TEST_ROOT/state/transaction.json"
-test "$("$TEST_ROOT/live/binary" --version)" = "vps-agent 0.6.1"
+test "$("$TEST_ROOT/live/binary" --version 2>&1)" = "vps-agent 0.6.1"
 systemctl daemon-reload
 systemctl restart "$UNIT_NAME"
 systemctl is-active --quiet "$UNIT_NAME"

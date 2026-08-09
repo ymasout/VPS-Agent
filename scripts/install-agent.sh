@@ -61,6 +61,29 @@ download() {
     fail "download failed: ${label}"
 }
 
+# Read an agent binary's version robustly. Older agents (<= 0.6.3) print
+# --version to stderr (Go's built-in println); newer agents print to stdout.
+# Capture both streams, require the exact single-line "vps-agent X.Y.Z" format,
+# and fail closed on any other output (multi-line, warnings, bad format).
+read_agent_version() {
+  local binary="$1"
+  local output
+  if ! output="$("${binary}" --version 2>&1)"; then
+    return 1
+  fi
+  [[ "${output}" =~ ^vps-agent\ ([0-9]+\.[0-9]+\.[0-9]+)$ ]] || return 1
+  printf '%s\n' "${BASH_REMATCH[1]}"
+}
+
+# Hidden self-test hook for the version-detection regression test. Not a user
+# interface; not documented; subject to change without notice.
+if [[ "${1:-}" == "__selftest_read_version__" ]]; then
+  if read_agent_version "${2:-}"; then
+    exit 0
+  fi
+  exit 1
+fi
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --url) CONTROL_PLANE_URL="${2:-}"; shift 2 ;;
@@ -199,7 +222,7 @@ EXISTING_INSTALL="false"
 CURRENT_VERSION=""
 if [[ -x "${INSTALL_DIR}/vps-agent" ]]; then
   EXISTING_INSTALL="true"
-  CURRENT_VERSION="$("${INSTALL_DIR}/vps-agent" --version | sed -n 's/^vps-agent //p')"
+  CURRENT_VERSION="$(read_agent_version "${INSTALL_DIR}/vps-agent")" || { printf '{"audit_code":"rejected_before_change","reason":"current_version_invalid"}\n' >&2; exit 20; }
   [[ "${CURRENT_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { printf '{"audit_code":"rejected_before_change","reason":"current_version_invalid"}\n' >&2; exit 20; }
 fi
 
@@ -262,7 +285,7 @@ else
   fi
 fi
 
-if ! TARGET_VERSION="$("${TMP_DIR}/${BINARY}" --version | sed -n 's/^vps-agent //p')"; then
+if ! TARGET_VERSION="$(read_agent_version "${TMP_DIR}/${BINARY}")"; then
   fail "target binary version check failed"
 fi
 if [[ "${ALLOW_LEGACY_CHECKSUM_ONLY}" == "true" && "${VERSION}" == "latest" ]]; then
@@ -411,7 +434,7 @@ if [[ "${EXISTING_INSTALL}" == "true" ]]; then
     printf '{"audit_code":"activation_failed_rollback_failed"}\n' >&2
     exit 31
   fi
-  ACTIVE_VERSION="$("${INSTALL_DIR}/vps-agent" --version | sed -n 's/^vps-agent //p')"
+  ACTIVE_VERSION="$(read_agent_version "${INSTALL_DIR}/vps-agent")" || ACTIVE_VERSION=""
   if [[ "${ACTIVE_VERSION}" != "${TARGET_VERSION}" ]]; then
     if [[ "${ALLOW_LEGACY_CHECKSUM_ONLY}" != "true" ]] && python3 "${INSTALLED_HELPER}" rollback --state-dir "${UPGRADE_STATE_DIR}"; then
       systemctl daemon-reload
@@ -448,6 +471,7 @@ if [[ ! -f "${IDENTITY_FILE}" ]]; then
 fi
 
 REGISTRATION_TOKEN=""
-printf '\nInstalled %s\n' "$("${INSTALL_DIR}/vps-agent" --version)"
+INSTALLED_VERSION="$(read_agent_version "${INSTALL_DIR}/vps-agent")" || INSTALLED_VERSION="unknown"
+printf '\nInstalled vps-agent %s\n' "${INSTALLED_VERSION}"
 printf 'Service: systemctl status vps-agent --no-pager\n'
 printf 'Logs:    journalctl -u vps-agent -f\n'

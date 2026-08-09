@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -24,7 +25,7 @@ var capabilities = []string{"host.metrics", "docker.status", "systemd.status", "
 
 func main() {
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
-		println("vps-agent " + version)
+		fmt.Fprintf(os.Stdout, "vps-agent %s\n", version)
 		return
 	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
