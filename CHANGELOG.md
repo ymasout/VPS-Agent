@@ -3,6 +3,25 @@
 This changelog records user-visible changes for the first unified VPS Agent release. Historical Agent-only
 tags remain available; `v0.6.1` is the first formal monorepo release covering the control plane and Agent.
 
+## [0.6.4] - 2026-08-10
+
+### Fixed
+
+- Fixed `vps-agent --version` writing to stderr (Go's built-in `println`) instead of
+  stdout. The v0.6.3 transactional installer read stdout only, so it could not detect the
+  current version of any existing agent and rejected every transactional upgrade with
+  `current_version_invalid` before making any change.
+- Installer version detection now reads both streams via `read_agent_version`, requires the
+  exact single-line `vps-agent X.Y.Z` format, and fails closed on multi-line, malformed,
+  empty, or non-zero output. Existing-version, target-version and post-activation checks all
+  use it, so agents on `<= 0.6.3` (stderr) and newer (stdout) are both recognized.
+
+### Added
+
+- `deploy/tests/m6-agent-version-detection.sh` regression test covering real-agent
+  stdout/stderr, old-style stderr, new-style stdout, and fail-closed edge cases. The systemd
+  upgrade integration test now models the v0.4.2 agent on stderr and newer candidates on stdout.
+
 ## [0.6.3] - 2026-08-04
 
 ### Agent transactional upgrade and release security hardening

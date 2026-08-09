@@ -19,7 +19,7 @@ import (
 	operationexecutor "github.com/ymasout/VPS-Agent/apps/agent/internal/operation"
 )
 
-var version = "0.6.3-dev"
+var version = "0.6.4-dev"
 
 var capabilities = []string{"host.metrics", "docker.status", "systemd.status", "http.healthcheck", "evidence.docker_logs.v1", "evidence.systemd_journal.v1", "operation.compose_deploy.v2"}
 
