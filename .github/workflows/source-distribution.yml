@@ -53,7 +53,7 @@ jobs:
       - name: Validate release policy and negative cases
         run: |
           "$RUNNER_TEMP/api-deps/bin/python" scripts/source_release.py check
-          "$RUNNER_TEMP/api-deps/bin/python" scripts/release.py check --version 0.6.4
+          "$RUNNER_TEMP/api-deps/bin/python" scripts/release.py check --version 0.6.5
           "$RUNNER_TEMP/api-deps/bin/python" -m pytest apps/api/tests/test_source_release.py
           "$RUNNER_TEMP/api-deps/bin/python" -m pytest \
             apps/api/tests/test_release.py apps/api/tests/test_stage_release.py apps/api/tests/test_agent_upgrade.py

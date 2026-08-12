@@ -75,10 +75,17 @@ read_agent_version() {
   printf '%s\n' "${BASH_REMATCH[1]}"
 }
 
+# GitHub Release downloads do not preserve Unix executable mode bits. Apply
+# the required mode only after checksum/signature verification and before the
+# first attempt to execute the downloaded Agent binary.
+prepare_downloaded_agent_binary() {
+  chmod 0755 "$1"
+}
+
 # Hidden self-test hook for the version-detection regression test. Not a user
 # interface; not documented; subject to change without notice.
 if [[ "${1:-}" == "__selftest_read_version__" ]]; then
-  if read_agent_version "${2:-}"; then
+  if prepare_downloaded_agent_binary "${2:-}" && read_agent_version "${2:-}"; then
     exit 0
   fi
   exit 1
@@ -285,6 +292,7 @@ else
   fi
 fi
 
+prepare_downloaded_agent_binary "${TMP_DIR}/${BINARY}" || fail "target binary mode update failed"
 if ! TARGET_VERSION="$(read_agent_version "${TMP_DIR}/${BINARY}")"; then
   fail "target binary version check failed"
 fi

@@ -98,6 +98,10 @@ systemctl start "$UNIT_NAME"
 systemctl is-active --quiet "$UNIT_NAME"
 
 write_agent "$TEST_ROOT/candidate/binary" 0.6.1 ok
+chmod 0644 "$TEST_ROOT/candidate/binary"
+test ! -x "$TEST_ROOT/candidate/binary"
+test "$(bash "$REPO_ROOT/scripts/install-agent.sh" __selftest_read_version__ "$TEST_ROOT/candidate/binary")" = "0.6.1"
+test -x "$TEST_ROOT/candidate/binary"
 cp "$TEST_ROOT/live/env" "$TEST_ROOT/candidate/env"
 write_unit "$TEST_ROOT/candidate/unit"
 python3 "$REPO_ROOT/scripts/agent_upgrade.py" prepare \

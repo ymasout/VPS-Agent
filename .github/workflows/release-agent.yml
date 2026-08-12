@@ -6,7 +6,7 @@ on:
       version:
         description: Review-only SemVer from release/release.json
         required: true
-        default: "0.6.4"
+        default: "0.6.5"
 
 permissions:
   contents: read

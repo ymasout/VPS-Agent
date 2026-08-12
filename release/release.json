@@ -1,6 +1,6 @@
 {
-  "version": "0.6.4",
-  "tag": "v0.6.4",
+  "version": "0.6.5",
+  "tag": "v0.6.5",
   "repository": "github.com/ymasout/VPS-Agent",
   "agent_module": "github.com/ymasout/VPS-Agent/apps/agent",
   "images": {
@@ -23,11 +23,13 @@
     "0.4.2",
     "0.6.1",
     "0.6.3",
-    "0.6.4"
+    "0.6.4",
+    "0.6.5"
   ],
   "agent_upgrade_from": [
     "0.4.2",
     "0.6.1",
-    "0.6.3"
+    "0.6.3",
+    "0.6.4"
   ]
 }

@@ -2,7 +2,8 @@
 set -eu
 
 # Regression test for agent --version stream handling and the installer's
-# read_agent_version detection. Covers the stderr/stdout compatibility fix:
+# downloaded-binary preparation and read_agent_version detection. Covers the
+# GitHub Release asset mode and stderr/stdout compatibility fixes:
 # older agents (<= 0.6.3) print --version to stderr, newer agents print to
 # stdout; the installer must recognize both and fail closed on anything else.
 
@@ -68,7 +69,24 @@ write_stub "$TEST_ROOT/new-stdout" 'if [ "${1:-}" = --version ]; then echo "vps-
 v=$(run_read_version "$TEST_ROOT/new-stdout") || { echo "stdout version not recognized" >&2; exit 1; }
 [ "$v" = "0.6.4" ] || { echo "stdout version mismatch: $v" >&2; exit 1; }
 
-# --- 5. Fail-closed cases ---------------------------------------------------
+# --- 5. GitHub Release asset: no executable bit -> installer repairs it ----
+write_stub "$TEST_ROOT/github-release-asset-no-exec" 'if [ "${1:-}" = --version ]; then echo "vps-agent 0.6.5"; exit 0; fi'
+chmod 0644 "$TEST_ROOT/github-release-asset-no-exec"
+[ ! -x "$TEST_ROOT/github-release-asset-no-exec" ] || {
+    echo "GitHub Release asset fixture unexpectedly has an executable bit" >&2
+    exit 1
+}
+v=$(run_read_version "$TEST_ROOT/github-release-asset-no-exec") || {
+    echo "installer failed to prepare and read a non-executable GitHub Release asset" >&2
+    exit 1
+}
+[ "$v" = "0.6.5" ] || { echo "non-executable asset version mismatch: $v" >&2; exit 1; }
+[ -x "$TEST_ROOT/github-release-asset-no-exec" ] || {
+    echo "installer did not restore the downloaded Agent executable bit" >&2
+    exit 1
+}
+
+# --- 6. Fail-closed cases ---------------------------------------------------
 expect_reject() {
     name=$1
     stub=$2
@@ -96,4 +114,4 @@ expect_reject "mixed warning plus version" "$TEST_ROOT/prefix-junk"
 write_stub "$TEST_ROOT/trailing-space" 'if [ "${1:-}" = --version ]; then printf "vps-agent 0.6.4 \n"; exit 0; fi'
 expect_reject "trailing space" "$TEST_ROOT/trailing-space"
 
-echo "Agent version detection regression test passed: real stdout/stderr, old stderr, new stdout, fail-closed edge cases"
+echo "Agent version detection regression test passed: GitHub asset mode, real stdout/stderr, old stderr, new stdout, fail-closed edge cases"

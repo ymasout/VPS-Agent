@@ -3,6 +3,18 @@
 This changelog records user-visible changes for the first unified VPS Agent release. Historical Agent-only
 tags remain available; `v0.6.1` is the first formal monorepo release covering the control plane and Agent.
 
+## [0.6.5] - 2026-08-13
+
+### Fixed
+
+- Fixed transactional Agent installation and upgrade rejecting verified GitHub Release
+  binaries before any local change because downloaded assets do not preserve the Unix
+  executable bit. The installer now applies mode `0755` after checksum/signature verification
+  and before the first target `--version` check.
+- Added regressions that model a downloaded Agent asset with mode `0644` and prove the
+  installer itself restores executability before version detection and the systemd upgrade
+  flow.
+
 ## [0.6.4] - 2026-08-12
 
 ### Fixed
