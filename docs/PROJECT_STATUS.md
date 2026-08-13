@@ -1,7 +1,7 @@
 # 项目状态
 
-最后同步：2026-08-12
-当前阶段：**M0–M6 已完成；v0.6.1 生产升级金丝雀通过 2026-08-01；批次 A（事务式升级 + 四平台漏洞扫描 + 镜像瘦身）以 v0.6.3 正式发行 2026-08-04（零 HIGH/CRITICAL），并以 v0.6.4 正式发行 2026-08-12（修复 Agent 版本检测缺陷 + 闭合 nanoid GHSA→OSV 门）；v0.6.4 生产升级与 Agent v0.4.2 → v0.6.4 事务式升级金丝雀待执行**
+最后同步：2026-08-14
+当前阶段：**M0–M6 已完成；批次 A 已关闭；批次 B 灾备闭环已完成本地实现，待独立审计与 CI，真实异地副本、生产 recipient 和季度演练尚未执行**
 
 ## 1. 当前结论
 
@@ -367,6 +367,12 @@ M6.4a 随后以 `ed4e584` 提交，并按 CI 失败证据完成三轮收敛：`3
 2026-08-02 随后开始 M6 后续批次 A：Agent 事务式 last-known-good/失败回退、精确签名升级元数据、boot-ID recovery oneshot、签名 release bundle 安全暂存，以及 Dependabot/CodeQL/OSV/Trivy 持续发行门已完成本地实现、验证和独立审计。
 
 2026-08-12 批次 A 以 **v0.6.4 正式公开发行**：tag `v0.6.4` 精确指向 `2bcc305002c3b034ab849f9a88d80de5c738be18`，Formal Release workflow 四阶段（review → draft → candidate → publish）全部成功；四条 CI（Control Plane Recovery、Migrations、Web、Source Distribution）+ Dependabot/CodeQL/OSV 全绿；Release `isDraft=false`、`isPrerelease=false`、38 个资产。本版本修复两个阻塞性问题：其一，Agent `--version` 此前用 Go 内建 `println()` 打印到 stderr，v0.6.3 事务式安装器只捕获 stdout，导致任何现网 Agent 都被判为 `current_version_invalid`、整批升级在写入前被拒（`rejected_before_change`）；`155e2cf` 把 `--version` 改为 `fmt.Fprintf(os.Stdout)`，安装器 `read_agent_version()` 同时捕获两流并要求精确单行 `vps-agent X.Y.Z`，fail-closed 对多行/畸形/空/非零退出；其二，OSV-Scanner 报 `nanoid 3.3.16`（GHSA-2v37-7h3g-55p8，CVSS 8.2，postcss 的传递依赖），`2bcc305` 用 pnpm override 把 `nanoid` 升到 3.3.17（向后兼容 patch），加 `agent_upgrade_from` 兼容矩阵纳入 0.6.3，未添加任何漏洞例外。API 镜像 `ghcr.io/ymasout/vps-agent-api:v0.6.4`（digest `sha256:6cf3e61bab85c70147121357f5ae7d74f3047e871d0bf9fb1dc8f4dd0841999c`）与 Web 镜像 `ghcr.io/ymasout/vps-agent-web:v0.6.4`（digest `sha256:a17c7e62346dfeab4514a5aabd0a4c7f9a8fd832f2b4f05e1e75c9c59538b546`）均已公开可匿名拉取；publish 阶段以 `imagetools create` 把 candidate digest 提升为 SemVer tag 并用 `inspect` 做 digest 对比断言。生产当前仍运行 v0.6.1 镜像（`8746182 + 0020`），Principal flags OFF；v0.6.4 生产升级与 Agent 事务式升级金丝雀为独立授权事件，尚未执行，不提前把批次 A 标记为生产完成。详见 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md) 与 `POST_M6_RELIABILITY_SECURITY.md`。
+
+2026-08-13 批次 A 以 **v0.6.5 正式公开发行**：tag `v0.6.5` 精确指向 `1165c470f746bbd6b9256d30e89d25c302647a1d`，Formal Release workflow 四阶段全部成功，四条 CI（Control Plane Recovery、Migrations、Web、Source Distribution）+ Dependabot/CodeQL/OSV 全绿；Release `isDraft=false`、`isPrerelease=false`、38 个资产。本版本修复 install-agent.sh 下载 GitHub Release 资产后未 `chmod 0755` 导致目标二进制 `Permission denied`、事务式升级在写入前被拒的缺陷（`1165c47` 在版本校验前对下载二进制 `chmod 0755`）。批次 A 生产金丝雀已于 2026-08-13 全部通过：其一，Agent 事务式升级金丝雀（aliyun-零时 `v0.4.2` → `v0.6.5`）通过，身份/capability（7 项）/generation/env 不变、`EXIT_CODE=0`；其二，失败自动回退由 CI 端到端（`deploy/tests/m6-agent-upgrade-systemd.sh`）覆盖 + 生产 fail-closed 复检（3× Verified OK、升级路径不支持、`EXIT_CODE=20`、active v0.6.5）；其三，控制平面 `0.6.3` → `v0.6.5` 升级金丝雀通过（schema `0020` no-op，仅 api+web 重建，preflight 原子备份/迁移预览 + migrate + release-up + reload-caddy + postflight 全过）。生产现运行 v0.6.5（commit `1165c470f746bbd6b9256d30e89d25c302647a1d`，build_time `2026-08-12T18:06:42Z`），Principal flags OFF。批次 A 标记为生产完成。金丝雀期间发现并记录了 release-flow 缺口（`compose.release.yaml` 未 `!reset` api 的 `CONTROL_PLANE_*` 环境项，需靠更新 `.env.production` 生效），留待 codex 修复，不影响本批次结论。详见 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md) 与 `POST_M6_RELIABILITY_SECURITY.md`。
+
+证据边界：2026-08-13 的生产 `EXIT_CODE=20` 是任何写入前的不支持路径拒绝，不是生产自动回退演练；previous generation 自动回退由 root/真实 systemd 集成测试证明。二者共同作为批次 A 验收证据，但不得互换表述。上段 release-flow 缺口的准确文件路径为 `deploy/release/compose.release.yaml`。
+
+2026-08-14 批次 B 完成本地实现并处置首次安全审计：新增固定版本/checksum/安装 marker 的官方 age v1.3.1 工具链、数据库/配置/秘密独立加密包、两个目标根的原子复制与设备同源告警、每日 root-owned systemd 数据库备份、管理员显式月度实际解密抽检，以及 internal-only 隔离 Compose 季度演练。审计确认并修复两项 P1：演练 override 现强制清空 M4 签名、Principal/Caddy 写凭据与 Agent 操作密钥；恢复源实例 ID 必须由可信策略/操作者独立提供，不再从待校验 manifest 回填。数据库执行 24 小时 RPO，配置/秘密按当前可信源 hash 证明变更驱动新鲜度，控制平面 RTO 为 4 小时；明文文件 0600、稳定审计错误码和 1800 秒 age 超时也已加固。release override 同时在本地清除 API 三项运行时构建身份并增加 fail-closed 规范门。当前只可称“本地已实现、待 CI 与真实演练”；尚未选择真实外部存储、安装生产 recipient、生成生产副本或执行生产季度演练/生产恢复。详见 [M6_DISASTER_RECOVERY.md](./M6_DISASTER_RECOVERY.md)。
 
 2026-07-27 M6.1 生产金丝雀通过：部署 `38b8d40`（注入 build version/commit/build time）+ postflight；`/api/v1/system-info` 返回 `commit_sha=38b8d40e76ea1c30497bbfa0f17d2b87aaa27977`、`version=0.6.1`、`schema_current=true`、`alembic_revision=["0017_m5_runbook_drafts"]`；`preflight` 生成原子备份包 `control-plane-pre-migration-20260727T131115Z`，`inspect` + 隔离空库 `restore` 成功，审计摘要 `schema_current=true`/`key_table_counts_match=true`/`active_operation_count=0`；恢复后 `ops=13/trans=81/agents=5` 与生产一致；生产 `ops/trans` 前后不变、日志无秘密、开关未变；隔离项目已清理，首份原子备份包保留（0700/0600）。M6.1 无 feature flag，`38b8d40` 留作运行基线。
 

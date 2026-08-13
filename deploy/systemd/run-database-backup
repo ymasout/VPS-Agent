@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+export ENV_FILE=/opt/vps-agent/current/deploy/.env.production
+export COMPOSE_FILE=/opt/vps-agent/current/deploy/compose.production.yaml
+for root_file in "$ENV_FILE" "$COMPOSE_FILE"; do
+  [ -f "$root_file" ] && [ ! -L "$root_file" ] || { echo "required production input is missing or unsafe" >&2; exit 1; }
+  [ "$(stat -c %u "$root_file")" = 0 ] || { echo "production inputs must be root-owned" >&2; exit 1; }
+  case "$(stat -c %a "$root_file")" in
+    ?[2367]?|??[2367]) echo "production inputs must not be group/other writable" >&2; exit 1 ;;
+  esac
+done
+package=$(/usr/local/libexec/vps-agent/control-plane-backup.sh disaster-recovery)
+exec /usr/local/libexec/vps-agent/control-plane-disaster-recovery.sh database "$package"

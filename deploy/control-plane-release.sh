@@ -1,6 +1,22 @@
 #!/bin/sh
 set -eu
 
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys' >/dev/null 2>&1; then
+    PYTHON_BIN=python3
+elif command -v python >/dev/null 2>&1 && python -c 'import sys' >/dev/null 2>&1; then
+    PYTHON_BIN=python
+else
+    echo "Python 3 is required" >&2
+    exit 1
+fi
+
+python_path() {
+    case "$(uname -s)" in
+        MINGW*|MSYS*) cygpath -w "$1" ;;
+        *) printf '%s\n' "$1" ;;
+    esac
+}
+
 MODE=${1:-}
 REPO_ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 ENV_FILE=${ENV_FILE:-$REPO_ROOT/deploy/.env.production}
@@ -147,8 +163,9 @@ require_release_mode() {
         echo "release Compose and images must come from the verified staged directory: $staged" >&2
         exit 1
     fi
-    python3 - "$RELEASE_STAGED_DIR/.verified-release.json" "$RELEASE_STAGED_DIR/release-manifest.json" \
-        "$RELEASE_IMAGE_ENV_FILE" <<'PY'
+    "$PYTHON_BIN" - "$(python_path "$RELEASE_STAGED_DIR/.verified-release.json")" \
+        "$(python_path "$RELEASE_STAGED_DIR/release-manifest.json")" \
+        "$(python_path "$RELEASE_IMAGE_ENV_FILE")" <<'PY'
 import json, re, sys
 from pathlib import Path
 marker = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))

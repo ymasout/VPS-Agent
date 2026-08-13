@@ -1,6 +1,24 @@
 # M6.4d 正式发行与开源分发设计
 
-当前状态：**最新正式发行为 v0.6.4（2026-08-12）。** tag `v0.6.4` 精确指向 commit
+当前状态：**最新正式发行为 v0.6.5（2026-08-13）。** tag `v0.6.5` 精确指向 commit
+`1165c470f746bbd6b9256d30e89d25c302647a1d`，Formal Release workflow 四阶段（review → draft → candidate →
+publish）全部成功；四条 CI（Control Plane Recovery、Migrations、Web、Source Distribution）+ Dependabot/CodeQL/OSV
+全绿；Release `isDraft=false`、`isPrerelease=false`。本版本修复一个阻塞性缺陷：`scripts/install-agent.sh` 下载
+GitHub Release 资产后未 `chmod 0755`，而下载资产不保留 unix 执行位，导致目标二进制 `Permission denied`、事务式
+升级在写入任何本地文件前被拒（`rejected_before_change`）——`1165c47` 在 checksum/Sigstore 验签全过后、首次
+`read_agent_version` 前 `chmod 0755`，并让 selftest 路径与生产路径一致；无 schema/API/capability/发行流程逻辑改动。
+正式 v0.6.5 API digest 为 `sha256:2571f9af59206d837c8139edaef6fbf41e07186da7d909235cde9c837ae18afa`，
+Web digest 为 `sha256:7bf139912e6c2d8a73ba42003b57b12b3c18caecb51afefbfc6b289a0c666b56`；生产继续以 digest-pinned 坐标运行。
+
+批次 A 验收已于 2026-08-13 完成：生产 Agent `v0.4.2` → `v0.6.5` 事务式升级（身份/capability/previous
+generation/env 不变）与控制平面 `0.6.3` → `v0.6.5` 金丝雀通过（schema `0020_m6_named_approval` no-op，终态
+version=0.6.5 commit=1165c47）；失败自动回退由真实 systemd CI 端到端证明，生产另行完成 exit 20
+`unsupported_upgrade_path` 的写前 fail-closed 复检。
+生产当前运行 v0.6.5 镜像。另记录一条发布流程缺口：`deploy/release/compose.release.yaml` 未 `!reset` api 服务的
+`CONTROL_PLANE_*` 环境项，导致 system-info 版本被 `.env.production` 旧值覆盖（本次已手工修正 `.env.production`，
+留后续修复）。
+
+历史发行：**v0.6.4 已于 2026-08-12 正式公开发行。** tag `v0.6.4` 精确指向 commit
 `2bcc305002c3b034ab849f9a88d80de5c738be18`，Formal Release workflow 四阶段（review → draft → candidate →
 publish）全部成功；四条 CI（Control Plane Recovery、Migrations、Web、Source Distribution）+ Dependabot/CodeQL/OSV
 全绿；Release `isDraft=false`、`isPrerelease=false`、38 个资产。本版本修复两个阻塞：其一，Agent `--version`
@@ -14,8 +32,7 @@ publish）全部成功；四条 CI（Control Plane Recovery、Migrations、Web�
 `ghcr.io/ymasout/vps-agent-web:v0.6.4`（digest
 `sha256:a17c7e62346dfeab4514a5aabd0a4c7f9a8fd832f2b4f05e1e75c9c59538b546`）均已公开可匿名拉取；publish 阶段以
 `docker buildx imagetools create` 把 candidate digest 提升为 SemVer tag，并用 `inspect` 做 digest 对比断言
-（不一致即失败，永不移动已存在的 SemVer 坐标）。v0.6.4 生产升级与 Agent v0.4.2 → v0.6.4 事务式升级金丝雀
-为独立授权事件，尚未执行，不提前把批次 A 标记为生产完成。
+（不一致即失败，永不移动已存在的 SemVer 坐标）。其生产升级与 Agent 事务式升级金丝雀由随后的 v0.6.5 修复并完成（见上文）。
 
 历史发行：**v0.6.3 已于 2026-08-04 正式公开发行。** tag `v0.6.3` 指向 commit `7c1d2b2`，
 Formal Release workflow 四阶段全部成功；四条 CI + Dependabot/CodeQL/OSV 全绿；Release
@@ -27,7 +44,7 @@ API/Web 四平台（amd64/arm64）Trivy 复扫均 **0 HIGH/CRITICAL**，未添�
 `ghcr.io/ymasout/vps-agent-web:v0.6.3`（digest
 `sha256:411e7c14bb6068797ecd3f365b9718eabfbe8026f3b06f490face0248c012084`）均已公开可匿名拉取。
 `v0.6.2` 被漏洞门阻断于发布前，tag 保留为未发布 draft、不移动。v0.6.3 生产升级与 Agent
-事务式升级为独立授权金丝雀，尚未执行。
+事务式升级金丝雀由随后的 v0.6.5 完成（见上文）。
 
 历史发行：**v0.6.1 已于 2026-08-01 正式公开发行。** tag `v0.6.1` 指向 commit `8746182`，
 Formal Release workflow 四阶段（review → draft → candidate → publish）全部成功，四条 CI 全绿，

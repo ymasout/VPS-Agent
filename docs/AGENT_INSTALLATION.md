@@ -1,6 +1,6 @@
 # Agent 发布、安装与升级
 
-VPS Agent 通过 GitHub Release 发布 Linux 静态二进制。v0.6.1 已于 2026-08-01 正式公开发行，Agent 与 API/Web 使用统一版本；历史 Agent-only Release（`v0.2.2`–`v0.4.2`）仍可从 GitHub 获取。旧版 Fleet 版本表不再作为当前事实：旧 aliyun-VPS 已被释放，2026-07-31 M6.4c 金丝雀改用新 aliyun-零时 Agent `v0.4.2`，完成具名 M4 全链后已关闭服务 restart 授权；其他机器的版本、身份和 capability 必须在每次生产操作前实时核对。正式发行同时提供 SHA-256、SBOM 和 Sigstore keyless 签名。
+VPS Agent 通过 GitHub Release 发布 Linux 静态二进制。v0.6.5 已于 2026-08-13 正式公开发行（tag `v0.6.5` 精确指向 `1165c470f746bbd6b9256d30e89d25c302647a1d`；修复 install-agent.sh 下载 GitHub Release 资产后未 `chmod 0755` 导致事务式升级在写入前被拒的缺陷），Agent 与 API/Web 使用统一版本；历史 Agent-only Release（`v0.2.2`–`v0.4.2`）仍可从 GitHub 获取。旧版 Fleet 版本表不再作为当前事实：旧 aliyun-VPS 已被释放，2026-08-13 批次 A 生产金丝雀在 aliyun-零时 Agent `v0.4.2` 上完成事务式升级到 `v0.6.5`（身份/capability 不变，exit_code=0）；其他机器的版本、身份和 capability 必须在每次生产操作前实时核对。正式发行同时提供 SHA-256、SBOM 和 Sigstore keyless 签名。
 
 ## 1. 发布新版本
 
@@ -166,7 +166,7 @@ Release 重新下载并复验全部资产。不要把 `--version` 当成任意�
 指定目标版本升级：
 
 ```bash
-sudo bash install-agent.sh --url https://ops.ymast.shop --version 0.6.3
+sudo bash install-agent.sh --url https://ops.ymast.shop --version 0.6.5
 ```
 
 升级已有机器时必须保留以下文件：

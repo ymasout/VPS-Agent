@@ -1,6 +1,15 @@
 #!/bin/sh
 set -eu
 
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys' >/dev/null 2>&1; then
+    PYTHON_BIN=python3
+elif command -v python >/dev/null 2>&1 && python -c 'import sys' >/dev/null 2>&1; then
+    PYTHON_BIN=python
+else
+    echo "Python 3 is required" >&2
+    exit 1
+fi
+
 REPO_ROOT=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 TMP_ROOT=$(mktemp -d)
 REGISTRY_NAME="m6-release-registry-$$"
@@ -19,6 +28,9 @@ REGISTRY_IMAGE="registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace52
 VERSION=0.6.1
 COMMIT_SHA=$(git -C "$REPO_ROOT" rev-parse HEAD)
 BUILD_TIME=$(date -u -d "@$(git -C "$REPO_ROOT" show -s --format=%ct "$COMMIT_SHA")" +%Y-%m-%dT%H:%M:%SZ)
+SENTINEL_VERSION=old-production-version
+SENTINEL_COMMIT_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+SENTINEL_BUILD_TIME=2000-01-01T00:00:00Z
 
 dc() {
     docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_IMAGE_ENV_FILE" \
@@ -64,7 +76,17 @@ VPS_AGENT_POSTGRES_IMAGE=docker.io/library/postgres@sha256:57c72fd2a128e416c7fcc
 VPS_AGENT_REDIS_IMAGE=docker.io/library/redis@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
 EOF
 
-python3 - "$RELEASE_IMAGE_ENV_FILE" "$RELEASE_STAGED_DIR" "$VERSION" "$COMMIT_SHA" <<'PY'
+case "$(uname -s)" in
+    MINGW*|MSYS*)
+        RELEASE_IMAGE_ENV_FILE_PY=$(cygpath -w "$RELEASE_IMAGE_ENV_FILE")
+        RELEASE_STAGED_DIR_PY=$(cygpath -w "$RELEASE_STAGED_DIR")
+        ;;
+    *)
+        RELEASE_IMAGE_ENV_FILE_PY=$RELEASE_IMAGE_ENV_FILE
+        RELEASE_STAGED_DIR_PY=$RELEASE_STAGED_DIR
+        ;;
+esac
+"$PYTHON_BIN" - "$RELEASE_IMAGE_ENV_FILE_PY" "$RELEASE_STAGED_DIR_PY" "$VERSION" "$COMMIT_SHA" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
 images_path, root, version, commit = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], sys.argv[4]
@@ -99,9 +121,9 @@ CADDY_APPROVER_HASH=$(docker run --rm docker.io/library/caddy@sha256:5f5c8640aae
 cat >"$ENV_FILE" <<EOF
 CONTROL_PLANE_DOMAIN=localhost
 CONTROL_PLANE_INSTANCE_ID=00000000-0000-4000-8000-000000000061
-CONTROL_PLANE_VERSION=$VERSION
-CONTROL_PLANE_COMMIT_SHA=$COMMIT_SHA
-CONTROL_PLANE_BUILD_TIME=$BUILD_TIME
+CONTROL_PLANE_VERSION=$SENTINEL_VERSION
+CONTROL_PLANE_COMMIT_SHA=$SENTINEL_COMMIT_SHA
+CONTROL_PLANE_BUILD_TIME=$SENTINEL_BUILD_TIME
 CADDY_ADMIN_USER=admin
 CADDY_ADMIN_PASSWORD_HASH=$CADDY_ADMIN_HASH
 CADDY_OPERATOR_USER=operator
@@ -124,6 +146,13 @@ PRINCIPAL_ROLE_BINDINGS_JSON=[]
 EOF
 
 sh "$RELEASE_SCRIPT" release-check
+MERGED_CONFIG=$(dc config)
+for variable in CONTROL_PLANE_VERSION CONTROL_PLANE_COMMIT_SHA CONTROL_PLANE_BUILD_TIME; do
+    if printf '%s\n' "$MERGED_CONFIG" | sed -n '/^  api:/,/^  [a-z][a-z0-9_-]*:/p' | grep -q "$variable"; then
+        echo "release Compose still injects API $variable" >&2
+        exit 1
+    fi
+done
 sh "$RELEASE_SCRIPT" release-pull
 dc up --detach --wait postgres redis
 dc run --rm --no-deps api sh -eu -c \

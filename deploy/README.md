@@ -60,12 +60,13 @@ BACKUP_DIR=/var/backups/vps-agent-console \
 
 命令只在 `pg_dump`、`pg_restore --list`、严格 manifest 和 `SHA256SUMS` 全部通过后，将临时目录原子改名为 `control-plane-标签-UTC时间`。成品固定包含 `postgres.dump`、`manifest.json` 和 `SHA256SUMS`，目录/文件权限为 `0700`/`0600`，脚本不自动上传或删除旧包。dump 与固定关键表计数来自同一 exported snapshot；备份可能包含开始时仍在途的 Operation，因此计划内金丝雀应避开 M4 执行窗口并记录 manifest 的 `active_operation_count`。
 
-恢复只能面向已经启动的隔离、空 PostgreSQL Compose 项目。隔离环境必须使用与备份相同的稳定实例 ID、应用版本/commit、数据库名和角色，并提供相同 PostgreSQL major 及所需 extension；不得复用生产项目名。先只读检查，再显式确认实例并恢复：
+恢复只能面向已经启动的隔离、空 PostgreSQL Compose 项目。隔离运行实例必须使用独立 ID 和凭据，但应用版本/commit、数据库名和角色必须与备份兼容，并提供相同 PostgreSQL major 及所需 extension；不得复用生产项目名。`RESTORE_SOURCE_INSTANCE_ID` 必须由管理员从可信策略或资产记录独立取得，不能从待校验 manifest 回填；`RESTORE_CONFIRM_INSTANCE_ID` 则作为第二次显式确认。先只读检查，再恢复：
 
 ```bash
 export ENV_FILE=/安全绝对路径/restore.env
 export COMPOSE_PROJECT_NAME=vps-agent-restore-drill-20260726
 export RESTORE_ISOLATED_TARGET=yes
+export RESTORE_SOURCE_INSTANCE_ID=可信记录中的源实例ID
 PACKAGE=/安全绝对路径/control-plane-manual-UTC时间
 
 sh deploy/control-plane-restore.sh inspect "$PACKAGE"
@@ -134,6 +135,12 @@ Operation 签名密钥或未来 M6.4c 的具名写授权证明。
 标准顺序保持 `preflight → migrate → release-up → reload-caddy → postflight`；`release-up` 固定
 传入 `--no-build`，镜像缺失时失败，不能回退到宿主机源码。完整命令见
 [RELEASE_PROCESS.md](../docs/RELEASE_PROCESS.md)。该路径不自动部署，生产执行仍需单独授权。
+
+release override 还会用 `!reset null` 清除 API 继承的三个 `CONTROL_PLANE_*` 运行时值，使正式镜像内置身份不会被旧 `.env.production` 覆盖；release CI 会同时检查合并后的 Compose 与 `/api/v1/system-info`。
+
+## M6.1d 加密灾备
+
+数据库、配置与秘密分包、age 双 recipient、两个故障域副本、每日 systemd 调度、月度实际解密抽检和季度隔离 Compose 演练见 [M6_DISASTER_RECOVERY.md](../docs/M6_DISASTER_RECOVERY.md)。这些工具只供 root 管理员在固定绝对路径运行，不提供 Web/API/Agent 入口，不自动删除副本，也不授权生产恢复。
 
 ## M6.4c1 多 Principal 写身份 shadow
 

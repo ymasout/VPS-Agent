@@ -1,6 +1,8 @@
 # M6 自托管产品化
 
-本文冻结 M6 的目标、安全边界和阶段顺序。当前状态为：**M6 已完成（v0.6.1 于 2026-08-01 正式发行并通过 digest-pinned 生产升级金丝雀，2026-08-02 文档收口）；批次 A 以 v0.6.3 于 2026-08-04 正式发行（零 HIGH/CRITICAL），以 v0.6.4 于 2026-08-12 正式发行（tag `v0.6.4` 精确指向 `2bcc305002c3b034ab849f9a88d80de5c738be18`；修复 Agent `--version` 打印到 stderr 的事务式升级阻断缺陷 + 闭合 nanoid GHSA-2v37-7h3g-55p8 OSV 报警）**。批次 A 的 Agent 安全升级/失败回退、签名 bundle 暂存、四平台候选镜像漏洞扫描和镜像瘦身已实现、审计、通过 CI 并随 v0.6.3/v0.6.4 发布；v0.6.4 生产升级与 Agent v0.4.2 → v0.6.4 事务式升级金丝雀为独立授权事件，尚未执行。批次 B 的完整灾备运行手册仍仅有设计。两者沿用 M6.1c/d 名称但不重新打开 M6，也不宣称已生产完成。本文不是后续生产操作授权；任何生产备份恢复、外部测试消息或数据修改仍需用户另行明确授权。
+本文冻结 M6 的目标、安全边界和阶段顺序。当前状态为：**M6 已完成（v0.6.1 于 2026-08-01 正式发行并通过 digest-pinned 生产升级金丝雀，2026-08-02 文档收口）；批次 A 以 v0.6.3 于 2026-08-04 正式发行（零 HIGH/CRITICAL），以 v0.6.4 于 2026-08-12 正式发行（tag `v0.6.4` 精确指向 `2bcc305002c3b034ab849f9a88d80de5c738be18`；修复 Agent `--version` 打印到 stderr 的事务式升级阻断缺陷 + 闭合 nanoid GHSA-2v37-7h3g-55p8 OSV 报警），以 v0.6.5 于 2026-08-13 正式发行（tag `v0.6.5` 精确指向 `1165c470f746bbd6b9256d30e89d25c302647a1d`；修复 install-agent.sh 下载资产未 `chmod 0755` 的升级阻断缺陷）**。批次 A 的 Agent 安全升级/失败回退、签名 bundle 暂存、四平台候选镜像漏洞扫描和镜像瘦身已实现、审计、通过 CI 并随 v0.6.3/v0.6.4/v0.6.5 发布；生产 Agent v0.4.2 → v0.6.5 与控制平面 0.6.3 → v0.6.5 金丝雀已于 2026-08-13 通过（schema `0020` no-op），失败自动回退由真实 systemd CI 端到端证明，生产另行验证不支持路径写前 fail-closed。批次 A 标记为生产完成。批次 B 的完整灾备运行手册仍仅有设计。两者沿用 M6.1c/d 名称但不重新打开 M6。本文不是后续生产操作授权；任何生产备份恢复、外部测试消息或数据修改仍需用户另行明确授权。
+
+批次 B 状态更新（覆盖上段的“仍仅有设计”）：age 双 recipient、数据库/配置/秘密分包、双故障域目标适配、每日调度、月度解密抽检与隔离 RTO 演练已完成本地实现，待独立审计与 CI；真实异地副本和生产演练尚未执行。
 
 ## 1. 目标与非目标
 
@@ -28,7 +30,7 @@
 ### 2.1 已存在的可靠性基础
 
 - 生产 Compose 由 Caddy、Web、API、PostgreSQL 16 和 Redis 组成；PostgreSQL、Redis 与 Caddy 数据使用命名卷。
-- Alembic 是当前 schema 演进唯一入口。生产现运行 v0.6.1 release 镜像（API/Web digest-pinned，commit `8746182`），revision `0020_m6_named_approval`；任何后续生产操作前必须实时核对。API 启动时校验数据库 revision，不自动迁移。
+- Alembic 是当前 schema 演进唯一入口。生产现运行 v0.6.5 release 镜像（API/Web digest-pinned，commit `1165c470f746bbd6b9256d30e89d25c302647a1d`），revision `0020_m6_named_approval`；任何后续生产操作前必须实时核对。API 启动时校验数据库 revision，不自动迁移。
 - `deploy/control-plane-release.sh` 已分离 `preflight`、`migrate`、`reload-caddy` 和 `postflight`；`postflight` 会运行 schema check、数据库感知健康检查、Agent operation 路由和映射候选检查。
 - `preflight` 会生成 PostgreSQL custom-format `pg_dump` 和迁移 SQL 预览，备份目录/文件权限分别为 `0700`/`0600`，不自动删除备份。
 - Agent 通过 GitHub Release 发布 Linux amd64/arm64 静态二进制、安装器和 `SHA256SUMS`；安装器校验二进制、保留身份/策略，并由 systemd 托管。
@@ -41,7 +43,7 @@
 - 审计开始时没有通用恢复命令；M6.1 首片现提供只面向显式隔离项目和空目标的 CLI，仍禁止在线 `--clean` 覆盖。
 - 审计开始时 FastAPI 和 Web 页脚都硬编码 `0.4.2-dev`；M6.1 首片已在本地改为镜像 ARG/label/runtime 身份和受保护 system-info。宿主机 Git HEAD 仍不能证明正在运行的镜像版本。
 - 审计开始时生产 API/Web 由本地源码构建且缺少统一不可变摘要/provenance；M6.4d 已发布签名、带 SBOM 的 digest-pinned API/Web 镜像，生产于 2026-08-01 完成切换。release Compose 的 Caddy、PostgreSQL、Redis 也固定 digest，但本次生产因 Docker Hub DNS 异常继续使用本地缓存版本。
-- 审计开始时 Agent 安装器只能用 SHA-256 发现传输损坏，升级会直接覆盖文件且没有 last-known-good；M6.4d 已增加固定发布者 Sigstore 验证，后续批次 A 又完成事务式升级、精确升级来源、boot recovery 和失败回退，并已随 v0.6.3 发布；Agent 事务式升级的生产金丝雀为独立授权事件，尚未执行。
+- 审计开始时 Agent 安装器只能用 SHA-256 发现传输损坏，升级会直接覆盖文件且没有 last-known-good；M6.4d 已增加固定发布者 Sigstore 验证，后续批次 A 又完成事务式升级、精确升级来源、boot recovery 和失败回退，并已随 v0.6.3 发布；Agent v0.4.2 → v0.6.5 事务式升级已通过生产金丝雀，失败自动回退由真实 systemd CI 端到端证明，生产另行完成不支持路径 exit 20 的写前 fail-closed 复检。
 - 审计开始时 CI 只有 Agent tag 发布和控制平面迁移接管；此缺口已由 Recovery、Migrations、Web、Source Distribution、release Compose 门以及 v0.6.1 控制平面资产、SBOM、签名/provenance 关闭。持续漏洞扫描和发行证明回归已由批次 A 实现并以 v0.6.3 发布（Dependabot/CodeQL/OSV/四平台 Trivy + 镜像瘦身零 HIGH/CRITICAL）。
 - API 测试曾读取工作区 `.env` 并被真实 GitHub 配置污染；首片已在测试入口显式中性化 GitHub 环境，同时保留“部分配置必须拒绝”的断言，仓库根目录回归通过。
 - `.env.production.example` 的 M5 开关、诊断上下文预算和 M6 构建身份字段已补齐，并与生产 Compose 默认值核对。
@@ -79,7 +81,7 @@
 
 - 一次性注册令牌、独立 machine-id、身份文件和能力策略必须继续保留；升级不得静默扩大 evidence/operation/deploy 权限。
 - 正式升级应固定 Release 版本并校验产物；`latest` 仅作为交互便利，不作为审计证据。
-- 后续批次 A 已实现 last-known-good 二进制/配置、启动稳定窗口和失败回退；回退明确不包含或删除身份、幂等账本和 machine-id。该能力已随 v0.6.3 发布；Agent 事务式升级的生产金丝雀为独立授权事件，尚未执行，不能视为已生产验证。
+- 后续批次 A 已实现 last-known-good 二进制/配置、启动稳定窗口和失败回退；回退明确不包含或删除身份、幂等账本和 machine-id。该能力已随 v0.6.3 发布；Agent v0.4.2 → v0.6.5 事务式升级已通过生产验证，失败自动回退由真实 systemd CI 验证。
 - 控制平面必须声明支持的 Agent 协议/版本范围；不兼容时先拒绝启用新能力，而不是让旧 Agent 领取未知任务。
 
 ### 4.3 备份
@@ -237,8 +239,8 @@
 
 1. **M6.1a 运行身份与备份包**：构建版本/commit、系统信息端点、原子 dump、manifest、hash、archive 校验。
 2. **M6.1b 严格离线恢复**：空目标门、兼容性门、single-transaction restore、schema/关键数据验证和真实 PostgreSQL CI。
-3. **M6.1c 发布与升级可靠性（M6 后续加固）**：不可变控制平面镜像、依赖镜像固定、统一 CI、首条版本兼容矩阵，以及 bundle 内确定性生成 `images.env` 已完成；Agent last-known-good 升级/回退、已签名 bundle 安全暂存、四平台候选镜像漏洞扫描与镜像瘦身已实现、审计、通过 CI 并随 v0.6.3 发布；生产升级与 Agent 事务式升级金丝雀为独立授权事件，尚未执行。
-4. **M6.1d 秘密与灾备运行手册（M6 后续加固）**：配置/密钥清单、加密离机副本、恢复演练频率、RPO/RTO 和人工审计待设计实现。
+3. **M6.1c 发布与升级可靠性（M6 后续加固）**：不可变控制平面镜像、依赖镜像固定、统一 CI、首条版本兼容矩阵，以及 bundle 内确定性生成 `images.env` 已完成；Agent last-known-good 升级/回退、已签名 bundle 安全暂存、四平台候选镜像漏洞扫描与镜像瘦身已实现、审计、通过 CI 并随 v0.6.3 发布；生产升级与 Agent 事务式升级金丝雀已于 2026-08-13 全部通过（v0.6.5，schema `0020` no-op）。
+4. **M6.1d 秘密与灾备运行手册（M6 后续加固）**：配置/密钥清单、age 双 recipient 加密包、双故障域目标适配、每日调度、月度实际解密抽检、隔离 Compose 演练和 RPO/RTO 摘要已完成本地实现，待独立审计与 CI；真实异地副本与季度演练待外部选择和授权。
 5. **M6.2 PWA 与移动体验**：manifest/service worker/图标、移动只读事件与 M4 审批；不新增写权限。
 6. **M6.3 通知与引导式配置**：M6.3a/b 已完成生产验证；M6.3c+d 已完成（Telegram、内置通道组合、飞书预留适配位、独立 Delivery 和版本化冻结模板，生产金丝雀通过 2026-07-29）。完整边界见 [M6_NOTIFICATIONS.md](./M6_NOTIFICATIONS.md)。
 7. **M6.4 协作与开源评估**：M6.4a 源码发行安全门、依赖许可证扫描和双许可证目录映射已于 2026-07-30 完成（`714da5a`，四条 CI 全绿）；M6.4b 可信 Principal 与有限只读角色已完成独立审计、四条 CI 和两阶段生产金丝雀；M6.4c（c1/c2/c3）具名 M4 审批已完成审计+CI+生产金丝雀（2026-07-31，运行 `0d75342`，flags OFF，迁移 `0020_m6_named_approval`，含首次具名 operator 创建 + approver 确认 + M4 完整执行 + maker-checker）；M6.4d v0.6.1 已于 2026-08-01 正式公开发行（tag `v0.6.1`、commit `8746182`、32 资产、PVR 启用、GHCR 公开），并于同日切换生产 API/Web 到精确 release digest。SaaS 继续冻结，完整计划见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)、[M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md)、[M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md) 与 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md)。
@@ -259,10 +261,10 @@
 
 1. **已关闭：**真实 PostgreSQL 备份→恢复→schema/关键数据一致性工作流已通过，并已加入 PR/push 门且由 Ubuntu CI 验证。
 2. **已关闭：**构建身份、完整控制平面 CI、不可变发布镜像、生产依赖镜像固定和首条生产升级兼容矩阵均已验证。
-3. **部分关闭：**Agent last-known-good、失败回退和精确升级来源门属于 M6.1c；已实现、审计、通过 CI 并随 v0.6.3 发布，但生产升级与 Agent 事务式升级金丝雀尚未执行。现有 Agent `v0.4.2` 到控制平面 v0.6.1 的既有协议路径已验证。
+3. **已关闭：**Agent last-known-good、失败回退和精确升级来源门属于 M6.1c；已实现、审计、通过 CI 并随 v0.6.3 发布，且生产升级与 Agent 事务式升级金丝雀已于 2026-08-13 通过（v0.6.5，Agent v0.4.2 → v0.6.5）。
 4. **本地已关闭：**`.env.production.example` 已补齐 Compose 的诊断预算、M5 开关和 M6 build 身份字段，Compose config 通过。
 5. **本地已关闭：**测试入口已隔离工作区 GitHub 环境，仓库根目录回归保留部分配置拒绝断言并全绿。
-6. **仍开放：**备份加密、离机副本、真实性/签名策略、RPO/RTO 和定期恢复演练运行手册属于 M6.1d。
+6. **本地已实现、外部仍开放：**备份加密、双故障域副本适配、真实性校验、RPO/RTO 和定期恢复演练运行手册属于 M6.1d；真实异地目标、生产 recipient、生产恢复和季度演练仍需另行选择与授权。
 7. **部分关闭：**公开 health 与受保护 build/schema 信息已分离；后台能力和备份新鲜度仍待后续状态设计。
 
 ### P2：后续产品化增强
@@ -278,8 +280,8 @@
 
 M6 的冻结交付范围按以下证据完成：
 
-- 控制平面具备可重复的固定版本安装、升级、兼容检查、应用回退与审计流程；v0.6.1 的正式发行和生产升级路径已通过。Agent `v0.4.2` 兼容范围已经矩阵验证；Agent last-known-good/失败回退是已随 v0.6.3 发布、但生产升级与事务式升级金丝雀尚未执行的后续 M6.1c 加固。
-- PostgreSQL 原子备份、严格兼容门、隔离恢复和关键数据一致性已经真实演练；配置/密钥的加密离机副本与量化 RPO/RTO 演练仍是后续 M6.1d 加固，不能被当前完成状态误写成已实现。
+- 控制平面具备可重复的固定版本安装、升级、兼容检查、应用回退与审计流程；v0.6.1 的正式发行和生产升级路径已通过，v0.6.5 生产升级（控制平面 0.6.3 → 0.6.5，schema `0020` no-op）已于 2026-08-13 通过。Agent `v0.4.2` 兼容范围已经矩阵验证；Agent last-known-good/失败回退与事务式升级已随 v0.6.3 发布，生产金丝雀（v0.4.2 → v0.6.5）已于 2026-08-13 通过。
+- PostgreSQL 原子备份、严格兼容门、配置/秘密分包、双 recipient 加密、双故障域复制适配、隔离恢复和量化 RTO 已在本地实现并由集成链路验证；真实异地副本、生产密钥与生产/季度演练仍未执行，不能被本地完成状态误写成生产完成。
 - 当前运行的 API/Web/Agent/数据库 revision 可从产品和发布资产中准确核对。
 - PWA 与移动端只读/审批体验不弱化 M4 的确认和验证边界。
 - 新通知通道复用统一的秘密、脱敏、去重、重试和恢复语义。

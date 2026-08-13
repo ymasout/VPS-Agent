@@ -1,0 +1,63 @@
+name: vps-agent-disaster-recovery
+
+services:
+  caddy:
+    profiles: [never]
+    environment:
+      CADDY_ADMIN_PASSWORD_HASH: !reset null
+      CADDY_OPERATOR_PASSWORD_HASH: !reset null
+      CADDY_APPROVER_PASSWORD_HASH: !reset null
+      PRINCIPAL_PROXY_TOKEN: !reset null
+      PRINCIPAL_WRITE_PROXY_TOKEN: !reset null
+
+  api:
+    environment:
+      CONTROL_PLANE_DOMAIN: restore.invalid
+      DIAGNOSTIC_PROVIDER: deterministic
+      DIAGNOSTIC_API_URL: !reset null
+      DIAGNOSTIC_API_KEY: !reset null
+      CONVERSATION_PROVIDER: deterministic
+      CONVERSATION_API_URL: !reset null
+      CONVERSATION_API_KEY: !reset null
+      DINGTALK_WEBHOOK_URL: !reset null
+      DINGTALK_SECRET: !reset null
+      TELEGRAM_BOT_TOKEN: !reset null
+      TELEGRAM_CHAT_ID: !reset null
+      GITHUB_APP_ID: !reset null
+      GITHUB_APP_PRIVATE_KEY_BASE64: !reset null
+      GITHUB_APP_INSTALLATION_ID: !reset null
+      GITHUB_WEBHOOK_SECRET: !reset null
+      OPERATION_SIGNING_KEY_ID: !reset null
+      OPERATION_SIGNING_PRIVATE_KEY_BASE64: !reset null
+      PRINCIPAL_PROXY_TOKEN: !reset null
+      PRINCIPAL_WRITE_PROXY_TOKEN: !reset null
+      PRINCIPAL_ROLE_BINDINGS_JSON: !reset null
+      PRINCIPAL_VIEWER_IDS: !reset null
+      NOTIFICATION_CHANNELS: dingtalk
+      NOTIFICATION_TESTS_ENABLED: "false"
+      PRINCIPAL_CONTEXT_ENABLED: "false"
+      PRINCIPAL_READ_AUTHORIZATION_ENABLED: "false"
+      PRINCIPAL_WRITE_CONTEXT_ENABLED: "false"
+      PRINCIPAL_WRITE_AUTHORIZATION_ENABLED: "false"
+      PRINCIPAL_BREAK_GLASS_ENABLED: "false"
+    networks: [isolated]
+
+  web:
+    environment:
+      NEXT_PUBLIC_API_URL: http://restore.invalid
+      PRINCIPAL_PROXY_TOKEN: !reset null
+      AGENT_OPERATION_KEY_ID: !reset null
+      AGENT_OPERATION_PUBLIC_KEY_BASE64: !reset null
+      PRINCIPAL_CONTEXT_ENABLED: "false"
+      PRINCIPAL_WRITE_AUTHORIZATION_ENABLED: "false"
+    networks: [isolated]
+
+  postgres:
+    networks: [isolated]
+
+  redis:
+    networks: [isolated]
+
+networks:
+  isolated:
+    internal: true

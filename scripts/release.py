@@ -28,7 +28,9 @@ REQUIRED_BUNDLE_FILES = (
     "release/release.json",
     "docs/RELEASE_COMPATIBILITY.md",
     "docs/RELEASE_PROCESS.md",
+    "docs/M6_DISASTER_RECOVERY.md",
     "deploy/compose.production.yaml",
+    "deploy/compose.disaster-recovery.yaml",
     "deploy/release/compose.release.yaml",
     "deploy/release/.env.release.example",
     "deploy/.env.production.example",
@@ -36,11 +38,26 @@ REQUIRED_BUNDLE_FILES = (
     "deploy/control-plane-release.sh",
     "deploy/control-plane-backup.sh",
     "deploy/control-plane-restore.sh",
+    "deploy/control-plane-disaster-recovery.sh",
+    "deploy/control-plane-drill.sh",
+    "deploy/install-age.sh",
+    "deploy/install-disaster-recovery.sh",
+    "deploy/disaster-recovery-policy.example.json",
+    "deploy/backup-recipients.example.txt",
+    "deploy/systemd/vps-agent-dr-database.service",
+    "deploy/systemd/vps-agent-dr-database.timer",
+    "deploy/systemd/run-database-backup",
+    "scripts/disaster_recovery.py",
     "scripts/stage_release.py",
 )
 GENERATED_BUNDLE_FILES = (
     "deploy/release/images.env",
     "release-manifest.json",
+)
+RELEASE_API_IDENTITY_RESETS = (
+    "CONTROL_PLANE_VERSION",
+    "CONTROL_PLANE_COMMIT_SHA",
+    "CONTROL_PLANE_BUILD_TIME",
 )
 
 
@@ -132,6 +149,32 @@ def validate_vulnerability_workflow(workflow: str) -> list[str]:
     return errors
 
 
+def validate_release_compose(override: str) -> list[str]:
+    """Validate the fail-closed release override invariants."""
+    errors: list[str] = []
+    for service, variable in {
+        "api": "VPS_AGENT_API_IMAGE",
+        "web": "VPS_AGENT_WEB_IMAGE",
+        "caddy": "VPS_AGENT_CADDY_IMAGE",
+        "postgres": "VPS_AGENT_POSTGRES_IMAGE",
+        "redis": "VPS_AGENT_REDIS_IMAGE",
+    }.items():
+        if f"{service}:" not in override or f"${{{variable}:?" not in override:
+            errors.append(f"release Compose does not require {variable}")
+    if override.count("build: !reset null") != 2:
+        errors.append("release Compose must remove exactly the API and Web build sections")
+
+    api_match = re.search(
+        r"(?ms)^  api:\s*\n(?P<body>.*?)(?=^  [a-z][a-z0-9_-]*:\s*$|\Z)", override
+    )
+    api_body = api_match.group("body") if api_match else ""
+    for variable in RELEASE_API_IDENTITY_RESETS:
+        reset = re.findall(rf"(?m)^      {re.escape(variable)}: !reset null\s*$", api_body)
+        if len(reset) != 1:
+            errors.append(f"release Compose must reset API {variable} exactly once")
+    return errors
+
+
 def validate_spec(root: Path = ROOT, expected_version: str | None = None) -> dict[str, object]:
     spec = load_spec(root)
     errors: list[str] = []
@@ -208,17 +251,7 @@ def validate_spec(root: Path = ROOT, expected_version: str | None = None) -> dic
         errors.append("Agent development version does not match the release line")
 
     override = (root / "deploy" / "release" / "compose.release.yaml").read_text(encoding="utf-8")
-    for service, variable in {
-        "api": "VPS_AGENT_API_IMAGE",
-        "web": "VPS_AGENT_WEB_IMAGE",
-        "caddy": "VPS_AGENT_CADDY_IMAGE",
-        "postgres": "VPS_AGENT_POSTGRES_IMAGE",
-        "redis": "VPS_AGENT_REDIS_IMAGE",
-    }.items():
-        if f"{service}:" not in override or f"${{{variable}:?" not in override:
-            errors.append(f"release Compose does not require {variable}")
-    if override.count("build: !reset null") != 2:
-        errors.append("release Compose must remove exactly the API and Web build sections")
+    errors.extend(validate_release_compose(override))
 
     formal_workflow = (root / ".github" / "workflows" / "formal-release.yml").read_text(encoding="utf-8")
     for required in (

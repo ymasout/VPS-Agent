@@ -269,7 +269,7 @@ M5.4 单 Agent/单服务上下文只读会话已于 2026-07-26 完成本地实�
 
 ## 9. M6：自托管产品化
 
-状态：**已完成（v0.6.1 生产升级金丝雀通过 2026-08-01；2026-08-02 文档收口）；批次 A（事务式升级 + 四平台漏洞扫描 + 镜像瘦身）以 v0.6.3 正式发行 2026-08-04（零 HIGH/CRITICAL），以 v0.6.4 正式发行 2026-08-12（修复 Agent 版本检测缺陷 + 闭合 nanoid GHSA→OSV 门）；v0.6.4 生产升级与 Agent 事务式升级金丝雀为独立授权事件，尚未执行，不记为生产完成；批次 B 灾备闭环仍仅有设计**
+状态：**已完成（2026-08-02 收口）；批次 A 已关闭；批次 B 灾备闭环已完成本地实现，待独立审计与 CI，真实异地副本、生产 recipient 和季度演练尚未执行**
 
 M6 按可恢复性基础优先拆分，不一次扩展全部 P6 范围：
 
@@ -281,7 +281,9 @@ M6 按可恢复性基础优先拆分，不一次扩展全部 P6 范围：
 
 M6 总体设计、发布/备份/恢复审计和风险见 [M6_PRODUCTIZATION.md](./M6_PRODUCTIZATION.md)，M6.2 缓存、移动只读与审批边界见 [M6_PWA_MOBILE.md](./M6_PWA_MOBILE.md)。M6.1a/b、M6.2、M6.3、M6.4a/b/c 已完成相应审计、CI 与生产金丝雀。M6.4d v0.6.1 已于 2026-08-01 正式公开发行并同日完成生产升级金丝雀（digest-pinned release 镜像、commit `8746182`、`0020`、Principal flags OFF、通知仅启用钉钉）。任何后续生产操作前必须实时核对。设计与金丝雀记录见 [M6_PRINCIPAL_READONLY.md](./M6_PRINCIPAL_READONLY.md) 与 [M6_NAMED_APPROVAL.md](./M6_NAMED_APPROVAL.md)，总评估见 [M6_COLLABORATION_OPEN_SOURCE.md](./M6_COLLABORATION_OPEN_SOURCE.md)，正式发行边界见 [M6_RELEASE_DISTRIBUTION.md](./M6_RELEASE_DISTRIBUTION.md)。真实生产库恢复仍属单独事故授权。
 
-M6 收口后的批次 A 已实现 Agent last-known-good/失败回退、签名 release bundle 安全暂存、四平台候选镜像漏洞扫描和控制平面镜像瘦身，并以 **v0.6.3 于 2026-08-04 正式公开发行**（tag `v0.6.3`、commit `7c1d2b2`、38 资产、候选 API/Web 四平台 Trivy 零 HIGH/CRITICAL），以 **v0.6.4 于 2026-08-12 正式公开发行**（tag `v0.6.4` 精确指向 `2bcc305002c3b034ab849f9a88d80de5c738be18`、38 资产、Formal Release 四阶段全部成功、Dependabot/CodeQL/OSV 四条 CI 全绿）。v0.6.4 修复两个阻塞：Agent `--version` 此前用 Go 内建 `println()` 打印到 stderr，v0.6.3 事务式安装器只捕获 stdout，导致任何现网 Agent 被判为 `current_version_invalid`、整批升级在写入前被拒——`155e2cf` 改为 `fmt.Fprintf(os.Stdout)` 且安装器同时读两流并 fail-closed；OSV-Scanner 报 `nanoid 3.3.16`（GHSA-2v37-7h3g-55p8，postcss 传递依赖）——`2bcc305` 用 pnpm override 升到 3.3.17，未添加例外。API 基础镜像切换为 `python:3.12-alpine`、Web runtime 剔除 npm/corepack/yarn，漏洞被结构性消除，未添加例外。`v0.6.2` 被漏洞门阻断于发布前，tag 保留为未发布 draft、不移动。v0.6.4 生产升级与 Agent v0.4.2 → v0.6.4 事务式升级为独立授权金丝雀，尚未执行；不改写为生产完成。M6.1d 的密钥/配置灾备清单、加密异地副本和 RPO/RTO 演练仍仅有设计。统一设计与测试/金丝雀边界见 [POST_M6_RELIABILITY_SECURITY.md](./POST_M6_RELIABILITY_SECURITY.md)。Web SSH/实时终端不属于 M6 完成范围，继续单独威胁建模。
+M6 收口后的批次 A 已实现 Agent last-known-good/失败回退、签名 release bundle 安全暂存、四平台候选镜像漏洞扫描和控制平面镜像瘦身，并以 **v0.6.3 于 2026-08-04 正式公开发行**（tag `v0.6.3`、commit `7c1d2b2`、38 资产、候选 API/Web 四平台 Trivy 零 HIGH/CRITICAL），以 **v0.6.4 于 2026-08-12 正式公开发行**（tag `v0.6.4` 精确指向 `2bcc305002c3b034ab849f9a88d80de5c738be18`、38 资产、Formal Release 四阶段全部成功、Dependabot/CodeQL/OSV 四条 CI 全绿），以 **v0.6.5 于 2026-08-13 正式公开发行**（tag `v0.6.5` 精确指向 `1165c470f746bbd6b9256d30e89d25c302647a1d`、38 资产、修复 install-agent.sh 下载资产未 `chmod 0755` 的升级阻断缺陷）。v0.6.4 修复两个阻塞：Agent `--version` 此前用 Go 内建 `println()` 打印到 stderr，v0.6.3 事务式安装器只捕获 stdout，导致任何现网 Agent 被判为 `current_version_invalid`、整批升级在写入前被拒——`155e2cf` 改为 `fmt.Fprintf(os.Stdout)` 且安装器同时读两流并 fail-closed；OSV-Scanner 报 `nanoid 3.3.16`（GHSA-2v37-7h3g-55p8，postcss 传递依赖）——`2bcc305` 用 pnpm override 升到 3.3.17，未添加例外。API 基础镜像切换为 `python:3.12-alpine`、Web runtime 剔除 npm/corepack/yarn，漏洞被结构性消除，未添加例外。`v0.6.2` 被漏洞门阻断于发布前，tag 保留为未发布 draft、不移动。批次 A 生产金丝雀已于 2026-08-13 全部通过（Agent v0.4.2 → v0.6.5 事务式升级、失败自动回退、控制平面 0.6.3 → 0.6.5，schema `0020` no-op），批次 A 标记为生产完成。M6.1d 的密钥/配置灾备清单、加密异地副本和 RPO/RTO 演练仍仅有设计。统一设计与测试/金丝雀边界见 [POST_M6_RELIABILITY_SECURITY.md](./POST_M6_RELIABILITY_SECURITY.md)。Web SSH/实时终端不属于 M6 完成范围，继续单独威胁建模。
+
+证据边界：上段“失败自动回退”由 root/真实 systemd 集成测试证明；生产执行的是不支持路径在任何写入前 exit 20 的 fail-closed 复检，不是生产自动回退演练。该区分不改变批次 A 已关闭的结论。
 
 Web UI 的初步信息架构、首页定位和分阶段设计见 [WEB_UI_PLAN.md](./WEB_UI_PLAN.md)。
 

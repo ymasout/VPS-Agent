@@ -1,0 +1,26 @@
+{
+  "format_version": "m6.1d-policy-v1",
+  "instance_id": "replace-with-production-instance-id",
+  "age_binary": "/opt/vps-agent/tools/age/1.3.1/age",
+  "recipients_file": "/etc/vps-agent/backup-recipients.txt",
+  "package_root": "/var/backups/vps-agent-console-encrypted",
+  "database_backup_root": "/var/backups/vps-agent-console",
+  "audit_root": "/var/log/vps-agent-disaster-recovery",
+  "control_plane_version": "0.6.5",
+  "control_plane_commit_sha": "1165c470f746bbd6b9256d30e89d25c302647a1d",
+  "alembic_revision": "0020_m6_named_approval",
+  "postgres_major": 16,
+  "files": {
+    "config": [
+      {"name": "compose.production.yaml", "path": "/opt/vps-agent/current/deploy/compose.production.yaml"},
+      {"name": "Caddyfile", "path": "/opt/vps-agent/current/deploy/caddy/Caddyfile"}
+    ],
+    "secrets": [
+      {"name": ".env.production", "path": "/opt/vps-agent/current/deploy/.env.production"}
+    ]
+  },
+  "replicas": [
+    {"failure_domain": "offline-site-a", "root": "/mnt/vps-agent-backup-a"},
+    {"failure_domain": "offline-site-b", "root": "/mnt/vps-agent-backup-b"}
+  ]
+}

@@ -10,7 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install checksum-pinned age toolchain
+        run: sudo sh deploy/install-age.sh
       - name: Run real PostgreSQL backup and isolated restore
+        env:
+          DR_AGE_BINARY: /opt/vps-agent/tools/age/1.3.1/age
         run: sh deploy/tests/m6-recovery-integration.sh
 
   release-compose:

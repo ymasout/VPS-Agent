@@ -6,11 +6,17 @@ BACKUP_PACKAGE=${2:-}
 REPO_ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 ENV_FILE=${ENV_FILE:-}
 COMPOSE_FILE=${COMPOSE_FILE:-$REPO_ROOT/deploy/compose.production.yaml}
+COMPOSE_OVERRIDE_FILE=${COMPOSE_OVERRIDE_FILE:-}
 RESTORE_AUDIT_DIR=${RESTORE_AUDIT_DIR:-$REPO_ROOT/.recovery-audit}
 
 dc() {
-    docker compose --project-name "$COMPOSE_PROJECT_NAME" \
-        --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+    if [ -n "$COMPOSE_OVERRIDE_FILE" ]; then
+        docker compose --project-name "$COMPOSE_PROJECT_NAME" \
+            --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$COMPOSE_OVERRIDE_FILE" "$@"
+    else
+        docker compose --project-name "$COMPOSE_PROJECT_NAME" \
+            --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+    fi
 }
 
 fail() {
@@ -25,9 +31,13 @@ case "$BACKUP_PACKAGE" in /*) ;; *) fail "backup package path must be absolute" 
     fail "backup package must be a real directory, not a symlink"
 [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ] || fail "ENV_FILE must name the isolated target environment"
 [ -f "$COMPOSE_FILE" ] || fail "required Compose file not found"
+if [ -n "$COMPOSE_OVERRIDE_FILE" ]; then
+    [ -f "$COMPOSE_OVERRIDE_FILE" ] && [ ! -L "$COMPOSE_OVERRIDE_FILE" ] || \
+        fail "required Compose override file not found or unsafe"
+fi
 case "${COMPOSE_PROJECT_NAME:-}" in
-    vps-agent-restore-*) ;;
-    *) fail "COMPOSE_PROJECT_NAME must start with vps-agent-restore-" ;;
+    vps-agent-restore-*|vps-agent-drill-*) ;;
+    *) fail "COMPOSE_PROJECT_NAME must start with vps-agent-restore- or vps-agent-drill-" ;;
 esac
 [ "${RESTORE_ISOLATED_TARGET:-}" = yes ] || \
     fail "RESTORE_ISOLATED_TARGET=yes is required"
@@ -55,7 +65,13 @@ manifest_size=$(sed -n 's/^[[:space:]]*"size_bytes":[[:space:]]*\([0-9][0-9]*\).
 actual_size=$(wc -c <"$BACKUP_PACKAGE/postgres.dump" | tr -d ' ')
 [ -n "$manifest_instance" ] && [ -n "$manifest_size" ] || fail "manifest is missing required fields"
 [ "$manifest_size" = "$actual_size" ] || fail "dump size does not match manifest"
-dc run -T --interactive --rm --no-deps api python -m app.recovery validate-manifest \
+[ -n "${RESTORE_SOURCE_INSTANCE_ID:-}" ] || \
+    fail "RESTORE_SOURCE_INSTANCE_ID must be supplied independently of the backup manifest"
+[ "$RESTORE_SOURCE_INSTANCE_ID" = "$manifest_instance" ] || \
+    fail "RESTORE_SOURCE_INSTANCE_ID does not match the backup instance id"
+dc run -T --interactive --rm --no-deps \
+    -e RESTORE_SOURCE_INSTANCE_ID="$RESTORE_SOURCE_INSTANCE_ID" \
+    api python -m app.recovery validate-manifest \
     <"$BACKUP_PACKAGE/manifest.json"
 
 if [ "$MODE" = inspect ]; then

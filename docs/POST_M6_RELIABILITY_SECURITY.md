@@ -1,11 +1,11 @@
 # M6 后续可靠性与公开发行安全加固设计
 
-状态：**批次 A 已实现、审计、通过 CI，并以 v0.6.3 于 2026-08-04 正式公开发行（候选 API/Web 四平台 Trivy 零 HIGH/CRITICAL），以 v0.6.4 于 2026-08-12 正式公开发行（tag `v0.6.4` 精确指向 `2bcc305002c3b034ab849f9a88d80de5c738be18`；修复 Agent `--version` 打印到 stderr 的事务式升级阻断缺陷 + 闭合 nanoid GHSA-2v37-7h3g-55p8 OSV 报警）。批次 B 仍仅有设计。** M6 已于 2026-08-02 收口；
-本文保留 M6.1c/M6.1d 名称只为延续既有追踪，不重新打开 M6。v0.6.4 生产升级与 Agent v0.4.2 → v0.6.4 事务式升级为独立授权金丝雀，尚未执行；
-不提前把批次 A 标记为生产完成。任何正式发行、生产升级、生产备份或恢复仍需分别授权。
+状态：**批次 A 已关闭；批次 B 已完成本地实现，待独立审计与 CI，真实异地副本、生产 recipient 与季度演练尚未执行。** M6 已于 2026-08-02 收口；
+本文保留 M6.1c/M6.1d 名称只为延续既有追踪，不重新打开 M6。批次 A 生产升级与 Agent 事务式升级金丝雀已以 v0.6.5 于 2026-08-13 完成；
+任何正式发行、生产升级、生产备份或恢复仍需分别授权。
 
-审计基线：仓库 `main`/`7c1d2b29b90ff984268d45024746299722a7dcdf`；v0.6.3 tag/发行制品 commit
-`7c1d2b29b90ff984268d45024746299722a7dcdf`；生产 API/Web 当前仍为 digest-pinned v0.6.1（`8746182`），数据库 revision
+审计基线：仓库 `main`/`1165c470f746bbd6b9256d30e89d25c302647a1d`；v0.6.5 tag/发行制品 commit
+`1165c470f746bbd6b9256d30e89d25c302647a1d`；生产 API/Web 当前为 digest-pinned v0.6.5，数据库 revision
 `0020_m6_named_approval`，Principal flags OFF。生产状态会变化，实施或金丝雀前必须重新核对。
 
 ## 1. 目标与范围
@@ -206,7 +206,7 @@
   只清理脚本创建且已验证位于专属临时根下的目标。
 - 外层 manifest 只保存格式版本、实例 ID、创建时间、应用 version/commit/revision、PostgreSQL major、密文大小/hash、
   固定组件状态和工具版本；不保存秘密值、连接串或可变远程路径。
-- 至少两份离机副本位于不同故障域；上传、保留和删除第一版保持管理员显式操作，不在脚本中实现任意对象存储 URL 或自动删除。
+- 至少两份离机副本位于不同故障域；脚本在两个目标根设备 ID 相同时输出固定告警，但设备 ID 不同仍不能替代物理故障域证据。上传、保留和删除第一版保持管理员显式操作，不在脚本中实现任意对象存储 URL 或自动删除。
 - 解密私钥不得保存在生产控制面、仓库、CI secret、Agent 或备份包中；每次演练先证明离线密钥可用。
 
 #### 6.2.1 age 密钥管理仪式
@@ -231,8 +231,9 @@
   数据库与秘密包至少保留两份加密异地副本并位于不同故障域；仅留在控制平面宿主机的副本不计入 RPO 达标证据。
 - 每月执行 manifest/hash/解密抽检；每季度在隔离 PostgreSQL/Compose 完成全链：解密 → DB restore → schema check →
   关键表一致性 → 配置/密钥存在性核对 → API/Web health/system-info。隔离控制面不得让生产 Agent 连接。
-- 演练只使用专用域名/网络/实例 ID 和临时凭据；真实 M4 私钥、管理 token、GitHub/通知凭据只验证“可恢复”，默认不连接外部服务。
-- 审计摘要仅记录恢复点 ID、版本/revision、各门布尔值、计数是否匹配、耗时、RPO/RTO 是否满足和稳定错误码。
+- 演练只使用专用域名/网络/实例 ID 和临时凭据；隔离 Compose 强制清空 M4 签名材料、Principal/Caddy 写凭据、Agent 操作密钥和 GitHub/通知/Provider 凭据，只保留演练专用 admin token。
+- 数据库包执行 24 小时时间门；配置/密钥采用变更驱动目标，解密后必须与当前可信策略 allowlist 的源文件集合、大小和 SHA-256 完全一致。历史包只能在对应历史 checkout 和经授权策略下演练。
+- 审计摘要仅记录恢复点 ID、版本/revision、各门布尔值、计数是否匹配、耗时、数据库 RPO、配置/密钥当前源匹配、RTO 和稳定错误码；底层异常路径不得进入 `error_code`。
 
 ## 7. 测试矩阵
 
@@ -243,7 +244,7 @@
 | release bundle | 签名与 hash、archive traversal/symlink/重复项、manifest/images.env 一致、错误 commit/schema/digest、原子暂存、release-check 只读 |
 | 发行安全 | Dependabot 配置、CodeQL 三语言、已知漏洞夹具失败、allowlist 过期失败、OCI digest 扫描、SBOM/digest 不一致失败、PR 无写权限/OIDC |
 | 灾备包 | allowlist、权限、无明文残留、错误 recipient、篡改/截断、错误实例/revision/PG major、缺失秘密、日志无凭据 |
-| 完整灾备 | 临时 PostgreSQL/Compose 解密恢复、schema/关键数据、空 Redis、外部集成禁用、RPO/RTO 计时和有限摘要 |
+| 完整灾备 | 临时 PostgreSQL/Compose 解密恢复、schema/关键数据、空 Redis、外部及控制平面写秘密强制清零、数据库 RPO/配置秘密当前源/RTO 门和有限摘要 |
 | 回归 | API/Web/Go、迁移双向/单 head、Recovery/Web/release Compose/Source Distribution、REUSE、`git diff --check` |
 
 ## 8. 生产与发行验证边界
@@ -296,6 +297,16 @@
 - 两批均通过独立安全审计、真实 Linux/PostgreSQL/Compose 验证和现有 CI；文档只记录实际证据。
 - 提交、推送、正式发行、生产 Agent 金丝雀、控制平面升级和灾备生产演练继续逐项取得明确授权。
 
+## 10.1 批次 B 本地实现记录（2026-08-14）
+
+- release Compose 已清除 API 继承的三项 `CONTROL_PLANE_*` 身份；release spec 对每一项精确失败关闭，集成门使用旧 sentinel 值验证 system-info 仍返回镜像身份。
+- 新增官方 age v1.3.1 linux-amd64 固定 archive SHA-256 安装器和运行时二进制 hash marker；灾备执行不联网下载，也不接受 PATH 中未知 age。
+- PostgreSQL 原子包、固定配置 allowlist 和秘密 allowlist 分别生成独立 age 密文；每个密文同时面向两个 X25519 recipient，并绑定 instance/version/commit/revision/PostgreSQL 16、recipient set 与密文 hash。
+- 两个目标根必须具有不同路径和故障域标识；设备 ID 相同时记录固定告警。副本经临时目录复制、复核并原子发布，不覆盖、不自动删除。每日数据库 systemd timer 使用固定绝对路径和 `flock`；配置/秘密只在受控变更后显式调用。
+- 月度检查要求管理员显式提供 `0600` identity 并真实解密；季度工具只接受 `vps-agent-drill-*` 隔离项目与独立实例/凭据，源实例 ID 由可信策略独立提供，使用 internal-only 网络并强制清空外部集成及控制平面写秘密。恢复配置/秘密与空 PostgreSQL 后验证 schema、关键数据、health、system-info，输出数据库 86400 秒 RPO、配置/秘密当前源匹配与 14400 秒 RTO 的硬门摘要。
+- 明文 tar 与 age 解密输出显式以 `0600` 创建，age 大包超时为 1800 秒；审计失败仅记录稳定错误码，不记录原始异常路径。工具链仅声明实际支持的 `linux-amd64` age 资产。
+- 当前状态仍不是生产灾备完成：未选择两个真实异地存储位置/凭据，未安装生产 recipient，未生成或上传生产副本，未执行季度恢复演练或生产恢复。详见 [M6_DISASTER_RECOVERY.md](./M6_DISASTER_RECOVERY.md)。
+
 ## 11. 首次设计审计处置（2026-08-02）
 
 | 审计项 | 处置 |
@@ -338,5 +349,6 @@
 - P3 观察项：升级后的 FastAPI/Starlette 测试环境提示 `TestClient` 的 httpx 2 兼容路径及旧 `HTTP_422_UNPROCESSABLE_ENTITY`
   常量将在上游弃用；当前行为与全量测试均通过，后续应在依赖正式移除前完成适配，不作为批次 A 阻断项。
 - 独立审计无 P0/P1；P2/P3 均已确认无需改动，FastAPI `0.116.1 -> 0.141.1` 的全量回归证据已明确保留。
-- 尚未完成：推送后的 GitHub CodeQL/OSV/Source Distribution 实跑、下一正式版本的 candidate Trivy，
-  以及经单独授权的 Agent 与 bundle 生产金丝雀。因此批次 A 当前只能称“本地已实现”，不能称“已发布/生产完成”。
+- **当时尚未完成：**推送后的 GitHub CodeQL/OSV/Source Distribution 实跑、下一正式版本的 candidate Trivy，
+  以及经单独授权的 Agent 与 bundle 生产金丝雀。因此在 2026-08-02 当时，批次 A 只能称“本地已实现”。该历史状态已由
+  2026-08-13 的 v0.6.5 发行、真实 systemd 回退验证和生产金丝雀取代；当前结论以上文状态栏为准。

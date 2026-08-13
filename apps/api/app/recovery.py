@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import os
 import secrets
 import sys
 from datetime import datetime, timezone
@@ -216,7 +217,10 @@ def validate_manifest() -> None:
     manifest = _load_stdin(BackupManifest)
     settings = get_settings()
     errors: list[str] = []
-    if manifest.instance_id != settings.control_plane_instance_id:
+    expected_source_instance = os.environ.get(
+        "RESTORE_SOURCE_INSTANCE_ID", settings.control_plane_instance_id
+    )
+    if manifest.instance_id != expected_source_instance:
         errors.append("control-plane instance id does not match backup")
     if manifest.control_plane_version != settings.control_plane_version:
         errors.append("control-plane version does not match backup")

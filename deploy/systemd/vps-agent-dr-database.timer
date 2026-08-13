@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily VPS Agent encrypted database disaster-recovery backup
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=30m
+Unit=vps-agent-dr-database.service
+
+[Install]
+WantedBy=timers.target

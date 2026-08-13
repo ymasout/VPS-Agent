@@ -1,0 +1,19 @@
+[Unit]
+Description=VPS Agent encrypted daily database disaster-recovery backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStart=/usr/local/libexec/vps-agent/run-database-backup
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/backups/vps-agent-console /var/backups/vps-agent-console-encrypted /var/log/vps-agent-disaster-recovery /mnt/vps-agent-backup-a /mnt/vps-agent-backup-b /run/lock
+
+[Install]
+WantedBy=multi-user.target

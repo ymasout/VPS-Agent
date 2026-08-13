@@ -19,6 +19,24 @@ def test_release_spec_matches_repository_coordinates() -> None:
     assert result["agent_upgrade_from"] == ["0.4.2", "0.6.1", "0.6.3", "0.6.4"]
 
 
+def test_release_compose_resets_all_api_build_identity_overrides() -> None:
+    override = (release.ROOT / "deploy" / "release" / "compose.release.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert release.validate_release_compose(override) == []
+
+
+@pytest.mark.parametrize("missing", release.RELEASE_API_IDENTITY_RESETS)
+def test_release_compose_fails_closed_when_api_identity_reset_is_missing(missing: str) -> None:
+    override = (release.ROOT / "deploy" / "release" / "compose.release.yaml").read_text(
+        encoding="utf-8"
+    )
+    broken = override.replace(f"      {missing}: !reset null\n", "", 1)
+    assert release.validate_release_compose(broken) == [
+        f"release Compose must reset API {missing} exactly once"
+    ]
+
+
 def test_agent_upgrade_metadata_is_exact_and_commit_bound() -> None:
     spec = release.validate_spec()
     result = release.build_agent_upgrade_metadata(spec, "a" * 40)

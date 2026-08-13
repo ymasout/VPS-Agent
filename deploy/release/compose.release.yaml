@@ -14,6 +14,10 @@ services:
   api:
     image: ${VPS_AGENT_API_IMAGE:?set digest-pinned VPS_AGENT_API_IMAGE}
     build: !reset null
+    environment:
+      CONTROL_PLANE_VERSION: !reset null
+      CONTROL_PLANE_COMMIT_SHA: !reset null
+      CONTROL_PLANE_BUILD_TIME: !reset null
     pull_policy: always
 
   postgres:
