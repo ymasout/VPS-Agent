@@ -1,6 +1,6 @@
 # M6.1d 灾备闭环运行手册
 
-状态：**本地实现，待独立审计与 CI；尚未配置真实异地存储、生产 recipient 或执行生产/季度演练。**
+状态：**已实现并通过独立审计；备份/复制链路已于 2026-08-16 生产激活（age 工具链、root-owned 策略与双 public recipient、每日 systemd timer、本地 + 异地 SSHFS 双副本，沙箱全链实测通过）；仍待月度解密抽检与季度演练以证明真实 RPO/RTO 还原。**
 
 本文描述管理员宿主机上的离线灾备工具。它没有 API、Web、Provider、Agent 或 M4 Operation 入口，不能覆盖生产数据库，也不会自动删除任何备份。
 
@@ -43,8 +43,25 @@
 
 生产数据库、生产 Compose 项目、生产域名或真实 Agent 都不得作为演练目标。真实生产恢复仍是事故级单独授权。
 
+## 生产激活记录（2026-08-16）
+
+备份/复制链路已在生产主机激活，覆盖数据库包每日自动备份：
+
+- 生产已安装 age v1.3.1、root-owned 策略与双 public recipient（0600）；副本根为本地盘 + 异地 SSHFS 挂载（备份 VPS）。
+- 每日 systemd timer（`vps-agent-dr-database.timer`，daily + `RandomizedDelaySec=30m`）驱动 `run-database-backup`；沙箱实测 `ProtectSystem=strict` 下 pg_dump→age 加密→双副本全链 exit 0，`replicate` 返回 `warnings:[]`（两副本不同设备）。
+- 异地挂载经 fstab + `x-systemd.automount` 持久化（`reconnect` + ServerAlive keepalive）。
+- 配置与秘密包仍按变更显式执行，不依赖每日 timer。
+
+激活期间处理的三个宿主机运维坑（非代码，供复跑参考）：
+
+1. SSHFS 无 `reconnect` 会在空闲掉线后挂起不报错（卡在 `os.chmod`），需 `reconnect` + `ServerAliveInterval`/`ServerAliveCountMax`。
+2. systemd 单元名里字面连字符必须转义 `\x2d`（如 `/mnt/vps-agent-backup-b` → `mnt-vps\x2dagent\x2dbackup\x2db.mount`），用 `systemd-escape --path` 计算，否则 `grep` 原名会漏掉转义单元。
+3. fuse 经 `mount -t fuse.sshfs -o` 不能传 `user_id=0,group_id=0`（报 `fuse: unknown option`），root 挂载默认即 0，直接删除。
+
+对应代码修复 `c2a6a80`：`run-database-backup` 从 policy 派生 ENV/COMPOSE 路径，不再硬编码 `/opt/vps-agent/current`。
+
 ## 当前外部阻断与授权边界
 
-- 仓库只实现两个目标根/挂载点的适配边界；尚未选择存储提供商、真实位置或凭据，因此不能宣称“两份真实异地副本”已完成。
-- 未经单独授权，不得安装生产 recipient、复制生产包、执行季度演练、提交/推送，或执行任何生产恢复。
-- 本地/CI 证明不能替代真实故障域、生产 RPO 新鲜度或季度 RTO 证据；设备 ID 相同会告警，但设备 ID 不同也不能单独证明物理异地。
+- 上述激活只覆盖“持续备份”，不覆盖“真实还原证明”：月度解密抽检与季度演练仍未执行，需管理员临时接入离线 identity（季度演练另需隔离 env），仍需单独授权。
+- 设备 ID 不同只证明两副本在不同设备，不能单独证明物理异地；真实故障域仍需外部存储证据（备份 VPS 的物理位置/所有权）单独确认。
+- 未经单独授权，仍不得执行季度演练、生产恢复，或把私钥放入生产/备份主机；本地/CI 证明不能替代生产 RPO 新鲜度或季度 RTO 证据。
