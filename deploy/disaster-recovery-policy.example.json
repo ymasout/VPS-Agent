@@ -12,11 +12,11 @@
   "postgres_major": 16,
   "files": {
     "config": [
-      {"name": "compose.production.yaml", "path": "/opt/vps-agent/current/deploy/compose.production.yaml"},
-      {"name": "Caddyfile", "path": "/opt/vps-agent/current/deploy/caddy/Caddyfile"}
+      {"name": "compose.production.yaml", "path": "/opt/vps-agent-console/deploy/compose.production.yaml"},
+      {"name": "Caddyfile", "path": "/opt/vps-agent-console/deploy/caddy/Caddyfile"}
     ],
     "secrets": [
-      {"name": ".env.production", "path": "/opt/vps-agent/current/deploy/.env.production"}
+      {"name": ".env.production", "path": "/opt/vps-agent-console/deploy/.env.production"}
     ]
   },
   "replicas": [

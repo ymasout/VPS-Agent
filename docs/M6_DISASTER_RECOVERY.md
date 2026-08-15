@@ -32,7 +32,7 @@
 月度抽检必须由管理员临时接入其中一把离线 identity 并显式运行：
 
 ```text
-/opt/vps-agent/current/deploy/control-plane-disaster-recovery.sh monthly-check <encrypted-package> <identity-file>
+/usr/local/libexec/vps-agent/control-plane-disaster-recovery.sh monthly-check <encrypted-package> <identity-file>
 ```
 
 该命令不仅检查文件存在，还实际执行 age 解密、tar 全成员验证，并在 `0700` 临时根内工作；无论成功或异常均清理明文。季度应轮换使用两把 identity，以证明 1-of-2 可用性。

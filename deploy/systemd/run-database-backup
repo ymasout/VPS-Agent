@@ -1,7 +1,27 @@
 #!/bin/sh
 set -eu
-export ENV_FILE=/opt/vps-agent/current/deploy/.env.production
-export COMPOSE_FILE=/opt/vps-agent/current/deploy/compose.production.yaml
+
+POLICY=${DR_POLICY_FILE:-/etc/vps-agent/disaster-recovery.json}
+[ -f "$POLICY" ] && [ ! -L "$POLICY" ] || { echo "disaster recovery policy is missing or unsafe" >&2; exit 1; }
+
+policy_path() {
+    python3 - "$POLICY" "$1" "$2" <<'PY'
+import json, sys
+policy = json.load(open(sys.argv[1], encoding="utf-8"))
+kind, name = sys.argv[2], sys.argv[3]
+for entry in policy["files"][kind]:
+    if entry.get("name") == name:
+        print(entry["path"])
+        break
+else:
+    raise SystemExit("policy files." + kind + " is missing " + name)
+PY
+}
+
+ENV_FILE=$(policy_path secrets .env.production)
+COMPOSE_FILE=$(policy_path config compose.production.yaml)
+export ENV_FILE COMPOSE_FILE
+
 for root_file in "$ENV_FILE" "$COMPOSE_FILE"; do
   [ -f "$root_file" ] && [ ! -L "$root_file" ] || { echo "required production input is missing or unsafe" >&2; exit 1; }
   [ "$(stat -c %u "$root_file")" = 0 ] || { echo "production inputs must be root-owned" >&2; exit 1; }
@@ -9,5 +29,6 @@ for root_file in "$ENV_FILE" "$COMPOSE_FILE"; do
     ?[2367]?|??[2367]) echo "production inputs must not be group/other writable" >&2; exit 1 ;;
   esac
 done
+
 package=$(/usr/local/libexec/vps-agent/control-plane-backup.sh disaster-recovery)
 exec /usr/local/libexec/vps-agent/control-plane-disaster-recovery.sh database "$package"
