@@ -52,6 +52,27 @@ sh deploy/control-plane-release.sh preflight
 After explicit approval, run `migrate`, `release-up`, `reload-caddy`, then `postflight`. `release-up` always passes
 `--no-build`; a missing image fails instead of silently rebuilding local source. The preflight backup remains mandatory.
 
+After postflight succeeds, update the operational checkout so later root-owned runbooks and disaster-recovery tools do
+not remain pinned to an older source tree:
+
+```bash
+cd /opt/vps-agent-console
+git pull --ff-only
+CHECKOUT_HEAD=$(git rev-parse HEAD)
+RUNNING_COMMIT=$(curl --fail --silent --show-error \
+  -u "$CADDY_ADMIN_USER:$CADDY_ADMIN_PASSWORD" \
+  -H "X-Admin-Token: $ADMIN_API_TOKEN" \
+  "https://$CONTROL_PLANE_DOMAIN/api/v1/system-info" | jq -r '.commit_sha')
+git merge-base --is-ancestor "$RUNNING_COMMIT" "$CHECKOUT_HEAD"
+```
+
+Record both commits in the release audit. `RUNNING_COMMIT` must exactly match the approved release manifest/tag and
+image labels. The checkout may be newer when main contains later documentation or root-runbook fixes, so it need not
+equal `RUNNING_COMMIT`; it must contain that commit and must be the explicitly reviewed operational HEAD. A dirty tree,
+non-fast-forward update, missing ancestry, or unexpected checkout commit stops the procedure. The 2026-08-16 manual
+fast-forward to `59559d3` established this operational-checkout baseline without changing config/secret source files or
+invalidating the existing encrypted packages.
+
 The signed release bundle contains a deterministically generated, non-secret `deploy/release/images.env` whose five
 values match `release-manifest.json`. `scripts/stage_release.py` verifies the archive and checksum signatures against the
 fixed release workflow identity, rejects links/path traversal/unknown members, validates the manifest and five digests,

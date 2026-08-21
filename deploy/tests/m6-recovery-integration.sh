@@ -175,6 +175,31 @@ sed \
     -e 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=drill-only-postgres-password/' \
     -e 's/^ADMIN_API_TOKEN=.*/ADMIN_API_TOKEN=drill-only-admin-token-000000000000000000000000/' \
     "$ENV_FILE" >"$drill_env"
+missing_caddy_env="$TEST_ROOT/drill-missing-caddy.env"
+sed '/^CADDY_APPROVER_PASSWORD_HASH=/d' "$drill_env" >"$missing_caddy_env"
+if DR_POLICY_FILE="$TEST_ROOT/dr-policy.json" \
+    DR_TOOL="$REPO_ROOT/scripts/disaster_recovery.py" \
+    DR_DRILL_LOCK_FILE=/tmp/vps-agent-disaster-recovery-drill.lock \
+    COMPOSE_PROJECT_NAME="vps-agent-drill-missing-caddy-$$" \
+    sh "$REPO_ROOT/deploy/control-plane-drill.sh" \
+        "$encrypted_package" "$config_package" "$secret_package" "$identity_a" \
+        "$missing_caddy_env" "$TEST_ROOT/drill-missing-caddy-audit"; then
+    echo "drill env missing a required Caddy placeholder was unexpectedly accepted" >&2
+    exit 1
+fi
+wrong_database_env="$TEST_ROOT/drill-wrong-database.env"
+sed 's/^POSTGRES_DB=.*/POSTGRES_DB=wrong_drill_database/' \
+    "$drill_env" >"$wrong_database_env"
+if DR_POLICY_FILE="$TEST_ROOT/dr-policy.json" \
+    DR_TOOL="$REPO_ROOT/scripts/disaster_recovery.py" \
+    DR_DRILL_LOCK_FILE=/tmp/vps-agent-disaster-recovery-drill.lock \
+    COMPOSE_PROJECT_NAME="vps-agent-drill-wrong-database-$$" \
+    sh "$REPO_ROOT/deploy/control-plane-drill.sh" \
+        "$encrypted_package" "$config_package" "$secret_package" "$identity_a" \
+        "$wrong_database_env" "$TEST_ROOT/drill-wrong-database-audit"; then
+    echo "drill env with an incompatible PostgreSQL database was unexpectedly accepted" >&2
+    exit 1
+fi
 drill_config=$(docker compose --env-file "$drill_env" \
     -f "$REPO_ROOT/deploy/compose.production.yaml" \
     -f "$REPO_ROOT/deploy/compose.disaster-recovery.yaml" \

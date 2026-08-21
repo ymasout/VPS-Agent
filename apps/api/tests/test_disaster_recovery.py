@@ -346,6 +346,17 @@ def test_drill_and_timer_keep_rto_and_manual_key_boundaries() -> None:
     assert '"config_restored":True' in drill
     assert '"instance_isolated":sys.argv[6] != sys.argv[7]' in drill
     assert '"production_agent_connectivity":False' in drill
+    for variable in (
+        "CADDY_ADMIN_USER",
+        "CADDY_ADMIN_PASSWORD_HASH",
+        "CADDY_OPERATOR_USER",
+        "CADDY_OPERATOR_PASSWORD_HASH",
+        "CADDY_APPROVER_USER",
+        "CADDY_APPROVER_PASSWORD_HASH",
+    ):
+        assert f'"{variable}"' in drill
+    assert "isolated env POSTGRES_DB must exactly match" in drill
+    assert "isolated env POSTGRES_USER must exactly match" in drill
     assert "OnCalendar=daily" in timer and "Persistent=true" in timer
     assert "ExecStart=/usr/local/libexec/vps-agent/run-database-backup" in service
     assert "install -d -o root -g root -m 0755 /usr/local/libexec/vps-agent" in installer
@@ -365,3 +376,16 @@ def test_isolated_compose_resets_control_plane_write_credentials() -> None:
         "PRINCIPAL_VIEWER_IDS",
     ):
         assert f"{variable}: !reset null" in override
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Git executable bits are POSIX-only")
+def test_disaster_recovery_shell_entrypoints_are_executable() -> None:
+    root = Path(__file__).resolve().parents[3]
+    paths = (
+        *sorted((root / "deploy").glob("control-plane-*.sh")),
+        *sorted((root / "deploy").glob("install-*.sh")),
+        root / "deploy" / "systemd" / "run-database-backup",
+        *sorted((root / "deploy" / "tests").glob("*.sh")),
+    )
+    assert paths
+    assert all(os.access(path, os.X_OK) for path in paths)

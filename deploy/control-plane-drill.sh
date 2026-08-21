@@ -32,6 +32,37 @@ case "$AUDIT_DIR" in /*) ;; *) echo "audit directory must be absolute" >&2; exit
 case "$AUDIT_DIR" in /|/tmp|/var|/opt|/home|/root) echo "audit directory is too broad" >&2; exit 1 ;; esac
 [ ! -L "$AUDIT_DIR" ] || { echo "audit directory must not be a symlink" >&2; exit 1; }
 [ -f "$ENV_FILE" ] && [ ! -L "$ENV_FILE" ] || { echo "isolated env file is missing or unsafe" >&2; exit 1; }
+"$PYTHON_BIN" - "$(python_path "$ENV_FILE")" <<'PY'
+import sys
+from pathlib import Path
+
+required = (
+    "CADDY_ADMIN_USER",
+    "CADDY_ADMIN_PASSWORD_HASH",
+    "CADDY_OPERATOR_USER",
+    "CADDY_OPERATOR_PASSWORD_HASH",
+    "CADDY_APPROVER_USER",
+    "CADDY_APPROVER_PASSWORD_HASH",
+)
+values = {}
+for raw_line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith("#"):
+        continue
+    if line.startswith("export "):
+        line = line[7:].lstrip()
+    key, separator, value = line.partition("=")
+    if separator:
+        values[key.strip()] = value.strip()
+missing = [key for key in required if not values.get(key)]
+if missing:
+    print(
+        "isolated env must define non-empty Caddy Compose placeholders: "
+        + ", ".join(missing),
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+PY
 mkdir -p "$AUDIT_DIR"; chmod 700 "$AUDIT_DIR"
 LOCK=${DR_DRILL_LOCK_FILE:-/run/lock/vps-agent-disaster-recovery-drill.lock}
 case "$LOCK" in /run/lock/*|/tmp/vps-agent-disaster-recovery-drill.lock) ;; *) echo "drill lock path is unsafe" >&2; exit 1 ;; esac
@@ -79,6 +110,27 @@ drill_instance=$(sed -n 's/^CONTROL_PLANE_INSTANCE_ID=//p' "$ENV_FILE")
 [ -n "$source_instance" ] && [ -n "$expected_source_instance" ] && [ -n "$drill_instance" ] || { echo "source or drill instance id is missing" >&2; exit 1; }
 [ "$source_instance" = "$expected_source_instance" ] || { echo "database package instance does not match the trusted disaster recovery policy" >&2; exit 1; }
 [ "$source_instance" != "$drill_instance" ] || { echo "isolated drill must use an independent instance id" >&2; exit 1; }
+dc config --format json >"$WORK/compose.json"
+"$PYTHON_BIN" - "$(python_path "$WORK/database/database/manifest.json")" "$(python_path "$WORK/compose.json")" <<'PY'
+import json, sys
+from pathlib import Path
+
+manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+compose = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+environment = compose["services"]["postgres"]["environment"]
+if environment.get("POSTGRES_DB") != manifest["database_name"]:
+    print(
+        "isolated env POSTGRES_DB must exactly match the backup database name",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+if environment.get("POSTGRES_USER") != manifest["database_role"]:
+    print(
+        "isolated env POSTGRES_USER must exactly match the backup database role",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+PY
 package_age_seconds() {
   "$PYTHON_BIN" - "$(python_path "$1/manifest.json")" <<'PY'
 import json, sys

@@ -1,6 +1,6 @@
 # M6.1d 灾备闭环运行手册
 
-状态：**已实现并通过独立审计；备份/复制链路已于 2026-08-16 生产激活（age 工具链、root-owned 策略与双 public recipient、每日 systemd timer、本地 + 异地 SSHFS 双副本，沙箱全链实测通过）；仍待月度解密抽检与季度演练以证明真实 RPO/RTO 还原。**
+状态：**已实现并通过独立审计；备份/复制链路已于 2026-08-16 生产激活（age 工具链、root-owned 策略与双 public recipient、每日 systemd timer、本地 + 异地 SSHFS 双副本，沙箱全链实测通过）；月度解密抽检与季度演练已于 2026-08-16 通过（RPO 24h / RTO 4h 门达标），批次 B 收口。**
 
 本文描述管理员宿主机上的离线灾备工具。它没有 API、Web、Provider、Agent 或 M4 Operation 入口，不能覆盖生产数据库，也不会自动删除任何备份。
 
@@ -39,6 +39,19 @@
 
 季度完整演练使用 `control-plane-drill.sh`，输入明确的数据库包、配置包、秘密包、离线 identity、独立实例 ID/凭据的隔离 env 和审计目录。源实例 ID 必须由 root-owned 策略独立提供，不能从待校验 manifest 回填。脚本只接受 `vps-agent-drill-*` 项目，使用 internal-only Compose 网络，强制清空通知、GitHub、外部 Provider、M4 签名、Principal/Caddy 写凭据和 Agent 操作密钥，不启动 Caddy、不包含 Agent；只保留演练专用 `ADMIN_API_TOKEN`。随后执行三类包解密、配置/秘密与当前可信策略源逐文件大小及 SHA-256 复核、数据库 24 小时 RPO 门、空 PostgreSQL 恢复、schema/关键数据检查、API/Web 启动、`/healthz` 和受保护 system-info。机器可读摘要分别记录三类包龄、数据库 `86400` 秒 RPO 门、配置/秘密变更驱动新鲜度与 `14400` 秒 RTO 门；数据库 RPO 或 RTO 未达标、配置/秘密与当前可信源不一致时命令失败，不输出会把三类语义混为一谈的总 `rpo_met`。
 
+隔离 env 必须显式包含以下六个非空 Caddy Compose 占位值，否则基础 Compose 的必填插值会在应用灾备 override 前失败。值可为演练专用占位内容，因为 Caddy 带 `never` profile、不会启动，三个密码哈希随后还会由 override 清除；不得复制生产密码或哈希：
+
+```text
+CADDY_ADMIN_USER=drill-admin
+CADDY_ADMIN_PASSWORD_HASH=drill-unused-admin-hash
+CADDY_OPERATOR_USER=drill-operator
+CADDY_OPERATOR_PASSWORD_HASH=drill-unused-operator-hash
+CADDY_APPROVER_USER=drill-approver
+CADDY_APPROVER_PASSWORD_HASH=drill-unused-approver-hash
+```
+
+`POSTGRES_DB` 与 `POSTGRES_USER` 必须分别精确等于数据库备份 manifest 中的生产库名和角色；这是恢复兼容坐标，不是生产凭据。只有 `POSTGRES_PASSWORD` 必须换成演练专用随机值。脚本会在创建隔离数据库前显式核对以上条件并给出有限错误，不再把 Compose 插值或恢复层异常当作操作提示。
+
 配置和秘密的承诺是“每次受控变更后立即备份”，不是按小时计算的 RPO。演练当前版本时必须与当前策略 allowlist 的源文件完全一致；若要演练历史配置包，必须先取得对应历史 checkout 和经授权的历史策略/源文件，不能拿当前 checkout 直接比较并宣称通过。
 
 生产数据库、生产 Compose 项目、生产域名或真实 Agent 都不得作为演练目标。真实生产恢复仍是事故级单独授权。
@@ -60,8 +73,15 @@
 
 对应代码修复 `c2a6a80`：`run-database-backup` 从 policy 派生 ENV/COMPOSE 路径，不再硬编码 `/opt/vps-agent/current`。
 
+## 还原证明记录（2026-08-16）
+
+月度解密抽检与季度演练均已通过，批次 B 收口：
+
+- 月度解密抽检 `monthly-check`：用离线 identity-a 对 `database-20260815T173004Z-3867566` 执行真实解密校验（`decryption_performed=true`/`success=true`），identity 用后即 `shred -u` 删除。
+- 季度演练 `control-plane-drill.sh`：命令 exit 0，隔离 Compose 项目全栈恢复，postgres/redis/api/web 全部 Healthy；机器可读摘要 `drill-20260815T205713Z.json` 记录 `database_rpo_met=true`/`rto_met=true`/`schema_current=true`/`control_plane_healthy=true`/`instance_isolated=true`，`total_elapsed_seconds=248`，数据库包龄 `12183` 秒（24h RPO 门内）。
+
 ## 当前外部阻断与授权边界
 
-- 上述激活只覆盖“持续备份”，不覆盖“真实还原证明”：月度解密抽检与季度演练仍未执行，需管理员临时接入离线 identity（季度演练另需隔离 env），仍需单独授权。
+- “真实还原证明”已于 2026-08-16 完成：月度解密抽检（identity-a 解最新数据库包）与季度演练（`control-plane-drill.sh` 隔离全栈恢复）均通过，RPO 24h / RTO 4h 门达标。此后每次月度抽检与季度演练仍须管理员临时接入离线 identity 并单独授权，属持续运营而非一次性收口。
 - 设备 ID 不同只证明两副本在不同设备，不能单独证明物理异地；真实故障域仍需外部存储证据（备份 VPS 的物理位置/所有权）单独确认。
-- 未经单独授权，仍不得执行季度演练、生产恢复，或把私钥放入生产/备份主机；本地/CI 证明不能替代生产 RPO 新鲜度或季度 RTO 证据。
+- 未来每次季度演练、生产恢复仍须单独授权；私钥不得放入生产/备份主机。2026-08-16 演练已提供首份生产 RPO 新鲜度与季度 RTO 证据，后续仍须按季度轮换两把 identity 复证 1-of-2 可用性。

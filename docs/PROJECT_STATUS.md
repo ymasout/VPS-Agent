@@ -1,7 +1,7 @@
 # 项目状态
 
-最后同步：2026-08-14
-当前阶段：**M0–M6 已完成；批次 A 已关闭；批次 B 灾备闭环备份/复制链路已于 2026-08-16 生产激活，仍待月度解密抽检与季度演练（真实还原证明）**
+最后同步：2026-08-16
+当前阶段：**M0–M6 已完成；批次 A 已关闭；批次 B 灾备闭环已于 2026-08-16 收口（备份/复制链路生产激活 + 月度解密抽检 + 季度演练均通过），仅剩备份 VPS SSH 加固**
 
 ## 1. 当前结论
 
@@ -374,7 +374,7 @@ M6.4a 随后以 `ed4e584` 提交，并按 CI 失败证据完成三轮收敛：`3
 
 2026-08-14 批次 B 完成本地实现并处置首次安全审计：新增固定版本/checksum/安装 marker 的官方 age v1.3.1 工具链、数据库/配置/秘密独立加密包、两个目标根的原子复制与设备同源告警、每日 root-owned systemd 数据库备份、管理员显式月度实际解密抽检，以及 internal-only 隔离 Compose 季度演练。审计确认并修复两项 P1：演练 override 现强制清空 M4 签名、Principal/Caddy 写凭据与 Agent 操作密钥；恢复源实例 ID 必须由可信策略/操作者独立提供，不再从待校验 manifest 回填。数据库执行 24 小时 RPO，配置/秘密按当前可信源 hash 证明变更驱动新鲜度，控制平面 RTO 为 4 小时；明文文件 0600、稳定审计错误码和 1800 秒 age 超时也已加固。release override 同时在本地清除 API 三项运行时构建身份并增加 fail-closed 规范门。当前只可称“本地已实现、待 CI 与真实演练”；尚未选择真实外部存储、安装生产 recipient、生成生产副本或执行生产季度演练/生产恢复。详见 [M6_DISASTER_RECOVERY.md](./M6_DISASTER_RECOVERY.md)。
 
-2026-08-16 批次 B 备份/复制链路生产激活：生产主机已安装 age v1.3.1、root-owned 策略与双 public recipient（0600），副本根为本地盘 + 异地 SSHFS 挂载（备份 VPS）；每日 systemd timer 驱动 `run-database-backup`，沙箱实测 `ProtectSystem=strict` 下 pg_dump→age 加密→双副本全链 exit 0、`replicate` 返回 `warnings:[]`（两副本不同设备）；异地挂载经 fstab + `x-systemd.automount` 持久化（`reconnect` + keepalive）。期间修复 `c2a6a80`（备份路径从 policy 派生，不再硬编码 `/opt/vps-agent/current`）并处理 SSHFS `reconnect`、systemd `\x2d` 转义、fuse `user_id` 三个宿主机运维坑。此激活只覆盖“持续备份”，不覆盖“真实还原证明”：月度解密抽检、季度演练（RPO 24h / RTO 4h 门）与备份 VPS SSH 加固仍待单独授权执行；设备 ID 不同不能单独证明物理异地，真实故障域仍需外部存储证据。
+2026-08-16 批次 B 备份/复制链路生产激活：生产主机已安装 age v1.3.1、root-owned 策略与双 public recipient（0600），副本根为本地盘 + 异地 SSHFS 挂载（备份 VPS）；每日 systemd timer 驱动 `run-database-backup`，沙箱实测 `ProtectSystem=strict` 下 pg_dump→age 加密→双副本全链 exit 0、`replicate` 返回 `warnings:[]`（两副本不同设备）；异地挂载经 fstab + `x-systemd.automount` 持久化（`reconnect` + keepalive）。期间修复 `c2a6a80`（备份路径从 policy 派生，不再硬编码 `/opt/vps-agent/current`）并处理 SSHFS `reconnect`、systemd `\x2d` 转义、fuse `user_id` 三个宿主机运维坑。同日完成“真实还原证明”：月度解密抽检（identity-a 解 `database-20260815T173004Z`）与季度演练（`control-plane-drill.sh` exit 0、隔离全栈恢复，`database_rpo_met`/`rto_met`/`schema_current`/`control_plane_healthy`/`instance_isolated` 全 true，248 秒，数据库包龄 12183 秒）均通过，批次 B 标记为完成、M6.1d 收口；备份 VPS SSH 加固仍待单独授权执行。设备 ID 不同不能单独证明物理异地，真实故障域仍需外部存储证据。
 
 2026-07-27 M6.1 生产金丝雀通过：部署 `38b8d40`（注入 build version/commit/build time）+ postflight；`/api/v1/system-info` 返回 `commit_sha=38b8d40e76ea1c30497bbfa0f17d2b87aaa27977`、`version=0.6.1`、`schema_current=true`、`alembic_revision=["0017_m5_runbook_drafts"]`；`preflight` 生成原子备份包 `control-plane-pre-migration-20260727T131115Z`，`inspect` + 隔离空库 `restore` 成功，审计摘要 `schema_current=true`/`key_table_counts_match=true`/`active_operation_count=0`；恢复后 `ops=13/trans=81/agents=5` 与生产一致；生产 `ops/trans` 前后不变、日志无秘密、开关未变；隔离项目已清理，首份原子备份包保留（0700/0600）。M6.1 无 feature flag，`38b8d40` 留作运行基线。
 
