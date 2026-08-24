@@ -1,11 +1,17 @@
 # 项目状态
 
-最后同步：2026-08-16
-当前阶段：**M0–M6 已完成；批次 A 已关闭；批次 B 灾备闭环已于 2026-08-16 收口（备份/复制链路生产激活 + 月度解密抽检 + 季度演练均通过），仅剩备份 VPS SSH 加固**
+最后同步：2026-08-24
+当前阶段：**M0–M6、批次 A 与批次 B 均已完成；备份 VPS SSH 加固延后；M7.1a 已完成本地未提交实现，M7.1b 尚未开始**
 
 ## 1. 当前结论
 
 项目已完成工程骨架、“机器可见”和“异常可通知”里程碑。生产控制平面通过 Caddy/HTTPS 运行，Agent 使用一次性令牌注册、独立凭证认证和主动出站 HTTPS 上报；服务异常、去重、钉钉通知和恢复通知已经过生产杀手路径验证。
+
+M6 后续路线已冻结为 M7 Web UI 2.0、M8 结构化运维能力、M9 Web SSH/限时终端。批量服务映射确认归入 M7，自动诊断调度归入 M8；M7 页面重构期间 Provider 已决定保持 deterministic 已知良好基线并如实标为“规则分析”，真实 `http_json` 生产化作为独立后段运营切片。M6.4c3 具名审批生产金丝雀已有完整记录，不重新列为阻断。详细指导见 [POST_M6_NEXT_CHAPTERS.md](./POST_M6_NEXT_CHAPTERS.md)，M7 草案见 [M7_WEB_UI_2_DESIGN.md](./M7_WEB_UI_2_DESIGN.md)。
+
+2026-08-24 已冻结 [M7 总览页视觉基线](./assets/m7/overview-visual-baseline.png)：保留 KPI、需要关注、Fleet 健康、事件状态、Operation 进度、近期活动和系统信任摘要；Fleet 表的 CPU、内存、磁盘增加过去 24 小时 sparkline。该记录只确认设计资产，不代表 M7 页面代码或历史指标 API 已实现。
+
+同日完成 M7.1a 本地未提交实现：根布局现以响应式 AppShell 承载全部既有页面，增加设计 token、必要基础组件、桌面分组侧栏、紧凑顶栏、服务端可信 Principal 摘要、移动底部导航及带 Escape/焦点恢复的“更多”抽屉。导航只链接已有真实入口，未来列表保持不可点击，`/agent` 和所有既有详情深链未改。Web 106 项测试、ESLint、production build 以及 1440×900/390×844 本地视觉检查通过；没有新增依赖，也没有 API、数据库、Agent、Operation/Provider 或生产配置变更。M7.1b 的总览重组、Recharts 与 24 小时历史指标尚未开始。
 
 M1 的“至少 3 台真实或测试 VPS 稳定接入”验收线已经满足。本文早期 Fleet 数量、版本和 capability 仅为对应日期的历史快照：旧 aliyun-VPS 已被释放，2026-07-31 M6.4c 金丝雀改用新 aliyun-零时 Agent `v0.4.2`，具名 M4 全链完成后已还原服务 restart 授权。当前机器、Agent 版本和 capability 必须在每次生产操作前从实时 API/Agent 上报核对，不能从本文推断。
 
@@ -225,7 +231,7 @@ M3 阶段检查点曾通过 API 81 项测试、Web 22 项测试、全部 Go 包�
 - 当前 Web 流程支持逐个确认 Docker/systemd 服务；批量确认和自动推断部署目录仍未实现。现有手工配置暂时保留为兼容与故障排查入口。
 - 新稳定身份和 Web 映射流程已在 control-plane 生产金丝雀实证：容器重建后稳定键与映射不断。尚未直接实证两项：旧 Agent 不带 `AGENT_EVIDENCE_POLICY` 升级仍保持 `disabled`（安装器默认值保证，DMIT/腾讯未实机升级）；容器 ID->稳定键的 M2 事件/M3 映射迁移（金丝雀用新容器名、旧孤儿容器已删无迁移目标，仅隔离验证覆盖）。向更多 VPS 推广前应补这两项实机验证。
 - 自动发现不能取消权限边界：控制平面仍只能引用 Agent 已声明的受限能力，文件路径、日志窗口、字节数、持续时间和超时继续由 Agent 与控制平面双重校验。
-- Agent 失联/恢复、GitHub App 只读同步和 systemd journal 生产金丝雀均已通过（2026-07-20，见上）。剩余未做：真实 AI 模型网关（`http_json` 提供者）生产验收、文件日志、自动诊断调度、完整仓库同步和诊断体验增强。向更多 VPS 推广前还应补两项实机验证：旧 Agent 不带 `AGENT_EVIDENCE_POLICY` 升级仍 `disabled`、容器 ID->稳定键迁移（见上条）。
+- Agent 失联/恢复、GitHub App 只读同步和 systemd journal 生产金丝雀均已通过（2026-07-20，见上）。M3/M5 的真实 `http_json` 受控生产金丝雀后来均已完成并还原 deterministic；仍未做的是长期启用真实 Provider 所需的运营生产化、文件日志、自动诊断调度、完整仓库同步和诊断体验增强。向更多 VPS 推广前还应补两项实机验证：旧 Agent 不带 `AGENT_EVIDENCE_POLICY` 升级仍 `disabled`、容器 ID->稳定键迁移（见上条）。
 
 ### 已确认的终局产品方向（2026-07-19）
 

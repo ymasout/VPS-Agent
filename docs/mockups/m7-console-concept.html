@@ -1,0 +1,1729 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M7 控制台 · 设计概念 — VPS Agent</title>
+<style>
+/* ============================================================
+   M7 控制台设计概念 · 深色
+   Token 体系对齐 docs/M7_WEB_UI_2_DESIGN.md §10,
+   图表色值采用 dataviz 参考色板的深色验证集(表面 #1a1a19)。
+   页面数据为设计示例,非生产数据。
+   ============================================================ */
+:root {
+  color-scheme: dark;
+
+  /* 表面层级 */
+  --page:        #0d0d0d;   /* 页面平面 */
+  --surface-1:   #1a1a19;   /* 卡片 / 表格 */
+  --surface-2:   #222221;   /* 悬浮层:抽屉、下拉、行 hover */
+  --surface-3:   #2a2a28;   /* 最高层:模态 */
+  --border:      rgba(255,255,255,0.10);
+  --border-soft: rgba(255,255,255,0.055);
+
+  /* 文字 */
+  --ink-1: #ffffff;   /* 主文字 */
+  --ink-2: #c3c2b7;   /* 次文字 */
+  --ink-3: #898781;   /* 弱文字 / 轴标签 */
+
+  /* 图表 chrome */
+  --grid:     #2c2c2a;
+  --baseline: #383835;
+
+  /* 主强调:青绿(M7 §10 基线色) */
+  --accent:      #199e70;
+  --accent-tint: rgba(25,158,112,0.13);
+  --accent-line: rgba(25,158,112,0.32);
+  --focus:       rgba(25,158,112,0.55);
+
+  /* 系列(dataviz 深色验证集) */
+  --series-blue: #3987e5;
+
+  /* 状态(固定,不参与系列) */
+  --st-good-bg:     rgba(12,163,12,0.13);
+  --st-good-bd:     rgba(12,163,12,0.34);
+  --st-good-tx:     #0ca30c;   /* palette.md 深色 good 文字,5.19:1 */
+  --st-info-bg:     rgba(57,135,229,0.13);
+  --st-info-bd:     rgba(57,135,229,0.34);
+  --st-info-tx:     #6da7ec;
+  --st-warn-bg:     rgba(250,178,25,0.12);
+  --st-warn-bd:     rgba(250,178,25,0.32);
+  --st-warn-tx:     #fab219;
+  --st-danger-bg:   rgba(208,59,59,0.14);
+  --st-danger-bd:   rgba(208,59,59,0.36);
+  --st-danger-tx:   #e66767;   /* palette.md 深色红,≥3:1 */
+  --st-neutral-bg:  rgba(137,135,129,0.13);
+  --st-neutral-bd:  rgba(137,135,129,0.30);
+  --st-neutral-tx:  #a8a7a0;
+
+  /* 语义字体 */
+  --font-sans: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+
+  /* 尺寸 */
+  --radius: 10px;
+  --radius-sm: 8px;
+  --shadow-card: 0 0 0 1px var(--border-soft), 0 1px 0 rgba(255,255,255,0.03) inset, 0 10px 28px rgba(0,0,0,0.38);
+  --shadow-pop:  0 0 0 1px var(--border), 0 16px 48px rgba(0,0,0,0.55);
+
+  --z-drawer: 60;
+  --z-modal:  80;
+  --z-toast:  90;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--page);
+  color: var(--ink-1);
+  font: 13px/1.55 var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: rgba(25,158,112,0.32); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+
+button {
+  font: inherit; color: inherit; background: none; border: none;
+  cursor: pointer; padding: 0;
+}
+
+.mono { font-family: var(--font-mono); font-size: 12px; }
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #2e2e2c; border-radius: 6px; border: 2px solid var(--page); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ==================== 布局骨架 ==================== */
+.shell {
+  display: grid;
+  grid-template-columns: 232px 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ---------- 侧栏 ---------- */
+.sidebar {
+  display: flex; flex-direction: column;
+  background: linear-gradient(180deg, #121211 0%, #0f0f0e 100%);
+  border-right: 1px solid var(--border-soft);
+  overflow-y: auto;
+}
+.brand {
+  display: flex; align-items: center; gap: 10px;
+  padding: 18px 16px 14px;
+}
+.brand-mark {
+  width: 28px; height: 28px; border-radius: 8px; flex: none;
+  background: linear-gradient(135deg, rgba(25,158,112,0.25), rgba(25,158,112,0.06));
+  border: 1px solid var(--accent-line);
+  display: grid; place-items: center;
+  color: var(--accent);
+}
+.brand-name { font-size: 13.5px; font-weight: 650; letter-spacing: 0.01em; }
+.brand-sub { font-size: 10.5px; color: var(--ink-3); letter-spacing: 0.06em; }
+
+.nav { padding: 4px 10px 12px; flex: 1; }
+.nav-group { margin-top: 16px; }
+.nav-group-label {
+  font-size: 10.5px; font-weight: 650; letter-spacing: 0.08em;
+  color: var(--ink-3); text-transform: uppercase;
+  padding: 0 10px 6px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  padding: 7px 10px; border-radius: 7px;
+  color: var(--ink-2); font-size: 13px;
+  position: relative;
+  transition: background 0.15s, color 0.15s;
+  text-align: left;
+}
+.nav-item svg { flex: none; opacity: 0.75; }
+.nav-item:hover { background: rgba(255,255,255,0.045); color: var(--ink-1); text-decoration: none; }
+.nav-item[aria-current="page"] {
+  background: var(--accent-tint);
+  color: var(--ink-1);
+}
+.nav-item[aria-current="page"]::before {
+  content: ""; position: absolute; left: -10px; top: 6px; bottom: 6px;
+  width: 2.5px; border-radius: 2px; background: var(--accent);
+}
+.nav-item .nav-count {
+  margin-left: auto;
+  font-family: var(--font-mono); font-size: 10.5px;
+  color: var(--st-danger-tx);
+  background: var(--st-danger-bg);
+  border: 1px solid var(--st-danger-bd);
+  border-radius: 999px; padding: 0 6px; line-height: 17px;
+}
+.nav-item .nav-count.is-quiet { color: var(--ink-3); background: var(--st-neutral-bg); border-color: var(--st-neutral-bd); }
+
+.sidebar-foot {
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 11px; color: var(--ink-3);
+  display: flex; flex-direction: column; gap: 3px;
+}
+.sidebar-foot .mono { font-size: 10.5px; }
+.sidebar-foot a { color: var(--ink-3); }
+.sidebar-foot a:hover { color: var(--ink-2); }
+
+/* ---------- 主区 ---------- */
+.main { display: flex; flex-direction: column; overflow: hidden; }
+
+.topbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 28px; height: 56px; flex: none;
+  border-bottom: 1px solid var(--border-soft);
+  background: rgba(13,13,13,0.82);
+  backdrop-filter: blur(8px);
+  position: relative; z-index: 30;
+}
+.topbar-crumb { display: flex; align-items: center; gap: 8px; color: var(--ink-3); font-size: 12.5px; }
+.topbar-crumb .sep { opacity: 0.5; }
+.topbar-title { color: var(--ink-1); font-weight: 600; font-size: 14px; }
+.topbar-spacer { flex: 1; }
+
+.freshness { display: flex; align-items: center; gap: 8px; color: var(--ink-3); font-size: 12px; }
+.freshness .mono { color: var(--ink-2); }
+.pulse-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent); flex: none;
+  box-shadow: 0 0 0 0 rgba(25,158,112,0.5);
+  animation: pulse 2.4s ease-out infinite;
+}
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(25,158,112,0.45); }
+  70%  { box-shadow: 0 0 0 7px rgba(25,158,112,0); }
+  100% { box-shadow: 0 0 0 0 rgba(25,158,112,0); }
+}
+
+.icon-btn {
+  width: 30px; height: 30px; border-radius: 7px;
+  display: grid; place-items: center;
+  color: var(--ink-3); border: 1px solid transparent;
+  transition: background 0.15s, color 0.15s;
+}
+.icon-btn:hover { background: rgba(255,255,255,0.055); color: var(--ink-1); }
+
+.principal-chip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 10px 4px 5px; border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+}
+.principal-avatar {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--accent-tint); border: 1px solid var(--accent-line);
+  color: var(--accent); font-size: 11px; font-weight: 650;
+  display: grid; place-items: center;
+}
+.principal-chip .who { font-size: 12px; color: var(--ink-1); font-weight: 550; }
+.principal-chip .mode { font-size: 10.5px; color: var(--ink-3); }
+
+.content { overflow-y: auto; padding: 24px 28px 48px; }
+
+/* ==================== 通用组件 ==================== */
+.section { margin-top: 28px; }
+.section:first-child { margin-top: 0; }
+.section-head {
+  display: flex; align-items: baseline; gap: 10px;
+  margin-bottom: 12px;
+}
+.section-title { font-size: 14px; font-weight: 650; letter-spacing: 0.01em; }
+.section-hint { font-size: 12px; color: var(--ink-3); }
+.section-head .spacer { flex: 1; }
+.link-quiet { font-size: 12.5px; color: var(--ink-3); }
+.link-quiet:hover { color: var(--accent); text-decoration: none; }
+
+.card {
+  background: var(--surface-1);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+/* ---------- 状态胶囊:图标 + 文字 + 颜色,永不单靠颜色 ---------- */
+.pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; font-weight: 550; line-height: 1;
+  padding: 3.5px 9px; border-radius: 999px; white-space: nowrap;
+}
+.pill svg { width: 11px; height: 11px; }
+.pill--good    { background: var(--st-good-bg);    border: 1px solid var(--st-good-bd);    color: var(--st-good-tx); }
+.pill--info    { background: var(--st-info-bg);    border: 1px solid var(--st-info-bd);    color: var(--st-info-tx); }
+.pill--warning { background: var(--st-warn-bg);    border: 1px solid var(--st-warn-bd);    color: var(--st-warn-tx); }
+.pill--danger  { background: var(--st-danger-bg);  border: 1px solid var(--st-danger-bd);  color: var(--st-danger-tx); }
+.pill--neutral { background: var(--st-neutral-bg); border: 1px solid var(--st-neutral-bd); color: var(--st-neutral-tx); }
+
+/* ---------- 按钮 ---------- */
+.btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12.5px; font-weight: 550;
+  padding: 6px 14px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--ink-1);
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.btn:hover { background: #292927; border-color: rgba(255,255,255,0.16); }
+.btn:active { transform: translateY(0.5px); }
+.btn--primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: #04140d;
+  font-weight: 620;
+}
+.btn--primary:hover { background: #1cb37e; }
+.btn--ghost { background: transparent; border-color: transparent; color: var(--ink-2); }
+.btn--ghost:hover { background: rgba(255,255,255,0.055); color: var(--ink-1); border-color: transparent; }
+.btn--danger-ghost { background: transparent; border-color: var(--st-danger-bd); color: var(--st-danger-tx); }
+.btn--danger-ghost:hover { background: var(--st-danger-bg); }
+
+/* ==================== ① 需要关注 ==================== */
+.attention { position: relative; overflow: hidden; }
+.attention-list { display: flex; flex-direction: column; }
+.attention-item {
+  display: grid;
+  grid-template-columns: 4px 26px 1fr auto;
+  gap: 0 14px; align-items: center;
+  padding: 13px 20px;
+  border-top: 1px solid var(--border-soft);
+}
+.attention-item:first-child { border-top: none; }
+.attention-rail { height: 100%; min-height: 34px; border-radius: 2px; justify-self: start; width: 3px; }
+.attention-rail--danger  { background: var(--st-danger-tx); }
+.attention-rail--warning { background: var(--st-warn-tx); }
+.attention-rail--info    { background: var(--st-info-tx); }
+.attention-icon { display: grid; place-items: center; }
+.attention-icon--danger  { color: var(--st-danger-tx); }
+.attention-icon--warning { color: var(--st-warn-tx); }
+.attention-icon--info    { color: var(--st-info-tx); }
+.attention-main { min-width: 0; }
+.attention-title { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.attention-meta { margin-top: 3px; font-size: 12px; color: var(--ink-3); display: flex; gap: 10px; flex-wrap: wrap; }
+.attention-meta .mono { color: var(--ink-3); }
+.attention-actions { display: flex; gap: 8px; align-items: center; }
+
+/* ==================== ② 健康摘要:KPI 行 ==================== */
+.kpi-row {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr 1fr 1fr;
+  gap: 14px;
+}
+.tile { padding: 16px 18px 14px; position: relative; overflow: hidden; }
+.tile::after {  /* 极淡的顶部提亮,商业产品的深度细节 */
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.07), transparent);
+  pointer-events: none;
+}
+.tile-label { font-size: 11px; font-weight: 650; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); }
+.tile-value { margin-top: 8px; font-size: 28px; font-weight: 650; line-height: 1.1; letter-spacing: -0.01em; }
+.tile-sub { margin-top: 6px; font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tile-sub .mono { color: var(--ink-2); }
+
+.tile--hero .tile-value { font-size: 44px; }
+.tile--hero { background:
+  radial-gradient(420px 150px at 8% -10%, rgba(25,158,112,0.075), transparent 70%),
+  var(--surface-1);
+}
+.delta { font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 3px; }
+.delta--good { color: #0ca30c; }   /* 事件减少 = 好;palette.md 深色 delta 文字 */
+.delta--bad  { color: var(--st-danger-tx); }
+
+/* 主机健康点:每台机器一个点,环 = 表面色 */
+.fleet-dots { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.fleet-dot { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-3); }
+.fleet-dot i {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #0ca30c;
+  box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 3.5px rgba(12,163,12,0.28);
+}
+
+/* Sparkline 容器 */
+.spark-wrap { margin-top: 12px; position: relative; }
+.spark-wrap svg { display: block; width: 100%; height: 38px; }
+.spark-hit { position: absolute; inset: -6px 0 0 0; cursor: crosshair; }
+
+/* Maker-checker 迷你链 */
+.mc-chain { margin-top: 12px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-3); }
+.mc-node {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--surface-2);
+  font-size: 11.5px; color: var(--ink-2);
+}
+.mc-node i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); }
+.mc-node--done i { background: var(--st-good-tx); }
+.mc-node--wait { border-color: var(--st-warn-bd); color: var(--st-warn-tx); }
+.mc-node--wait i { background: var(--st-warn-tx); }
+.mc-arrow { color: var(--ink-3); }
+
+/* ==================== ③ 最近活动:时间线 ==================== */
+.timeline { padding: 6px 20px 10px; }
+.tl-item {
+  display: grid;
+  grid-template-columns: 52px 18px 1fr auto;
+  gap: 0 12px;
+  padding: 11px 0;
+  border-top: 1px solid var(--border-soft);
+}
+.tl-item:first-child { border-top: none; }
+.tl-time { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); padding-top: 2px; text-align: right; }
+.tl-rail { position: relative; }
+.tl-rail::before {           /* 竖向 hairline */
+  content: ""; position: absolute; left: 50%; top: -11px; bottom: -11px;
+  width: 1px; background: var(--grid); transform: translateX(-0.5px);
+}
+.tl-item:first-child .tl-rail::before { top: 12px; }
+.tl-item:last-child .tl-rail::before { bottom: auto; height: 12px; }
+.tl-dot {
+  position: relative; z-index: 1;
+  width: 9px; height: 9px; border-radius: 50%;
+  margin: 4px auto 0;
+  box-shadow: 0 0 0 2px var(--surface-1);   /* 表面环 */
+}
+.tl-dot--good    { background: var(--st-good-tx); }
+.tl-dot--warning { background: var(--st-warn-tx); }
+.tl-dot--danger  { background: var(--st-danger-tx); }
+.tl-dot--info    { background: var(--st-info-tx); }
+.tl-dot--neutral { background: var(--st-neutral-tx); }
+.tl-body { min-width: 0; }
+.tl-title { font-size: 13px; font-weight: 550; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tl-meta { margin-top: 2px; font-size: 11.5px; color: var(--ink-3); display: flex; gap: 10px; flex-wrap: wrap; }
+.tl-side { display: flex; align-items: center; }
+
+/* ==================== ④ 资源概况:表格 ==================== */
+.table-wrap { overflow-x: auto; }
+table.data { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.data th {
+  text-align: left; font-size: 11px; font-weight: 650; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--ink-3);
+  padding: 11px 14px; border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+table.data td {
+  padding: 11px 14px; border-bottom: 1px solid var(--border-soft);
+  vertical-align: middle; white-space: nowrap;
+}
+table.data tbody tr { transition: background 0.12s; }
+table.data tbody tr:hover { background: var(--surface-2); }
+table.data tbody tr[data-drawer], table.data tbody tr[data-goto] { cursor: pointer; }
+table.data tbody tr:last-child td { border-bottom: none; }
+td.num, th.num { text-align: right; }
+.cell-mono { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); }
+.cell-strong { color: var(--ink-1); font-weight: 550; }
+.cell-dim { color: var(--ink-3); }
+.machine-cell { display: flex; align-items: center; gap: 9px; }
+.machine-glyph {
+  width: 26px; height: 26px; border-radius: 7px; flex: none;
+  border: 1px solid var(--border); color: var(--ink-3);
+  display: grid; place-items: center;
+}
+.machine-cell .sub { display: block; font-size: 11px; color: var(--ink-3); font-weight: 400; }
+
+/* 表格内迷你 meter */
+.meter-cell { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.meter {
+  width: 64px; height: 6px; border-radius: 999px; overflow: hidden; flex: none;
+  background: rgba(25,158,112,0.16);        /* 同色系浅一档的轨道 */
+}
+.meter > i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.meter.warn > i   { background: var(--st-warn-tx); }
+.meter.warn       { background: rgba(250,178,25,0.15); }
+.meter.crit > i   { background: var(--st-danger-tx); }
+.meter.crit       { background: rgba(208,59,59,0.16); }
+
+.footnote { padding: 10px 20px; border-top: 1px solid var(--border-soft); font-size: 11.5px; color: var(--ink-3); display: flex; gap: 7px; align-items: flex-start; }
+
+/* ==================== Fleet 视图 ==================== */
+.filterbar {
+  display: flex; gap: 10px; align-items: center;
+  padding: 14px 20px; flex-wrap: wrap;
+}
+.search-box {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 0 10px; height: 32px;
+  min-width: 240px;
+}
+.search-box input {
+  background: none; border: none; outline: none; color: var(--ink-1);
+  font: inherit; width: 100%;
+}
+.search-box input::placeholder { color: var(--ink-3); }
+.search-box svg { color: var(--ink-3); flex: none; }
+.chip-row { display: flex; gap: 6px; }
+.chip {
+  font-size: 12px; padding: 5px 12px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--ink-2); background: transparent;
+  transition: all 0.15s;
+}
+.chip:hover { color: var(--ink-1); border-color: rgba(255,255,255,0.2); }
+.chip[aria-pressed="true"] {
+  background: var(--accent-tint); border-color: var(--accent-line); color: var(--accent); font-weight: 600;
+}
+
+/* ==================== 事件详情 ==================== */
+.event-layout {
+  display: grid; grid-template-columns: 1fr 420px; gap: 14px; align-items: start;
+}
+.evidence-item {
+  display: grid; grid-template-columns: 28px 1fr auto; gap: 0 12px;
+  padding: 12px 18px; border-top: 1px solid var(--border-soft);
+}
+.evidence-item:first-child { border-top: none; }
+.ev-glyph {
+  width: 26px; height: 26px; border-radius: 7px;
+  border: 1px solid var(--border); color: var(--ink-3);
+  display: grid; place-items: center; margin-top: 2px;
+}
+.ev-title { font-size: 12.5px; font-weight: 550; }
+.ev-title .cite {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--accent);
+  border: 1px solid var(--accent-line); border-radius: 5px; padding: 0 5px; margin-left: 7px;
+}
+.ev-detail { margin-top: 3px; font-size: 11.5px; color: var(--ink-3); }
+.ev-detail .mono { color: var(--ink-2); }
+
+/* ==================== 会话面板(规则分析) ==================== */
+.conv { display: flex; flex-direction: column; max-height: calc(100vh - 210px); }
+.conv-banner {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 16px; border-bottom: 1px solid var(--border-soft);
+  background: rgba(13,13,13,0.35);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.provider-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11.5px; font-weight: 600;
+  color: var(--ink-2);
+  background: var(--st-neutral-bg); border: 1px solid var(--st-neutral-bd);
+  border-radius: 999px; padding: 3.5px 10px;
+}
+.provider-tag svg { color: var(--ink-3); }
+.ctx-chip { font-size: 11.5px; color: var(--ink-3); }
+.ctx-chip .mono { color: var(--ink-2); }
+.conv-scroll { overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.msg { display: flex; flex-direction: column; gap: 5px; }
+.msg-role { font-size: 11px; font-weight: 650; color: var(--ink-3); letter-spacing: 0.04em; display: flex; gap: 8px; align-items: baseline; }
+.msg-role .mono { font-weight: 400; letter-spacing: 0; font-size: 10.5px; }
+.msg-bubble {
+  border: 1px solid var(--border-soft); border-radius: var(--radius);
+  padding: 11px 14px; font-size: 12.5px; line-height: 1.65; color: var(--ink-2);
+  background: var(--surface-2);
+}
+.msg--user .msg-bubble { color: var(--ink-1); }
+.msg--assistant .msg-bubble { background: transparent; }
+.msg-bubble h4 { margin: 10px 0 4px; font-size: 12px; color: var(--ink-1); font-weight: 650; }
+.msg-bubble h4:first-child { margin-top: 0; }
+.msg-bubble ul { margin: 4px 0; padding-left: 18px; }
+.msg-bubble li { margin: 3px 0; }
+.msg-bubble .mono { color: var(--ink-1); }
+sup.cite-ref a { font-family: var(--font-mono); font-size: 10px; color: var(--accent); text-decoration: none; border: 1px solid var(--accent-line); border-radius: 4px; padding: 0 4px; }
+
+/* 建议操作卡 */
+.suggest-card {
+  margin-top: 10px; border: 1px solid var(--accent-line);
+  background: linear-gradient(180deg, rgba(25,158,112,0.07), rgba(25,158,112,0.02));
+  border-radius: var(--radius-sm); padding: 12px 14px;
+}
+.suggest-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 650; color: var(--ink-1); }
+.suggest-head svg { color: var(--accent); }
+.suggest-desc { margin: 5px 0 10px; font-size: 12px; color: var(--ink-3); }
+.suggest-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ==================== 助手空状态 ==================== */
+.empty {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 56px 24px; gap: 6px;
+}
+.empty-glyph {
+  width: 44px; height: 44px; border-radius: 12px; margin-bottom: 8px;
+  border: 1px solid var(--accent-line); color: var(--accent);
+  background: var(--accent-tint);
+  display: grid; place-items: center;
+}
+.empty-title { font-size: 14.5px; font-weight: 650; }
+.empty-desc { font-size: 12.5px; color: var(--ink-3); max-width: 400px; }
+.suggest-list { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; justify-content: center; }
+.suggest-pill {
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 6px 14px; font-size: 12px; color: var(--ink-2); background: var(--surface-1);
+  transition: all 0.15s;
+}
+.suggest-pill:hover { border-color: var(--accent-line); color: var(--accent); }
+
+/* ==================== 抽屉 ==================== */
+.drawer-scrim {
+  position: fixed; inset: 0; z-index: calc(var(--z-drawer) - 1);
+  background: rgba(0,0,0,0.5); backdrop-filter: blur(2px);
+  opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: var(--z-drawer);
+  width: 440px; max-width: 92vw;
+  background: var(--surface-2);
+  border-left: 1px solid var(--border);
+  box-shadow: -24px 0 64px rgba(0,0,0,0.5);
+  transform: translateX(100%);
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.25, 1);
+  display: flex; flex-direction: column;
+}
+body[data-drawer="open"] .drawer { transform: none; }
+body[data-drawer="open"] .drawer-scrim { opacity: 1; pointer-events: auto; }
+.drawer-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 20px; border-bottom: 1px solid var(--border-soft); flex: none;
+}
+.drawer-title { font-size: 15px; font-weight: 650; }
+.drawer-sub { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; display: flex; gap: 10px; flex-wrap: wrap; }
+.drawer-body { overflow-y: auto; padding: 4px 0 24px; }
+.drawer-section { padding: 14px 20px 4px; }
+.drawer-section-label {
+  font-size: 10.5px; font-weight: 650; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px;
+}
+.kv { display: grid; grid-template-columns: 96px 1fr; gap: 6px 12px; font-size: 12.5px; }
+.kv dt { color: var(--ink-3); }
+.kv dd { margin: 0; color: var(--ink-1); }
+.kv dd .mono { font-size: 11.5px; }
+
+.svc-row {
+  display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
+  padding: 8px 0; border-top: 1px solid var(--border-soft); font-size: 12.5px;
+}
+.svc-row:first-child { border-top: none; }
+.svc-name { color: var(--ink-1); font-weight: 500; }
+.svc-note { font-size: 11px; color: var(--ink-3); margin-top: 1px; }
+
+/* 抽屉里的资源 meter(横向全宽) */
+.res-row { display: grid; grid-template-columns: 44px 1fr 52px; gap: 10px; align-items: center; padding: 6px 0; font-size: 12px; color: var(--ink-3); }
+.res-row .meter { width: auto; flex: 1; }
+.res-row .val { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-2); text-align: right; }
+
+/* ==================== 模态(关于本稿) ==================== */
+.modal-scrim {
+  position: fixed; inset: 0; z-index: calc(var(--z-modal) - 1);
+  background: rgba(0,0,0,0.55); backdrop-filter: blur(2px);
+  display: none; align-items: center; justify-content: center; padding: 24px;
+}
+body[data-modal="about"] .modal-scrim { display: flex; }
+.modal {
+  width: 560px; max-width: 100%; max-height: 84vh; overflow-y: auto;
+  background: var(--surface-3); border: 1px solid var(--border);
+  border-radius: 14px; box-shadow: var(--shadow-pop); padding: 24px 26px;
+}
+.modal h3 { margin: 0 0 4px; font-size: 16px; }
+.modal .modal-sub { color: var(--ink-3); font-size: 12.5px; margin: 0 0 16px; }
+.modal ol { margin: 0; padding-left: 20px; font-size: 12.5px; color: var(--ink-2); line-height: 1.7; }
+.modal .modal-foot { margin-top: 18px; display: flex; justify-content: flex-end; }
+
+/* ==================== Toast ==================== */
+.toast {
+  position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(8px);
+  z-index: var(--z-toast);
+  background: var(--surface-3); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: var(--shadow-pop);
+  padding: 10px 16px; font-size: 12.5px; color: var(--ink-2);
+  display: flex; gap: 8px; align-items: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
+}
+.toast.show { opacity: 1; transform: translateX(-50%); }
+.toast svg { color: var(--accent); flex: none; }
+
+/* ==================== 工具提示(sparkline hover) ==================== */
+.viz-tip {
+  position: fixed; z-index: var(--z-toast); pointer-events: none;
+  background: var(--surface-3); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: var(--shadow-pop);
+  padding: 6px 10px; font-size: 11.5px; display: none;
+}
+.viz-tip .t-val { font-family: var(--font-mono); font-weight: 600; color: var(--ink-1); }
+.viz-tip .t-key { color: var(--ink-3); margin-right: 6px; }
+
+/* ==================== 视图切换 ==================== */
+.view { display: none; }
+body[data-view="overview"]  .view--overview  { display: block; }
+body[data-view="fleet"]     .view--fleet     { display: block; }
+body[data-view="events"]    .view--events    { display: block; }
+body[data-view="event"]     .view--event     { display: block; }
+body[data-view="assistant"] .view--assistant { display: block; }
+
+.page-head { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
+.page-title { font-size: 21px; font-weight: 650; letter-spacing: -0.01em; margin: 0; }
+.page-sub { margin: 4px 0 0; font-size: 12.5px; color: var(--ink-3); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.page-head .spacer { flex: 1; }
+
+/* ==================== 动效偏好 ==================== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .pulse-dot { box-shadow: none; }
+}
+
+/* ==================== 响应式(可用性优先,非完整移动端) ==================== */
+@media (max-width: 1080px) {
+  .kpi-row { grid-template-columns: 1fr 1fr; }
+  .event-layout { grid-template-columns: 1fr; }
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; min-height: 100vh; }
+  .sidebar { flex-direction: row; align-items: center; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border-soft); position: sticky; top: 0; z-index: 40; }
+  .brand { padding: 12px 14px; }
+  .brand-sub, .nav-group-label, .sidebar-foot { display: none; }
+  .nav { display: flex; padding: 8px 10px; gap: 2px; }
+  .nav-group { margin: 0; display: flex; }
+  .nav-item { white-space: nowrap; padding: 6px 10px; }
+  .nav-item[aria-current="page"]::before { display: none; }
+  .content { padding: 18px 16px 40px; }
+  .topbar { padding: 0 16px; }
+  .freshness span.lbl { display: none; }
+  .attention-item { grid-template-columns: 3px 1fr; }
+  .attention-icon, .attention-actions { display: none; }
+  .tl-item { grid-template-columns: 44px 1fr; }
+  .tl-rail, .tl-side { display: none; }
+}
+</style>
+</head>
+<body data-view="overview">
+
+<!-- ======================= 侧栏 ======================= -->
+<aside class="sidebar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>
+    </span>
+    <div>
+      <div class="brand-name">VPS Agent</div>
+      <div class="brand-sub">OPS CONSOLE</div>
+    </div>
+  </div>
+
+  <nav class="nav" aria-label="主导航">
+    <div class="nav-group">
+      <div class="nav-group-label">监控</div>
+      <button class="nav-item" data-goto="overview" aria-current="page">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+        总览
+      </button>
+      <button class="nav-item" data-goto="fleet">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="14" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 17.5h.01"/></svg>
+        Fleet
+      </button>
+      <button class="nav-item" data-toast="服务工作区属于 M7.2a 分片,本概念稿未包含">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M20.5 7 12 12 3.5 7M12 12v9.5M21 6.8v10.4L12 22 3 17.2V6.8L12 2l9 4.8z"/></svg>
+        服务
+      </button>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">处置</div>
+      <button class="nav-item" data-goto="events">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.6 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+        事件
+        <span class="nav-count">2</span>
+      </button>
+      <button class="nav-item" data-toast="操作工作区属于 M7.3 分片,本概念稿未包含">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        操作
+        <span class="nav-count is-quiet">1</span>
+      </button>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">知识</div>
+      <button class="nav-item" data-goto="assistant">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"/></svg>
+        助手
+      </button>
+      <button class="nav-item" data-toast="仓库工作区属于 M7.4 分片,本概念稿未包含">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9a3.4 3.4 0 0 0-1-2.6c3.2-.4 6.5-1.6 6.5-7A5.4 5.4 0 0 0 20 4.8 5 5 0 0 0 19.9 1S18.7.6 16 2.5a13.4 13.4 0 0 0-7 0C6.3.6 5.1 1 5.1 1A5 5 0 0 0 5 4.8a5.4 5.4 0 0 0-1.5 3.7c0 5.4 3.3 6.6 6.4 7a3.4 3.4 0 0 0-1 2.6V21"/></svg>
+        仓库
+      </button>
+      <button class="nav-item" data-toast="Runbook 工作区属于 M7.4 分片,本概念稿未包含">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        Runbook
+      </button>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">设置</div>
+      <button class="nav-item" data-toast="设置属于 M7.4 分片,本概念稿未包含">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.9 2.9l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.9-2.9l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.9-2.9l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.5h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.9 2.9l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        通知 · 集成 · 系统
+      </button>
+    </div>
+  </nav>
+
+  <div class="sidebar-foot">
+    <span class="mono">v0.6.5 · schema 0020</span>
+    <span><a href="#" data-modal-open="about">关于本设计稿</a></span>
+  </div>
+</aside>
+
+<!-- ======================= 主区 ======================= -->
+<div class="main">
+  <header class="topbar">
+    <div class="topbar-crumb" id="crumb">
+      <span>监控</span><span class="sep">/</span><span class="topbar-title">总览</span>
+    </div>
+    <div class="topbar-spacer"></div>
+    <div class="freshness" title="控制平面轮询 Agent 心跳;各分区显示自身新鲜度">
+      <span class="pulse-dot" aria-hidden="true"></span>
+      <span class="lbl">数据更新于</span>
+      <span class="mono">12 秒前</span>
+      <button class="icon-btn" aria-label="刷新" data-toast="概念稿:刷新复用现有轮询,不新增数据源">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></svg>
+      </button>
+    </div>
+    <div class="principal-chip" title="可信 Principal:由 Caddy 注入">
+      <span class="principal-avatar">A</span>
+      <span>
+        <span class="who">admin</span>
+        <span class="mode"> · 读写</span>
+      </span>
+    </div>
+  </header>
+
+  <main class="content">
+
+    <!-- ============================================================
+         视图:总览
+         顺序遵循 M7 §6:需要关注 → 健康摘要 → 最近活动 → 资源概况
+         ============================================================ -->
+    <section class="view view--overview" aria-label="总览">
+
+      <!-- ① 需要关注 -->
+      <section class="section" aria-labelledby="att-title">
+        <div class="section-head">
+          <h2 class="section-title" id="att-title">需要关注</h2>
+          <span class="section-hint">3 项待处理</span>
+        </div>
+        <div class="card attention">
+          <div class="attention-list">
+            <div class="attention-item">
+              <span class="attention-rail attention-rail--danger"></span>
+              <span class="attention-icon attention-icon--danger">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.6 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+              </span>
+              <div class="attention-main">
+                <div class="attention-title">
+                  事件 #4821 · dmit-01 磁盘使用率 87%,超过 85% 阈值
+                  <span class="pill pill--danger">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M10.3 3.6 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+                    严重 · 打开
+                  </span>
+                </div>
+                <div class="attention-meta">
+                  <span class="mono">19:31</span>
+                  <span>主要占用:<span class="mono">/var/lib/caddy</span></span>
+                  <span>心跳快照证据已固定</span>
+                </div>
+              </div>
+              <div class="attention-actions">
+                <button class="btn" data-goto="event">查看事件</button>
+              </div>
+            </div>
+
+            <div class="attention-item">
+              <span class="attention-rail attention-rail--warning"></span>
+              <span class="attention-icon attention-icon--warning">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              </span>
+              <div class="attention-main">
+                <div class="attention-title">
+                  操作 <span class="mono">#43191ab3</span> 等待独立审批
+                  <span class="pill pill--warning">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                    待审批
+                  </span>
+                </div>
+                <div class="attention-meta">
+                  <span class="mono">docker_compose_rollback</span>
+                  <span>m4-deploy-bad <span class="mono">3.13 → 3.12</span> · aliyun-sh-01</span>
+                  <span>制作:admin · 需第二 Principal 确认</span>
+                  <span class="mono">22 小时 41 分后过期</span>
+                </div>
+              </div>
+              <div class="attention-actions">
+                <button class="btn" data-toast="操作工作区属于 M7.3 分片,本概念稿未包含">去审批</button>
+              </div>
+            </div>
+
+            <div class="attention-item">
+              <span class="attention-rail attention-rail--info"></span>
+              <span class="attention-icon attention-icon--info">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+              </span>
+              <div class="attention-main">
+                <div class="attention-title">
+                  备份新鲜度 26 小时 · 超过 24 小时策略
+                  <span class="pill pill--info">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                    信息
+                  </span>
+                </div>
+                <div class="attention-meta">
+                  <span>上次成功备份 <span class="mono">2026-08-23 19:40</span></span>
+                  <span>age 加密 · <span class="mono">2.1 GB</span> · backup-vps-01</span>
+                </div>
+              </div>
+              <div class="attention-actions">
+                <button class="btn btn--ghost" data-toast="备份详情页沿用现有 M6.1 页面,M7 迁入总览入口">查看备份</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ② 健康摘要 -->
+      <section class="section" aria-labelledby="kpi-title">
+        <div class="section-head">
+          <h2 class="section-title" id="kpi-title">健康摘要</h2>
+          <span class="section-hint">更新于 12 秒前</span>
+        </div>
+        <div class="kpi-row">
+
+          <!-- 主指标:唯一的大数字 -->
+          <div class="card tile tile--hero">
+            <div class="tile-label">在线机器</div>
+            <div class="tile-value">4<span style="color:var(--ink-3); font-weight:500;">/4</span></div>
+            <div class="tile-sub">
+              <span>全部在线</span>
+              <span>心跳延迟 ≤ <span class="mono">40 秒</span></span>
+            </div>
+            <div class="fleet-dots">
+              <span class="fleet-dot"><i></i>cp-hkg-01</span>
+              <span class="fleet-dot"><i></i>dmit-01</span>
+              <span class="fleet-dot"><i></i>aliyun-sh-01</span>
+              <span class="fleet-dot"><i></i>backup-vps-01</span>
+            </div>
+          </div>
+
+          <!-- 活跃事件:有事件表历史,sparkline 有依据 -->
+          <div class="card tile">
+            <div class="tile-label">活跃事件</div>
+            <div class="tile-value">2</div>
+            <div class="tile-sub">
+              <span class="delta delta--good">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                较昨日 −1
+              </span>
+              <span>1 严重 · 1 警告</span>
+            </div>
+            <div class="spark-wrap"
+                 data-spark="1,0,2,1,3,2,2"
+                 data-spark-label="近 7 日新增事件"
+                 data-spark-unit=" 起">
+              <svg viewBox="0 0 120 38" preserveAspectRatio="none" role="img" aria-label="近 7 日新增事件趋势:1、0、2、1、3、2、2 起">
+            </svg>
+              <div class="spark-hit" aria-hidden="true"></div>
+            </div>
+          </div>
+
+          <!-- 待审批:审批状态无趋势意义,用 maker-checker 链代替伪造曲线 -->
+          <div class="card tile">
+            <div class="tile-label">待审批操作</div>
+            <div class="tile-value">1</div>
+            <div class="tile-sub">
+              <span>需独立 Principal 确认</span>
+            </div>
+            <div class="mc-chain">
+              <span class="mc-node mc-node--done"><i></i>制作 admin</span>
+              <span class="mc-arrow">→</span>
+              <span class="mc-node mc-node--wait"><i></i>审批 待定</span>
+              <span class="mc-arrow">→</span>
+              <span class="mc-node">执行</span>
+            </div>
+          </div>
+
+          <!-- 今日操作:操作表有历史,sparkline 有依据 -->
+          <div class="card tile">
+            <div class="tile-label">今日操作</div>
+            <div class="tile-value">5</div>
+            <div class="tile-sub">
+              <span>1 失败</span>
+              <span>1 待审批</span>
+            </div>
+            <div class="spark-wrap"
+                 data-spark="3,4,2,5,1,6,5"
+                 data-spark-label="近 7 日操作数"
+                 data-spark-unit=" 次">
+              <svg viewBox="0 0 120 38" preserveAspectRatio="none" role="img" aria-label="近 7 日操作数趋势:3、4、2、5、1、6、5 次"></svg>
+              <div class="spark-hit" aria-hidden="true"></div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ③ 最近活动 -->
+      <section class="section" aria-labelledby="recent-title">
+        <div class="section-head">
+          <h2 class="section-title" id="recent-title">最近活动</h2>
+          <span class="section-hint">操作、事件与通知 · 全量审计可查</span>
+          <span class="spacer"></span>
+          <a class="link-quiet" href="#" data-toast="完整活动流归入操作 / 事件工作区(M7.2b / M7.3)">查看全部</a>
+        </div>
+        <div class="card timeline">
+          <div class="tl-item">
+            <span class="tl-time">19:36</span>
+            <span class="tl-rail"><span class="tl-dot tl-dot--info"></span></span>
+            <div class="tl-body">
+              <div class="tl-title">助手会话完成 · 规则分析</div>
+              <div class="tl-meta">
+                <span>上下文:事件 <span class="mono">#4821</span> · dmit-01</span>
+                <span>结构化回答 · 3 项证据引用</span>
+              </div>
+            </div>
+            <span class="tl-side"><button class="btn btn--ghost" data-goto="event">查看</button></span>
+          </div>
+
+          <div class="tl-item">
+            <span class="tl-time">19:33</span>
+            <span class="tl-rail"><span class="tl-dot tl-dot--neutral"></span></span>
+            <div class="tl-body">
+              <div class="tl-title">告警通知已送达</div>
+              <div class="tl-meta">
+                <span>钉钉 · Telegram 双通道</span>
+                <span>事件 <span class="mono">#4821</span></span>
+              </div>
+            </div>
+            <span class="tl-side"><span class="pill pill--neutral">通知</span></span>
+          </div>
+
+          <div class="tl-item">
+            <span class="tl-time">19:31</span>
+            <span class="tl-rail"><span class="tl-dot tl-dot--danger"></span></span>
+            <div class="tl-body">
+              <div class="tl-title">事件 #4821 打开 · dmit-01 磁盘使用率 87%</div>
+              <div class="tl-meta">
+                <span>超过阈值 <span class="mono">85%</span></span>
+                <span>证据:心跳快照</span>
+              </div>
+            </div>
+            <span class="tl-side"><button class="btn btn--ghost" data-goto="event">查看事件</button></span>
+          </div>
+
+          <div class="tl-item">
+            <span class="tl-time">19:22</span>
+            <span class="tl-rail"><span class="tl-dot tl-dot--warning"></span></span>
+            <div class="tl-body">
+              <div class="tl-title">操作 #43191ab3 创建 · 等待独立审批</div>
+              <div class="tl-meta">
+                <span class="mono">docker_compose_rollback</span>
+                <span>m4-deploy-bad <span class="mono">3.13 → 3.12</span> · aliyun-sh-01</span>
+                <span>制作:admin</span>
+              </div>
+            </div>
+            <span class="tl-side"><span class="pill pill--warning">待审批</span></span>
+          </div>
+
+          <div class="tl-item">
+            <span class="tl-time">18:05</span>
+            <span class="tl-rail"><span class="tl-dot tl-dot--good"></span></span>
+            <div class="tl-body">
+              <div class="tl-title">操作完成 · docker restart caddy</div>
+              <div class="tl-meta">
+                <span>dmit-01</span>
+                <span>制作:admin · 审批:ops-approver</span>
+                <span class="mono">exit_code=0</span>
+              </div>
+            </div>
+            <span class="tl-side"><span class="pill pill--good">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              成功</span></span>
+          </div>
+
+          <div class="tl-item">
+            <span class="tl-time">16:40</span>
+            <span class="tl-rail"><span class="tl-dot tl-dot--danger"></span></span>
+            <div class="tl-body">
+              <div class="tl-title">操作失败 · docker_compose_deploy m4-deploy-bad 3.12 → 3.13</div>
+              <div class="tl-meta">
+                <span>aliyun-sh-01 · 健康验证超时</span>
+                <span>制作:admin · 审批:ops-approver</span>
+                <span>已自动停止,无回滚动作</span>
+              </div>
+            </div>
+            <span class="tl-side">
+              <span class="pill pill--danger">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                验证超时</span>
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ④ 资源概况:当前快照,不伪造历史曲线 -->
+      <section class="section" aria-labelledby="res-title">
+        <div class="section-head">
+          <h2 class="section-title" id="res-title">资源概况</h2>
+          <span class="section-hint">来自最近一次心跳快照</span>
+          <span class="spacer"></span>
+          <a class="link-quiet" href="#" data-goto="fleet">进入 Fleet</a>
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th>机器</th>
+                  <th>状态</th>
+                  <th class="num">CPU</th>
+                  <th class="num">内存</th>
+                  <th class="num">磁盘</th>
+                  <th>Agent</th>
+                  <th>最后心跳</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr data-drawer="cp">
+                  <td>
+                    <span class="machine-cell">
+                      <span class="machine-glyph">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="14" width="18" height="7" rx="1.5"/></svg>
+                      </span>
+                      <span>
+                        <span class="cell-strong">cp-hkg-01</span>
+                        <span class="sub">控制平面 · 香港</span>
+                      </span>
+                    </span>
+                  </td>
+                  <td><span class="pill pill--good"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>在线</span></td>
+                  <td class="num"><span class="meter-cell"><span class="meter"><i style="width:23%"></i></span><span class="cell-mono">23%</span></span></td>
+                  <td class="num"><span class="meter-cell"><span class="meter"><i style="width:41%"></i></span><span class="cell-mono">41%</span></span></td>
+                  <td class="num"><span class="meter-cell"><span class="meter"><i style="width:52%"></i></span><span class="cell-mono">52%</span></span></td>
+                  <td class="cell-mono">v0.6.5</td>
+                  <td class="cell-mono cell-dim">12 秒前</td>
+                  <td class="num"><button class="btn btn--ghost" data-drawer="cp">详情</button></td>
+                </tr>
+                <tr data-drawer="dmit">
+                  <td>
+                    <span class="machine-cell">
+                      <span class="machine-glyph">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="14" width="18" height="7" rx="1.5"/></svg>
+                      </span>
+                      <span>
+                        <span class="cell-strong">dmit-01</span>
+                        <span class="sub">DMIT · 洛杉矶</span>
+                      </span>
+                    </span>
+                  </td>
+                  <td><span class="pill pill--good"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>在线</span></td>
+                  <td class="num"><span class="meter-cell"><span class="meter"><i style="width:31%"></i></span><span class="cell-mono">31%</span></span></td>
+                  <td class="num"><span class="meter-cell"><span class="meter"><i style="width:58%"></i></span><span class="cell-mono">58%</span></span></td>
+                  <td class="num"><span class="meter-cell"><span class="meter crit"><i style="width:87%"></i></span><span class="cell-mono" style="color:var(--st-danger-tx)">87%</span></span></td>
+                  <td class="cell-mono">v0.6.5</td>
+                  <td class="cell-mono cell-dim">18 秒前</td>
+                  <td class="num"><button class="btn btn--ghost" data-drawer="dmit">详情</button></td>
+                </tr>
+                <tr data-drawer="aliyun">
+                  <td>
+                    <span class="machine-cell">
+                      <span class="machine-glyph">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="14" width="18" height="7" rx="1.5"/></svg>
+                      </span>
+                      <span>
+                        <span class="cell-strong">aliyun-sh-01</span>
+                        <span class="sub">阿里云 · 上海</span>
+                      </span>
+                    </span>
+                  </td>
+                  <td><span class="pill pill--good"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>在线</span></td>
+                  <td class="num"><span class="meter-cell"><span class="meter"><i style="width:12%"></i></span><span class="cell-mono">12%</span></span></td>
+                  <td class="num"><span class="meter-cell"><span class="meter"><i style="width:36%"></i></span><span class="cell-mono">36%</span></span></td>
+                  <td class="num"><span class="meter-cell"><span class="meter"><i style="width:44%"></i></span><span class="cell-mono">44%</span></span></td>
+                  <td class="cell-mono">v0.6.5</td>
+                  <td class="cell-mono cell-dim">25 秒前</td>
+                  <td class="num"><button class="btn btn--ghost" data-drawer="aliyun">详情</button></td>
+                </tr>
+                <tr data-drawer="backup">
+                  <td>
+                    <span class="machine-cell">
+                      <span class="machine-glyph">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="14" width="18" height="7" rx="1.5"/></svg>
+                      </span>
+                      <span>
+                        <span class="cell-strong">backup-vps-01</span>
+                        <span class="sub">灾备 · 备份 VPS</span>
+                      </span>
+                    </span>
+                  </td>
+                  <td><span class="pill pill--good"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>在线</span></td>
+                  <td class="num"><span class="meter-cell"><span class="meter"><i style="width:4%"></i></span><span class="cell-mono">4%</span></span></td>
+                  <td class="num"><span class="meter-cell"><span class="meter"><i style="width:22%"></i></span><span class="cell-mono">22%</span></span></td>
+                  <td class="num"><span class="meter-cell"><span class="meter"><i style="width:61%"></i></span><span class="cell-mono">61%</span></span></td>
+                  <td class="cell-mono">v0.6.5</td>
+                  <td class="cell-mono cell-dim">40 秒前</td>
+                  <td class="num"><button class="btn btn--ghost" data-drawer="backup">详情</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="footnote">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="flex:none; margin-top:2px;"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            资源数值为最近一次心跳的即时快照。系统不保存历史资源曲线,故此处不展示趋势图;事件与操作计数来自审计数据,趋势有据可依。
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <!-- ============================================================
+         视图:Fleet
+         ============================================================ -->
+    <section class="view view--fleet" aria-label="Fleet">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Fleet</h1>
+          <p class="page-sub">4 台机器 · 4 在线 · Agent <span class="mono">v0.6.5</span></p>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn" data-toast="批量服务映射复核属于 M7.2a 分片">批量服务映射复核</button>
+      </div>
+
+      <div class="card">
+        <div class="filterbar">
+          <div class="search-box">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="search" placeholder="搜索主机名 / IP / 区域…" aria-label="搜索机器">
+          </div>
+          <div class="chip-row" role="group" aria-label="状态筛选">
+            <button class="chip" aria-pressed="true">全部</button>
+            <button class="chip" aria-pressed="false">在线</button>
+            <button class="chip" aria-pressed="false">离线</button>
+            <button class="chip" aria-pressed="false">未知</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data">
+            <thead>
+              <tr>
+                <th>机器</th>
+                <th>状态</th>
+                <th class="num">CPU</th>
+                <th class="num">内存</th>
+                <th class="num">磁盘</th>
+                <th>Agent</th>
+                <th>最后心跳</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="fleet-tbody"><!-- JS 复用总览表数据渲染 --></tbody>
+          </table>
+        </div>
+        <div class="footnote">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="flex:none; margin-top:2px;"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          「离线」= 心跳超过 90 秒未上报;「未知」= 从未收到心跳。旧页面的 offline 语义已按 M7 §2 审计结论统一。
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         视图:事件列表
+         ============================================================ -->
+    <section class="view view--events" aria-label="事件">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">事件</h1>
+          <p class="page-sub">2 个打开 · 今日新增 2</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table class="data">
+            <thead>
+              <tr>
+                <th>级别</th>
+                <th>事件</th>
+                <th>标题</th>
+                <th>机器</th>
+                <th>状态</th>
+                <th>打开时间</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr data-goto="event" style="cursor:pointer">
+                <td><span class="pill pill--danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M10.3 3.6 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>严重</span></td>
+                <td class="cell-mono">#4821</td>
+                <td class="cell-strong">磁盘使用率超过阈值</td>
+                <td class="cell-mono">dmit-01</td>
+                <td><span class="pill pill--warning">打开</span></td>
+                <td class="cell-mono cell-dim">08-24 19:31</td>
+                <td class="num"><button class="btn btn--ghost" data-goto="event">查看</button></td>
+              </tr>
+              <tr>
+                <td><span class="pill pill--warning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>警告</span></td>
+                <td class="cell-mono">#4819</td>
+                <td class="cell-strong">部署健康验证超时</td>
+                <td class="cell-mono">aliyun-sh-01</td>
+                <td><span class="pill pill--warning">打开</span></td>
+                <td class="cell-mono cell-dim">08-24 16:38</td>
+                <td class="num"><button class="btn btn--ghost" data-toast="事件 #4819 详情页复用同一事件模板(M7.2b)">查看</button></td>
+              </tr>
+              <tr>
+                <td><span class="pill pill--info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>信息</span></td>
+                <td class="cell-mono">#4812</td>
+                <td class="cell-strong">CPU 阈值瞬时越限后自恢复</td>
+                <td class="cell-mono">dmit-01</td>
+                <td><span class="pill pill--neutral">已关闭</span></td>
+                <td class="cell-mono cell-dim">08-22 09:14</td>
+                <td class="num"><button class="btn btn--ghost" data-toast="已关闭事件为只读归档视图">查看</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         视图:事件详情 #4821(时间线 + 证据 + 会话)
+         ============================================================ -->
+    <section class="view view--event" aria-label="事件详情">
+      <div class="page-head">
+        <button class="btn btn--ghost" data-goto="events" aria-label="返回事件列表">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          事件
+        </button>
+        <div>
+          <h1 class="page-title">事件 #4821 · 磁盘使用率超过阈值</h1>
+          <p class="page-sub">
+            <span class="pill pill--danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M10.3 3.6 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>严重 · 打开</span>
+            <span>dmit-01</span>
+            <span>打开于 <span class="mono">08-24 19:31</span></span>
+          </p>
+        </div>
+        <div class="spacer"></div>
+      </div>
+
+      <div class="event-layout">
+        <!-- 左列:处置时间线 + 证据 -->
+        <div style="display:flex; flex-direction:column; gap:14px; min-width:0;">
+          <div class="card">
+            <div class="section-head" style="padding:14px 20px 0;">
+              <h2 class="section-title">处置时间线</h2>
+            </div>
+            <div class="timeline">
+              <div class="tl-item">
+                <span class="tl-time">19:31</span>
+                <span class="tl-rail"><span class="tl-dot tl-dot--danger"></span></span>
+                <div class="tl-body">
+                  <div class="tl-title">事件打开 · 阈值触发</div>
+                  <div class="tl-meta"><span>心跳快照 <span class="mono">disk 87% &gt; 85%</span></span></div>
+                </div>
+              </div>
+              <div class="tl-item">
+                <span class="tl-time">19:33</span>
+                <span class="tl-rail"><span class="tl-dot tl-dot--neutral"></span></span>
+                <div class="tl-body">
+                  <div class="tl-title">通知送达 · 钉钉 / Telegram</div>
+                  <div class="tl-meta"><span>模板 <span class="mono">disk_threshold_v1</span></span></div>
+                </div>
+              </div>
+              <div class="tl-item">
+                <span class="tl-time">19:34</span>
+                <span class="tl-rail"><span class="tl-dot tl-dot--info"></span></span>
+                <div class="tl-body">
+                  <div class="tl-title">会话诊断发起 · admin</div>
+                  <div class="tl-meta"><span>上下文:本事件 · 规则分析</span></div>
+                </div>
+              </div>
+              <div class="tl-item">
+                <span class="tl-time">19:36</span>
+                <span class="tl-rail"><span class="tl-dot tl-dot--info"></span></span>
+                <div class="tl-body">
+                  <div class="tl-title">会话完成 · 生成清理建议</div>
+                  <div class="tl-meta"><span>3 项证据引用 · 建议待人工决策</span></div>
+                </div>
+              </div>
+              <div class="tl-item">
+                <span class="tl-time">—</span>
+                <span class="tl-rail"><span class="tl-dot tl-dot--neutral" style="background:transparent; border:1.5px dashed var(--st-neutral-tx); box-shadow:0 0 0 2px var(--surface-1);"></span></span>
+                <div class="tl-body">
+                  <div class="tl-title" style="color:var(--ink-3)">等待处置 · 人工决策</div>
+                  <div class="tl-meta"><span>事件在验证恢复后关闭</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-head" style="padding:14px 20px 0;">
+              <h2 class="section-title">证据</h2>
+              <span class="section-hint">只读 · 已固定快照</span>
+            </div>
+            <div>
+              <div class="evidence-item">
+                <span class="ev-glyph">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+                </span>
+                <div>
+                  <div class="ev-title">心跳快照 · 磁盘 <span class="cite">[1]</span></div>
+                  <div class="ev-detail"><span class="mono">disk_used 87% · /var 210G/241G</span> · 采集于 <span class="mono">19:30:41</span></div>
+                </div>
+                <span class="cell-mono cell-dim">19:30</span>
+              </div>
+              <div class="evidence-item">
+                <span class="ev-glyph">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.9 2.9l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.9-2.9l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.9-2.9l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.5h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.9 2.9l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.5 1z"/></svg>
+                </span>
+                <div>
+                  <div class="ev-title">阈值配置 <span class="cite">[2]</span></div>
+                  <div class="ev-detail"><span class="mono">disk warn 80% · critical 85%</span> · 来自系统配置,只读</div>
+                </div>
+                <span class="cell-mono cell-dim">静态</span>
+              </div>
+              <div class="evidence-item">
+                <span class="ev-glyph">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 7 12 12 3.5 7M12 12v9.5M21 6.8v10.4L12 22 3 17.2V6.8L12 2l9 4.8z"/></svg>
+                </span>
+                <div>
+                  <div class="ev-title">服务清单快照 <span class="cite">[3]</span></div>
+                  <div class="ev-detail">caddy · postgres · agent · m4-deploy-bad <span class="mono">(6 units)</span></div>
+                </div>
+                <span class="cell-mono cell-dim">19:30</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右列:会话面板 -->
+        <div class="card conv">
+          <div class="conv-banner">
+            <span class="provider-tag" title="生产 Provider 为 deterministic 规则引擎,非模型推理;标签如实展示能力边界">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              规则分析 · deterministic
+            </span>
+            <span class="ctx-chip">上下文:事件 <span class="mono">#4821</span> · dmit-01</span>
+          </div>
+          <div class="conv-scroll">
+            <div class="msg msg--user">
+              <span class="msg-role">admin <span class="mono">19:34</span></span>
+              <div class="msg-bubble">dmit-01 磁盘到 87% 了,帮我分析一下占用来源,给出安全的处置建议。</div>
+            </div>
+            <div class="msg msg--assistant">
+              <span class="msg-role">助手 · 规则分析 <span class="mono">19:36</span></span>
+              <div class="msg-bubble">
+                <h4>分析</h4>
+                <ul>
+                  <li>磁盘使用率 <span class="mono">87%</span>,超过严重阈值 <span class="mono">85%</span><sup class="cite-ref"><a href="#ev1">1</a></sup><sup class="cite-ref"><a href="#ev2">2</a></sup></li>
+                  <li>主要占用来自 <span class="mono">/var/lib/caddy</span>(构建缓存与历史制品),近 7 日增长 <span class="mono">+18 GB</span></li>
+                  <li>当前无服务异常,属容量风险而非服务故障<sup class="cite-ref"><a href="#ev3">3</a></sup></li>
+                </ul>
+                <h4>建议</h4>
+                <ul>
+                  <li>优先执行<b>受限清理(dry-run)</b>:仅服务端定义的资源类型与范围,先展示可回收量与排除项</li>
+                  <li>不建议直接重启 caddy:不释放缓存,且会中断服务</li>
+                </ul>
+                <div class="suggest-card">
+                  <div class="suggest-head">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    受限清理 · dry-run 预检
+                  </div>
+                  <div class="suggest-desc">生成处置计划后将停在「等待确认」;执行仍需独立 Principal 审批与签名任务。</div>
+                  <div class="suggest-actions">
+                    <button class="btn btn--primary" data-toast="生成计划属于 M8「受限清理」切片,当前仅演示交互">生成处置计划</button>
+                    <button class="btn" data-toast="Runbook 工作区属于 M7.4 分片">查看 Runbook</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         视图:助手(空状态 → 新会话)
+         ============================================================ -->
+    <section class="view view--assistant" aria-label="助手">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">助手</h1>
+          <p class="page-sub">只读会话 · 结构化回答 · 写操作仅通过「生成处置计划」交接给审批闭环</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="conv-banner">
+          <span class="provider-tag" title="生产 Provider 为 deterministic 规则引擎">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            规则分析 · deterministic
+          </span>
+          <span class="ctx-chip">尚未选择上下文</span>
+        </div>
+        <div class="empty">
+          <span class="empty-glyph">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"/></svg>
+          </span>
+          <div class="empty-title">开始一段新会话</div>
+          <div class="empty-desc">选择一个上下文(Fleet、机器、服务、事件或仓库),助手基于固定证据回答;也可以从下面的常用入口开始。</div>
+          <div class="suggest-list">
+            <button class="suggest-pill" data-goto="event">分析事件 #4821</button>
+            <button class="suggest-pill" data-toast="从事件进入会话的事件模板已完成,机器上下文会话沿用 M5.4 既有能力">解读 dmit-01 心跳</button>
+            <button class="suggest-pill" data-toast="建议到计划的交接能力沿用 M5.3(restart / rollback)">生成重启建议</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ======================= 机器详情抽屉 ======================= -->
+<div class="drawer-scrim" data-drawer-close></div>
+<aside class="drawer" role="dialog" aria-modal="true" aria-label="机器详情" id="drawer">
+  <div class="drawer-head">
+    <div style="flex:1; min-width:0;">
+      <div class="drawer-title" id="drawer-title">dmit-01</div>
+      <div class="drawer-sub" id="drawer-sub">
+        <span class="pill pill--good"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>在线</span>
+        <span>最后心跳 <span class="mono">18 秒前</span></span>
+      </div>
+    </div>
+    <button class="icon-btn" data-drawer-close aria-label="关闭">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="drawer-body">
+    <div class="drawer-section">
+      <div class="drawer-section-label">概要</div>
+      <dl class="kv">
+        <dt>主机名</dt><dd class="mono">dmit-01</dd>
+        <dt>供应商</dt><dd>DMIT · 洛杉矶</dd>
+        <dt>Agent</dt><dd><span class="mono">v0.6.5</span> · 心跳间隔 <span class="mono">30s</span></dd>
+        <dt>接入时间</dt><dd class="mono">2026-03-02</dd>
+      </dl>
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-section-label">资源 · 心跳快照</div>
+      <div class="res-row"><span>CPU</span><span class="meter"><i style="width:31%"></i></span><span class="val">31%</span></div>
+      <div class="res-row"><span>内存</span><span class="meter"><i style="width:58%"></i></span><span class="val">58%</span></div>
+      <div class="res-row"><span>磁盘</span><span class="meter crit"><i style="width:87%"></i></span><span class="val" style="color:var(--st-danger-tx)">87%</span></div>
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-section-label">服务映射</div>
+      <div>
+        <div class="svc-row">
+          <div><div class="svc-name">caddy</div><div class="svc-note">systemd · 反向代理 / HTTPS</div></div>
+          <span class="pill pill--good"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>运行中</span>
+        </div>
+        <div class="svc-row">
+          <div><div class="svc-name">agent</div><div class="svc-note">systemd · <span class="mono">v0.6.5</span></div></div>
+          <span class="pill pill--good"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>运行中</span>
+        </div>
+        <div class="svc-row">
+          <div><div class="svc-name">postgres</div><div class="svc-note">docker compose · 主数据库</div></div>
+          <span class="pill pill--good"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>运行中</span>
+        </div>
+        <div class="svc-row">
+          <div><div class="svc-name">m4-deploy-bad</div><div class="svc-note">docker compose · 示例部署单元</div></div>
+          <span class="pill pill--warning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M10.3 3.6 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>验证超时</span>
+        </div>
+      </div>
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-section-label">相关</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; padding-bottom:8px;">
+        <button class="btn" data-goto="event">事件 #4821</button>
+        <button class="btn" data-toast="机器上下文会话沿用 M5.4 既有能力,M7.2b 迁入一级工作区">会话诊断</button>
+        <button class="btn btn--ghost" data-toast="操作历史归入操作工作区(M7.3)">操作历史</button>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- ======================= 关于本稿(模态) ======================= -->
+<div class="modal-scrim" data-modal-close>
+  <div class="modal" role="dialog" aria-modal="true" aria-label="关于本设计稿" data-stop>
+    <h3>关于本设计稿</h3>
+    <p class="modal-sub">M7 Web UI 2.0 概念稿 · 2026-08-24 · 页面数据为设计示例,非生产数据</p>
+    <ol>
+      <li><b>表面层级</b> — 页面平面 <span class="mono">#0d0d0d</span> → 卡片 <span class="mono">#1a1a19</span> → 悬浮层,配 hairline 边框与顶部 1px 提亮,构成深度而非描边。</li>
+      <li><b>状态语义</b> — 成功 / 信息 / 警告 / 危险 / 中性五档,一律「图标 + 文字 + 颜色」,永不单靠颜色;状态色不与系列色混用。</li>
+      <li><b>数据质感</b> — 时间戳、ID、版本、指标一律等宽字体;大数字用比例数字;表格列用 <span class="mono">tabular-nums</span>。</li>
+      <li><b>不伪造趋势</b> — 事件 / 操作趋势来自审计表(有据);资源只有心跳快照,用 meter 而非历史曲线。</li>
+      <li><b>诚实标签</b> — 会话面板明确标注「规则分析 · deterministic」,不包装成模型推理;待审批操作展示 maker-checker 链与过期时间。</li>
+      <li><b>图表规范</b> — 色值取自已验证的深色数据可视化参考色板;sparkline 2px 线 + 末端点(带表面环);无框线、无虚线网格。</li>
+      <li><b>边界不越</b> — 无 Web SSH / 终端入口,无密钥回显,无全局执行按钮;写操作只经由「生成处置计划 → 独立审批」闭环。</li>
+    </ol>
+    <div class="modal-foot">
+      <button class="btn" data-modal-close>关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast 与 tooltip 容器 -->
+<div class="toast" id="toast" role="status">
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+  <span id="toast-text"></span>
+</div>
+<div class="viz-tip" id="viz-tip"><span class="t-key"></span><span class="t-val"></span></div>
+
+<script>
+/* ============ 视图切换 ============ */
+const CRUMBS = {
+  overview:  ['监控', '总览'],
+  fleet:     ['监控', 'Fleet'],
+  events:    ['处置', '事件'],
+  event:     ['处置', '事件', '#4821'],
+  assistant: ['知识', '助手'],
+};
+function goto(view) {
+  document.body.dataset.view = view;
+  const c = CRUMBS[view] || CRUMBS.overview;
+  document.getElementById('crumb').innerHTML =
+    c.map((s, i) => i === c.length - 1
+      ? '<span class="topbar-title">' + s + '</span>'
+      : '<span>' + s + '</span><span class="sep">/</span>').join('');
+  document.querySelectorAll('.nav-item[data-goto]').forEach(btn => {
+    const on = btn.dataset.goto === view ||
+      (view === 'event' && btn.dataset.goto === 'events');
+    btn.toggleAttribute('aria-current', on);
+    if (on) btn.setAttribute('aria-current', 'page'); else btn.removeAttribute('aria-current');
+  });
+  document.querySelector('.main .content').scrollTop = 0;
+  closeDrawer();
+}
+document.addEventListener('click', e => {
+  const g = e.target.closest('[data-goto]');
+  if (g) { e.preventDefault(); goto(g.dataset.goto); }
+});
+
+/* ============ Toast ============ */
+let toastTimer;
+function toast(text) {
+  const el = document.getElementById('toast');
+  document.getElementById('toast-text').textContent = text;   // 文本走 textContent
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-toast]');
+  if (t) { e.preventDefault(); toast(t.dataset.toast); }
+});
+
+/* ============ 抽屉 ============ */
+const DRAWERS = {
+  dmit:   { title: 'dmit-01',        sub: 'DMIT · 洛杉矶',     hb: '18 秒前' },
+  cp:     { title: 'cp-hkg-01',      sub: '控制平面 · 香港',   hb: '12 秒前' },
+  aliyun: { title: 'aliyun-sh-01',   sub: '阿里云 · 上海',     hb: '25 秒前' },
+  backup: { title: 'backup-vps-01',  sub: '灾备 · 备份 VPS',   hb: '40 秒前' },
+};
+function openDrawer(key) {
+  const d = DRAWERS[key]; if (!d) return;
+  document.getElementById('drawer-title').textContent = d.title;
+  document.getElementById('drawer-sub').innerHTML =
+    '<span class="pill pill--good"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>在线</span>' +
+    '<span>' + d.sub + '</span><span>最后心跳 <span class="mono">' + d.hb + '</span></span>';
+  document.body.dataset.drawer = 'open';
+}
+function closeDrawer() { delete document.body.dataset.drawer; }
+document.addEventListener('click', e => {
+  const d = e.target.closest('[data-drawer]');
+  if (d) openDrawer(d.dataset.drawer);
+  if (e.target.closest('[data-drawer-close]')) closeDrawer();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeDrawer(); delete document.body.dataset.modal; }
+});
+
+/* ============ 模态 ============ */
+document.addEventListener('click', e => {
+  if (e.target.closest('[data-modal-open]')) {
+    e.preventDefault();
+    document.body.dataset.modal = e.target.closest('[data-modal-open]').dataset.modalOpen;
+    return;
+  }
+  if (e.target.closest('[data-modal-close]') || e.target.classList.contains('modal-scrim')) {
+    delete document.body.dataset.modal;
+  }
+});
+
+/* ============ 状态筛选 chips ============ */
+document.querySelectorAll('.chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    chip.parentElement.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', 'false'));
+    chip.setAttribute('aria-pressed', 'true');
+  });
+});
+
+/* ============ Fleet 表:复用总览行(渲染副本) ============ */
+(function renderFleet() {
+  const src = document.querySelector('.view--overview tbody');
+  const dst = document.getElementById('fleet-tbody');
+  if (src && dst) dst.innerHTML = src.innerHTML;
+})();
+
+/* ============ Sparkline 渲染 + hover 读数 ============ */
+(function sparklines() {
+  const NS = 'http://www.w3.org/2000/svg';
+  const tip = document.getElementById('viz-tip');
+  const tipKey = tip.querySelector('.t-key');
+  const tipVal = tip.querySelector('.t-val');
+
+  document.querySelectorAll('.spark-wrap').forEach(wrap => {
+    const svg  = wrap.querySelector('svg');
+    const vals = wrap.dataset.spark.split(',').map(Number);
+    const max  = Math.max(...vals, 1);
+    const X = i => 6 + i * (108 / (vals.length - 1));
+    const Y = v => 32 - (v / max) * 24;
+    const pts = vals.map((v, i) => X(i).toFixed(1) + ',' + Y(v).toFixed(1)).join(' ');
+
+    // 2px 线:去强调色(灰),当前周期末端点用主强调色,表面环保持可读
+    const line = document.createElementNS(NS, 'polyline');
+    line.setAttribute('points', pts);
+    line.setAttribute('fill', 'none');
+    line.setAttribute('stroke', '#898781');
+    line.setAttribute('stroke-width', '2');
+    line.setAttribute('stroke-linejoin', 'round');
+    line.setAttribute('stroke-linecap', 'round');
+    svg.appendChild(line);
+
+    const dot = document.createElementNS(NS, 'circle');
+    dot.setAttribute('cx', X(vals.length - 1));
+    dot.setAttribute('cy', Y(vals[vals.length - 1]));
+    dot.setAttribute('r', '3.5');
+    dot.setAttribute('fill', '#199e70');
+    dot.setAttribute('stroke', '#1a1a19');   // 表面环
+    dot.setAttribute('stroke-width', '2');
+    svg.appendChild(dot);
+
+    // hover:最近点读数(hit 区域大于 mark 本身)
+    const hit = wrap.querySelector('.spark-hit');
+    hit.addEventListener('pointermove', ev => {
+      const r = svg.getBoundingClientRect();
+      const px = (ev.clientX - r.left) / r.width * 120;
+      let bi = 0, bd = Infinity;
+      vals.forEach((_, i) => { const d = Math.abs(X(i) - px); if (d < bd) { bd = d; bi = i; } });
+      tipKey.textContent = (wrap.dataset.sparkLabel || '') + ' · 第 ' + (bi + 1) + ' 天';
+      tipVal.textContent = vals[bi] + (wrap.dataset.sparkUnit || '');
+      tip.style.display = 'block';
+      tip.style.left = Math.min(ev.clientX + 12, innerWidth - 150) + 'px';
+      tip.style.top  = (ev.clientY - 34) + 'px';
+      // 指示线
+      let cursor = svg.querySelector('.spark-cursor');
+      if (!cursor) {
+        cursor = document.createElementNS(NS, 'line');
+        cursor.setAttribute('class', 'spark-cursor');
+        cursor.setAttribute('y1', '4'); cursor.setAttribute('y2', '34');
+        cursor.setAttribute('stroke', '#383835');
+        cursor.setAttribute('stroke-width', '1');
+        svg.insertBefore(cursor, line);
+      }
+      cursor.setAttribute('x1', X(bi)); cursor.setAttribute('x2', X(bi));
+      cursor.style.display = 'block';
+    });
+    hit.addEventListener('pointerleave', () => {
+      tip.style.display = 'none';
+      const c = svg.querySelector('.spark-cursor'); if (c) c.style.display = 'none';
+    });
+  });
+})();
+</script>
+</body>
+</html>

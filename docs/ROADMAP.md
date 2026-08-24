@@ -285,9 +285,19 @@ M6 收口后的批次 A 已实现 Agent last-known-good/失败回退、签名 re
 
 证据边界：上段“失败自动回退”由 root/真实 systemd 集成测试证明；生产执行的是不支持路径在任何写入前 exit 20 的 fail-closed 复检，不是生产自动回退演练。该区分不改变批次 A 已关闭的结论。
 
-Web UI 的初步信息架构、首页定位和分阶段设计见 [WEB_UI_PLAN.md](./WEB_UI_PLAN.md)。
+Web UI 的早期信息架构见 [WEB_UI_PLAN.md](./WEB_UI_PLAN.md)。M6 关闭后的后续路线已冻结为 **M7 Web UI 2.0 -> M8 结构化运维能力 -> M9 Web SSH/限时终端**；补充建议的逐项审计、Provider 运行模式决策门、M3 延后项归属、可扩展 Operation UI 验收条件和各章安全边界见 [POST_M6_NEXT_CHAPTERS.md](./POST_M6_NEXT_CHAPTERS.md)。M6.4c3 生产金丝雀已经完成，不是 M7 前置阻断；备份 VPS SSH 加固按当前决定延后，也不阻断 M7。
 
-## 10. 路线变更规则
+## 10. M7–M9：M6 后续大章节
+
+状态：**M7.0 与 M7.1a 本地实现已完成；M7.1b、M8、M9 均待开始**
+
+1. **M7 Web UI 2.0**：先完成现状审计、真实用户路径、Provider 运行模式决定和设计冻结，再重构应用外壳、核心工作区与 Operation 工作区。批量服务映射确认纳入本章；Operation UI 必须支持服务端能力驱动和未知动作类型安全降级，避免 M8 新动作导致整页重写。
+2. **M8 结构化运维能力**：按安全 systemd restart、自动诊断调度、Fleet 分批升级、受限清理、GitHub PR 写入、源码拉取/构建逐片推进。写操作全部复用 M4 的计划、预检、独立确认、签名/过期/幂等任务、验证和审计闭环。
+3. **M9 Web SSH 与限时终端**：作为最后手段，先做身份/会话授权、主动出站通道、PTY、撤销/过期、maker-checker、审计和敏感输出威胁模型，再决定产品实现；模型不得默认获得终端控制权。
+
+M7.0 已完成代码级现状审计和设计冻结；M7.1a AppShell + token + 基础状态组件已于 2026-08-24 完成本地未提交实现，Web 106 项测试、ESLint、production build 与桌面/移动检查通过，未改变业务和安全契约。下一片为 M7.1b：按冻结视觉实现总览及有界 24 小时指标契约；本次尚未增加 Recharts、历史指标 API 或总览业务重构。整体顺序与边界见 [POST_M6_NEXT_CHAPTERS.md](./POST_M6_NEXT_CHAPTERS.md)。
+
+## 11. 路线变更规则
 
 - 新需求先归入对应里程碑，不直接扩大当前里程碑。
 - 当前里程碑的新增范围必须同时补充验收条件。

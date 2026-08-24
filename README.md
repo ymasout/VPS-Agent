@@ -17,6 +17,8 @@ docs/        架构与开发约定
 - [系统架构](docs/ARCHITECTURE.md)
 - [项目状态](docs/PROJECT_STATUS.md)
 - [实际开发路线图](docs/ROADMAP.md)
+- [M6 后续大章节：M7 Web UI、M8 结构化运维、M9 Web SSH](docs/POST_M6_NEXT_CHAPTERS.md)
+- [M7 Web UI 2.0 设计基线](docs/M7_WEB_UI_2_DESIGN.md)
 - [Web UI 初步规划](docs/WEB_UI_PLAN.md)
 - [Agent 发布、安装与升级](docs/AGENT_INSTALLATION.md)
 - [开发命令速查](开发命令速查.md)

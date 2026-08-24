@@ -1,7 +1,11 @@
 import type { Metadata, Viewport } from "next";
+import "./tokens.css";
 import "./globals.css";
-import { MobileNav } from "./mobile-nav";
+import "./ui.css";
+import type { Principal } from "@/lib/api";
+import { getCurrentPrincipal, getPrincipalForwardHeaders } from "@/lib/principal";
 import { PwaRegistration } from "./pwa-registration";
+import { AppShell } from "./ui/app-shell";
 
 export const metadata: Metadata = {
   title: "VPS Agent Console",
@@ -18,6 +22,18 @@ export const viewport: Viewport = {
   themeColor: "#090b0f",
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="zh-CN"><body>{children}<MobileNav /><PwaRegistration /></body></html>;
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  let principal: Principal | null = null;
+  let principalState: "verified" | "disabled" | "unavailable" = "disabled";
+  try {
+    const principalHeaders = await getPrincipalForwardHeaders();
+    if (principalHeaders) {
+      principal = await getCurrentPrincipal();
+      principalState = "verified";
+    }
+  } catch {
+    principal = null;
+    principalState = "unavailable";
+  }
+  return <html lang="zh-CN"><body><AppShell principal={principal} principalState={principalState}>{children}</AppShell><PwaRegistration /></body></html>;
 }

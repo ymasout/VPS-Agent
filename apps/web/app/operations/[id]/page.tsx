@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { getOperation, getPrincipal } from "@/lib/api";
-import { getPrincipalForwardHeaders } from "@/lib/principal";
+import { getOperation } from "@/lib/api";
+import { getCurrentPrincipal, getPrincipalForwardHeaders } from "@/lib/principal";
 import { notFound } from "next/navigation";
 import { OperationPanel } from "./operation-panel";
 
@@ -15,7 +15,7 @@ export default async function OperationPage({ params }: { params: Promise<{ id: 
     const principalHeaders = await getPrincipalForwardHeaders();
     operation = await getOperation(id, principalHeaders ?? undefined);
     if (namedAuthorization && principalHeaders) {
-      principal = await getPrincipal(principalHeaders);
+      principal = await getCurrentPrincipal();
     }
   } catch {
     notFound();
