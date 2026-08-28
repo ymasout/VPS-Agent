@@ -295,7 +295,7 @@ Web UI 的早期信息架构见 [WEB_UI_PLAN.md](./WEB_UI_PLAN.md)。M6 关闭�
 2. **M8 结构化运维能力**：按安全 systemd restart、自动诊断调度、Fleet 分批升级、受限清理、GitHub PR 写入、源码拉取/构建逐片推进。写操作全部复用 M4 的计划、预检、独立确认、签名/过期/幂等任务、验证和审计闭环。
 3. **M9 Web SSH 与限时终端**：作为最后手段，先做身份/会话授权、主动出站通道、PTY、撤销/过期、maker-checker、审计和敏感输出威胁模型，再决定产品实现；模型不得默认获得终端控制权。
 
-M7.0 已完成代码级现状审计和设计冻结；M7.1a AppShell + token + 基础状态组件已于 2026-08-24 提交 `d4f2b1e`。M7.1b 于 2026-08-28 完成实现：冻结总览、Recharts CPU/内存/磁盘 24 小时 sparkline、服务端固定上限/降采样、明确趋势状态和按 Principal capability 关闭的 Operation 摘要已落地；API 与 Web 全量测试、Ruff/ESLint/production build 及桌面/移动检查通过。未增加迁移、Agent 协议或写行为。下一片为 M7.2a Fleet、机器与服务；整体顺序与边界见 [POST_M6_NEXT_CHAPTERS.md](./POST_M6_NEXT_CHAPTERS.md)。
+M7.0 已完成代码级现状审计和设计冻结；M7.1a AppShell + token + 基础状态组件已于 2026-08-24 提交 `d4f2b1e`。M7.1b 于 2026-08-29 完成实现、六组 CI 与生产收口：冻结总览、Recharts CPU/内存/磁盘 24 小时 sparkline、服务端固定上限/降采样、明确趋势状态和按 Principal capability 关闭的 Operation 摘要已落地；最终生产提交 `daa9700` 的 API/Web 健康运行，schema 保持 `0020`，桌面总览与移动 `/agent` 浏览器复验无溢出或控制台错误。未增加迁移、Agent 协议、写行为或 feature flag 变化。下一片为 M7.2a Fleet、机器与服务；整体顺序与边界见 [POST_M6_NEXT_CHAPTERS.md](./POST_M6_NEXT_CHAPTERS.md)。
 
 ## 11. 路线变更规则
 

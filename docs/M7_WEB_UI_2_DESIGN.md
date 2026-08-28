@@ -443,6 +443,8 @@ M7 只增加展示所需的只读契约，不顺带扩写权限：
 
 Web 使用 Recharts `3.10.1` 绘制无坐标、无填充、禁用动画的紧凑折线；百分比和趋势状态保留为文字，85% 及以上为严重、70% 及以上为警告。桌面 1536×1024 与移动 390×844 本地 mock 视觉检查无横向溢出、控制台错误或警告，移动资源标签和 44px 触摸目标通过。Web 108 项测试、ESLint、production build、API 366 项通过（18 项按环境跳过）、全量 Ruff 通过；首次全量 API 回归有一项 Windows 临时目录 `os.replace` 权限抖动，单项立即复跑及随后完整复跑均通过。未增加迁移、Agent 协议、写端点、Operation 状态机、Provider/feature flag 或生产变更。
 
+生产收口记录（2026-08-29）：总览最新指标查询已限制为同一 24 小时窗口，生产 `EXPLAIN ANALYZE` 从约 1137 ms 降至约 14 ms；Web standalone healthcheck 已改为使用容器实际监听地址。最终提交 `daa9700` 另修复 `/agent` 会话时间因服务端与浏览器时区不同产生的 hydration mismatch，并以确定性 UTC 文本保留可读时间。该提交的 Control Plane Web、Migrations、Recovery、Source Distribution、CodeQL 和 Vulnerability Scan 六组 CI 全部成功。生产 API/Web 已从同一精确提交构建并滚动，OCI revision 与 `/api/v1/system-info` 均为 `daa9700fa33abebdd3fe0067941299d389a58274`，schema 保持 `0020_m6_named_approval` 且 current=true；发布前原子备份为 `/var/backups/vps-agent-console/control-plane-pre-migration-20260828T161925Z`，迁移为 no-op。公开健康入口均为 200、未认证首页为 401，内部受管理请求的总览/Agent/服务映射候选均为 200，API/Web 日志错误计数为 0，活跃 Operation 为 0。桌面总览与 390×844 `/agent` 生产浏览器复验均无横向溢出或控制台错误。未改变 Principal、Provider、Operation 或其他 feature flag，也未执行写操作金丝雀。
+
 ### M7.2a：Fleet、机器与服务
 
 - Fleet 列表、机器详情分区、跨机器服务列表。

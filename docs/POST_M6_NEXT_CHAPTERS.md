@@ -88,4 +88,4 @@ Web SSH 工作量不应按“嵌一个终端组件”估算。最小安全范围
 
 ## 8. 下一步
 
-M7.0 的代码级现状审计与 [M7 Web UI 2.0 设计基线](./M7_WEB_UI_2_DESIGN.md) 已形成；M7.1a 已提交 `d4f2b1e`。M7.1b 已于 2026-08-28 完成实现与验证：冻结总览、Recharts 24 小时 sparkline、有界服务端采样/降采样和最小只读 Operation 摘要契约均已落地，未改变写操作或安全契约。下一项是 M7.2a Fleet、机器与服务；不得在该片中提前重做 Agent 对话或 Operation 工作区。
+M7.0 的代码级现状审计与 [M7 Web UI 2.0 设计基线](./M7_WEB_UI_2_DESIGN.md) 已形成；M7.1a 已提交 `d4f2b1e`。M7.1b 已于 2026-08-29 完成实现、全量 CI 与生产收口：冻结总览、Recharts 24 小时 sparkline、有界服务端采样/降采样和最小只读 Operation 摘要契约均已落地，最终生产提交为 `daa9700`，schema 保持 `0020`，未改变写操作、安全契约或 feature flag。下一项是 M7.2a Fleet、机器与服务；不得在该片中提前重做 Agent 对话或 Operation 工作区。
