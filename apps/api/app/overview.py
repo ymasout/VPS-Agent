@@ -187,11 +187,14 @@ def _activity_tone_for_operation(
     return "info"
 
 
-def latest_metrics_query(agent_ids: list[str]):
-    """Fetch one latest snapshot per agent without ranking unbounded history."""
+def latest_metrics_query(agent_ids: list[str], cutoff: datetime):
+    """Fetch one recent snapshot per agent without scanning unbounded history."""
     latest_lateral = (
         select(MetricSnapshot)
-        .where(MetricSnapshot.agent_id == Agent.id)
+        .where(
+            MetricSnapshot.agent_id == Agent.id,
+            MetricSnapshot.collected_at >= cutoff,
+        )
         .order_by(MetricSnapshot.collected_at.desc(), MetricSnapshot.id.desc())
         .limit(1)
         .lateral("latest_metric")
@@ -287,7 +290,7 @@ async def console_overview(
         }
 
         latest_rows = list(
-            (await session.scalars(latest_metrics_query(agent_ids))).all()
+            (await session.scalars(latest_metrics_query(agent_ids, cutoff))).all()
         )
         latest_by_agent = {item.agent_id: item for item in latest_rows}
 

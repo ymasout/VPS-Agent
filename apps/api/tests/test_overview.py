@@ -132,14 +132,16 @@ def test_disk_and_threshold_semantics_match_frozen_overview() -> None:
 
 
 def test_latest_metric_query_uses_bounded_lateral_lookup() -> None:
+    cutoff = datetime(2026, 8, 27, 12, tzinfo=timezone.utc)
     sql = str(
-        latest_metrics_query(["agent-01"]).compile(
+        latest_metrics_query(["agent-01"], cutoff).compile(
             dialect=postgresql.dialect(),
             compile_kwargs={"literal_binds": True},
         )
     )
     assert "JOIN LATERAL" in sql
     assert "LIMIT 1" in sql
+    assert "metric_snapshots.collected_at >= '2026-08-27 12:00:00+00:00'" in sql
     assert "row_number" not in sql.lower()
 
 
