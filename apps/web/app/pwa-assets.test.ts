@@ -31,5 +31,7 @@ describe("PWA static assets", () => {
 
   it("packages public PWA assets into the standalone runtime image", () => {
     expect(dockerfile).toContain("COPY --chown=node:node --from=build /repo/apps/web/public ./apps/web/public");
+    expect(dockerfile).toContain("process.env.HOSTNAME+':3000/manifest.webmanifest'");
+    expect(dockerfile).not.toContain("127.0.0.1:3000/manifest.webmanifest");
   });
 });
