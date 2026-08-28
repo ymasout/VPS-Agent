@@ -19,6 +19,7 @@ from .maintenance import control_plane_maintenance_loop
 from .models import ManagedService, Operation, RegistrationToken, ServiceInstance
 from .notification_tests import router as notification_tests_router
 from .operations import router as operations_router
+from .overview import router as overview_router
 from .releases import router as releases_router
 from .schema import verify_database_current
 from .security import hash_token
@@ -103,6 +104,7 @@ app.include_router(conversation_completion_router)
 app.include_router(github_router)
 app.include_router(releases_router)
 app.include_router(notification_tests_router)
+app.include_router(overview_router)
 
 
 @app.get("/healthz", tags=["system"])

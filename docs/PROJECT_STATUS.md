@@ -1,7 +1,7 @@
 # 项目状态
 
-最后同步：2026-08-24
-当前阶段：**M0–M6、批次 A 与批次 B 均已完成；备份 VPS SSH 加固延后；M7.1a 已提交 `d4f2b1e`（未推送时记录，2026-08-24 已推送），M7.1b 尚未开始**
+最后同步：2026-08-28
+当前阶段：**M0–M6、批次 A 与批次 B 均已完成；备份 VPS SSH 加固延后；M7.1a、M7.1b 已完成；下一片为 M7.2a**
 
 ## 1. 当前结论
 
@@ -9,9 +9,11 @@
 
 M6 后续路线已冻结为 M7 Web UI 2.0、M8 结构化运维能力、M9 Web SSH/限时终端。批量服务映射确认归入 M7，自动诊断调度归入 M8；M7 页面重构期间 Provider 已决定保持 deterministic 已知良好基线并如实标为“规则分析”，真实 `http_json` 生产化作为独立后段运营切片。M6.4c3 具名审批生产金丝雀已有完整记录，不重新列为阻断。详细指导见 [POST_M6_NEXT_CHAPTERS.md](./POST_M6_NEXT_CHAPTERS.md)，M7 草案见 [M7_WEB_UI_2_DESIGN.md](./M7_WEB_UI_2_DESIGN.md)。
 
-2026-08-24 已冻结 [M7 总览页视觉基线](./assets/m7/overview-visual-baseline.png)：保留 KPI、需要关注、Fleet 健康、事件状态、Operation 进度、近期活动和系统信任摘要；Fleet 表的 CPU、内存、磁盘增加过去 24 小时 sparkline。该记录只确认设计资产，不代表 M7 页面代码或历史指标 API 已实现。
+2026-08-24 已冻结 [M7 总览页视觉基线](./assets/m7/overview-visual-baseline.png)：保留 KPI、需要关注、Fleet 健康、事件状态、Operation 进度、近期活动和系统信任摘要；Fleet 表的 CPU、内存、磁盘增加过去 24 小时 sparkline。M7.1b 已于 2026-08-28 按该资产完成实现与验证。
 
-同日完成 M7.1a 实现并提交 `d4f2b1e`：根布局现以响应式 AppShell 承载全部既有页面，增加设计 token、必要基础组件、桌面分组侧栏、紧凑顶栏、服务端可信 Principal 摘要、移动底部导航及带 Escape/焦点恢复的“更多”抽屉。导航只链接已有真实入口，未来列表保持不可点击，`/agent` 和所有既有详情深链未改。Web 106 项测试、ESLint、production build 以及 1440×900/390×844 本地视觉检查通过；没有新增依赖，也没有 API、数据库、Agent、Operation/Provider 或生产配置变更。提交前复核收口：删除死代码 `mobile-nav.tsx`，Principal header/身份读取经 React request cache 在同次服务端渲染复用（首页/移动页不再重复请求展示，Operation 审批保持可信身份判断），字体 token 移除未打包的 Inter。M7.1b 的总览重组、Recharts 与 24 小时历史指标尚未开始。
+同日完成 M7.1a 实现并提交 `d4f2b1e`：根布局现以响应式 AppShell 承载全部既有页面，增加设计 token、必要基础组件、桌面分组侧栏、紧凑顶栏、服务端可信 Principal 摘要、移动底部导航及带 Escape/焦点恢复的“更多”抽屉。导航只链接已有真实入口，未来列表保持不可点击，`/agent` 和所有既有详情深链未改。Web 106 项测试、ESLint、production build 以及 1440×900/390×844 本地视觉检查通过；没有新增依赖，也没有 API、数据库、Agent、Operation/Provider 或生产配置变更。提交前复核收口：删除死代码 `mobile-nav.tsx`，Principal header/身份读取经 React request cache 在同次服务端渲染复用（首页/移动页不再重复请求展示，Operation 审批保持可信身份判断），字体 token 移除未打包的 Inter。
+
+2026-08-28 完成 M7.1b 实现与验证：新增只读、有界的控制台总览 API，复用现有指标快照表提供服务端 24 小时采样/压缩和明确的缺口、覆盖不足、过期、不可用状态；Operation 摘要继续按 Principal capability 分区，不向 viewer 返回记录。首页按冻结资产实现完整信息密度和 Recharts sparkline，注册/GitHub/通知配置移出首页。新增唯一运行依赖 Recharts `3.10.1`，未新增数据库迁移、Agent 协议或写接口。API 366 项通过、18 项环境跳过，Ruff 通过；Web 108 项、ESLint、production build 通过；1536×1024 与 390×844 本地视觉检查通过。下一片为 M7.2a，不在本次进入。
 
 M1 的“至少 3 台真实或测试 VPS 稳定接入”验收线已经满足。本文早期 Fleet 数量、版本和 capability 仅为对应日期的历史快照：旧 aliyun-VPS 已被释放，2026-07-31 M6.4c 金丝雀改用新 aliyun-零时 Agent `v0.4.2`，具名 M4 全链完成后已还原服务 restart 授权。当前机器、Agent 版本和 capability 必须在每次生产操作前从实时 API/Agent 上报核对，不能从本文推断。
 

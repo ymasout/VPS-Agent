@@ -12,6 +12,34 @@ export type SystemInfo = {
   expected_alembic_revision: string[];
   schema_current: boolean;
 };
+export type OverviewTrendStatus = "available" | "gapped" | "insufficient" | "stale" | "unavailable";
+export type OverviewTrend = {
+  status: OverviewTrendStatus;
+  points: Array<{ at: string; value: number }>;
+  observed_span_seconds: number;
+};
+export type OverviewResourceMetric = {
+  current_percent: number | null;
+  tone: "neutral" | "success" | "warning" | "danger";
+  trend: OverviewTrend;
+};
+export type ConsoleOverview = {
+  generated_at: string;
+  fleet: { total: number; online: number; unhealthy_services: number };
+  events: { active: number; critical: number; warning: number };
+  attention: Array<{ kind: "event" | "operation" | "agent"; title: string; target: string; tone: "info" | "warning" | "danger"; occurred_at: string; href: string }>;
+  agents: Array<{ id: string; name: string; hostname: string; online: boolean; version: string; last_seen_at: string | null; service_problem_count: number; cpu: OverviewResourceMetric; memory: OverviewResourceMetric; disk: OverviewResourceMetric }>;
+  event_items: Array<{ id: string; title: string; target: string; severity: string; status: string; occurred_at: string }>;
+  operations: {
+    available: boolean;
+    can_approve: boolean;
+    pending_approval: number;
+    active: number;
+    items: Array<{ id: string; action_type: string; status: string; target: string; impact_summary: string; requested_at: string; expires_at: string }>;
+  };
+  recent_activity: Array<{ kind: "event" | "operation"; label: string; target: string; tone: "info" | "success" | "warning" | "danger"; occurred_at: string; href: string }>;
+  trust: { analysis_mode: "rules" | "model"; version: string; commit_sha: string; schema_current: boolean; schema_revision: string[]; data_source: "control_plane_current_records" };
+};
 export type Principal = {
   id: string;
   display_name: string;
@@ -430,6 +458,8 @@ export const getAgents = (headers?: PrincipalForwardHeaders) =>
   request<Agent[]>("/api/v1/agents", headers);
 export const getSystemInfo = (headers?: PrincipalForwardHeaders) =>
   adminRequest<SystemInfo>("/api/v1/system-info", headers);
+export const getConsoleOverview = (headers?: PrincipalForwardHeaders) =>
+  adminRequest<ConsoleOverview>("/api/v1/console-overview", headers);
 export const getNotificationConfiguration = () =>
   adminRequest<NotificationConfiguration>("/api/v1/notification-configuration");
 export const getNotificationTests = () =>

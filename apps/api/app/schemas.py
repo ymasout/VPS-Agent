@@ -17,6 +17,114 @@ class SystemInfo(BaseModel):
     schema_current: bool
 
 
+class OverviewTrendPoint(BaseModel):
+    at: datetime
+    value: float
+
+
+class OverviewTrend(BaseModel):
+    status: Literal["available", "gapped", "insufficient", "stale", "unavailable"]
+    points: list[OverviewTrendPoint]
+    observed_span_seconds: int
+
+
+class OverviewResourceMetric(BaseModel):
+    current_percent: float | None
+    tone: Literal["neutral", "success", "warning", "danger"]
+    trend: OverviewTrend
+
+
+class OverviewFleetAgent(BaseModel):
+    id: str
+    name: str
+    hostname: str
+    online: bool
+    version: str
+    last_seen_at: datetime | None
+    service_problem_count: int
+    cpu: OverviewResourceMetric
+    memory: OverviewResourceMetric
+    disk: OverviewResourceMetric
+
+
+class OverviewFleetSummary(BaseModel):
+    total: int
+    online: int
+    unhealthy_services: int
+
+
+class OverviewEventSummary(BaseModel):
+    active: int
+    critical: int
+    warning: int
+
+
+class OverviewAttentionItem(BaseModel):
+    kind: Literal["event", "operation", "agent"]
+    title: str
+    target: str
+    tone: Literal["info", "warning", "danger"]
+    occurred_at: datetime
+    href: str
+
+
+class OverviewEventItem(BaseModel):
+    id: str
+    title: str
+    target: str
+    severity: str
+    status: str
+    occurred_at: datetime
+
+
+class OverviewOperationItem(BaseModel):
+    id: str
+    action_type: str
+    status: str
+    target: str
+    impact_summary: str
+    requested_at: datetime
+    expires_at: datetime
+
+
+class OverviewOperationSummary(BaseModel):
+    available: bool
+    can_approve: bool
+    pending_approval: int
+    active: int
+    items: list[OverviewOperationItem]
+
+
+class OverviewActivityItem(BaseModel):
+    kind: Literal["event", "operation"]
+    label: str
+    target: str
+    tone: Literal["info", "success", "warning", "danger"]
+    occurred_at: datetime
+    href: str
+
+
+class OverviewTrustSummary(BaseModel):
+    analysis_mode: Literal["rules", "model"]
+    version: str
+    commit_sha: str
+    schema_current: bool
+    schema_revision: list[str]
+    data_source: Literal["control_plane_current_records"] = "control_plane_current_records"
+
+
+class ConsoleOverview(BaseModel):
+    generated_at: datetime
+    fleet: OverviewFleetSummary
+    events: OverviewEventSummary
+    attention: list[OverviewAttentionItem]
+    agents: list[OverviewFleetAgent]
+    event_items: list[OverviewEventItem]
+    operations: OverviewOperationSummary
+    recent_activity: list[OverviewActivityItem]
+    trust: OverviewTrustSummary
+
+
 class PrincipalView(BaseModel):
     id: str
     display_name: str
