@@ -67,3 +67,8 @@ def test_requirement_roots_follows_nested_files(tmp_path: Path) -> None:
         "fastapi",
         "pytest",
     ]
+
+
+def test_approved_license_expressions_include_reviewed_compound_terms() -> None:
+    assert "MIT AND ISC" in dependency_licenses.APPROVED_LICENSES
+    assert "MIT AND GPL-3.0-only" not in dependency_licenses.APPROVED_LICENSES

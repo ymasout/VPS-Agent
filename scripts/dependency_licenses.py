@@ -29,6 +29,7 @@ APPROVED_LICENSES = {
     "ISC",
     "LGPL-3.0-or-later",
     "MIT",
+    "MIT AND ISC",
     "MIT AND Python-2.0",
     "MIT AND PSF-2.0",
     "MIT-CMU",
