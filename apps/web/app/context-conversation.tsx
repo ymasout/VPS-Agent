@@ -6,6 +6,12 @@ import type { ContextConversation, ConversationTurn } from "@/lib/api";
 
 const terminalStatuses = new Set(["completed", "failed"]);
 
+export function formatConversationTimestamp(value: string) {
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) return value;
+  return `${timestamp.toISOString().slice(0, 19).replace("T", " ")} UTC`;
+}
+
 export function ContextConversationPanel({
   initial,
   endpoint,
@@ -136,7 +142,9 @@ export function ContextConversationPanel({
             <div className="conversation-question">
               <span>你的问题</span>
               <p>{turn.question}</p>
-              <time>{new Date(turn.created_at).toLocaleString("zh-CN")}</time>
+              <time dateTime={turn.created_at}>
+                {formatConversationTimestamp(turn.created_at)}
+              </time>
             </div>
             <ConversationTurnResult
               pendingDetail={`只读取当前${scopeLabel}已有控制平面记录，不执行操作。`}

@@ -2,7 +2,10 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { ContextConversation } from "@/lib/api";
-import { ContextConversationPanel } from "./context-conversation";
+import {
+  ContextConversationPanel,
+  formatConversationTimestamp,
+} from "./context-conversation";
 
 vi.mock("@/app/conversation-turn-result", () => ({
   ConversationTurnResult: () => <div>bounded answer</div>,
@@ -22,6 +25,15 @@ function conversation(scope: "agent" | "service"): ContextConversation {
 }
 
 describe("context conversation", () => {
+  it("formats turn timestamps deterministically across server and browser time zones", () => {
+    expect(formatConversationTimestamp("2026-08-28T15:52:28Z")).toBe(
+      "2026-08-28 15:52:28 UTC",
+    );
+    expect(formatConversationTimestamp("not-a-timestamp")).toBe(
+      "not-a-timestamp",
+    );
+  });
+
   it("renders separate read-only Agent and service scopes", () => {
     const agent = renderToStaticMarkup(
       <ContextConversationPanel
