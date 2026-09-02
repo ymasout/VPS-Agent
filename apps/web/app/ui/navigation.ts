@@ -16,7 +16,10 @@ export const desktopNavigation: NavigationGroup[] = [
   },
   {
     label: "基础设施",
-    items: [{ label: "Fleet", description: "完整工作区将在 M7.2a 开放" }],
+    items: [
+      { label: "Fleet", href: "/fleet", description: "机器状态与资源" },
+      { label: "服务", href: "/services", description: "跨机器服务清单" },
+    ],
   },
   {
     label: "事件与处置",
@@ -43,7 +46,7 @@ export const desktopNavigation: NavigationGroup[] = [
 
 export const mobilePrimaryNavigation: NavigationItem[] = [
   { label: "总览", href: "/", description: "运维总览" },
-  { label: "Fleet", href: "/mobile#machines", description: "移动机器状态" },
+  { label: "Fleet", href: "/fleet", description: "机器状态与资源" },
   { label: "事件", href: "/mobile#events", description: "移动事件状态" },
   { label: "操作", description: "操作列表将在 M7.3 开放" },
 ];
@@ -51,6 +54,8 @@ export const mobilePrimaryNavigation: NavigationItem[] = [
 const pageTitles: Array<{ matches: (pathname: string) => boolean; title: string }> = [
   { matches: (pathname) => pathname === "/", title: "运维总览" },
   { matches: (pathname) => pathname === "/mobile", title: "移动状态" },
+  { matches: (pathname) => pathname === "/fleet", title: "Fleet" },
+  { matches: (pathname) => pathname === "/services", title: "服务" },
   { matches: (pathname) => pathname === "/agent", title: "Agent 对话" },
   { matches: (pathname) => pathname.startsWith("/servers/"), title: "机器详情" },
   { matches: (pathname) => pathname.startsWith("/events/"), title: "事件详情" },

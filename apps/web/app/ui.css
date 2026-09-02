@@ -65,6 +65,9 @@ button, input, select, textarea { font: inherit; }
 .ui-state p { margin: var(--space-2) 0 0; color: var(--color-text-secondary); line-height: 1.55; }
 .ui-state--error, .ui-state--forbidden { border-color: var(--color-danger-border); }
 .ui-state--error .ui-state__mark, .ui-state--forbidden .ui-state__mark { border-color: var(--color-danger-border); color: var(--color-danger); }
+.back { display: inline-flex; min-height: var(--control-height); align-items: center; }
+.mapping-fields input:not([type="checkbox"]), .mapping-fields select { min-height: var(--control-height); }
+.mapping-fields label:has(input[type="checkbox"]) { display: flex; min-height: var(--control-height); align-items: center; gap: var(--space-2); }
 
 @media (max-width: 900px) {
   .app-sidebar { display: none; }

@@ -7,6 +7,7 @@ from fastapi import HTTPException, Request
 from app.api import router as api_router
 from app.config import Settings
 from app.conversation_operations import router as conversation_operations_router
+from app.infrastructure import router as infrastructure_router
 from app.m3 import router as m3_router
 from app.operations import plan_actor
 from app.operations import router as operations_router
@@ -657,7 +658,12 @@ def test_capability_dependencies_are_attached_to_frozen_and_overview_get_routes(
         require_event_read,
     }
     actual: dict[tuple[str, str], set] = {}
-    for route in [*api_router.routes, *m3_router.routes, *overview_router.routes]:
+    for route in [
+        *api_router.routes,
+        *m3_router.routes,
+        *overview_router.routes,
+        *infrastructure_router.routes,
+    ]:
         dependencies = {
             item.call
             for item in route.dependant.dependencies
@@ -671,6 +677,10 @@ def test_capability_dependencies_are_attached_to_frozen_and_overview_get_routes(
         ("/api/v1/system-info", "GET"): {require_system_read},
         ("/api/v1/agents", "GET"): {require_fleet_read},
         ("/api/v1/agents/{agent_id}", "GET"): {require_fleet_read},
+        ("/api/v1/agents/{agent_id}/service-mapping-candidates", "GET"): {
+            require_fleet_read
+        },
+        ("/api/v1/service-instances", "GET"): {require_fleet_read},
         ("/api/v1/events", "GET"): {require_event_read},
         ("/api/v1/events/{event_id}", "GET"): {require_event_read},
         ("/api/v1/console-overview", "GET"): {

@@ -156,6 +156,7 @@ export function AppShell({
           <aside className="app-drawer" id="mobile-more-drawer" aria-label="更多导航" aria-modal="true" ref={drawerRef} role="dialog">
             <header><strong>更多</strong><IconButton label="关闭更多导航" onClick={closeDrawer} ref={closeButtonRef}>×</IconButton></header>
             <nav>
+              <Link href="/services">服务<span>跨机器服务清单</span></Link>
               <Link href="/agent">助手<span>Fleet 只读对话</span></Link>
               <Link href="/repositories">仓库<span>已授权仓库</span></Link>
               <Link href="/settings/notifications">通知<span>通道与固定测试消息</span></Link>

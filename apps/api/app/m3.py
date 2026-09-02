@@ -32,7 +32,7 @@ from .models import (
     ServiceInstance,
     ServiceStatus,
 )
-from .principal import require_event_read
+from .principal import authorize_operation_plan, require_event_read, require_fleet_read
 from .schemas import (
     AlertEventView,
     DiagnosticResult,
@@ -43,12 +43,31 @@ from .schemas import (
     EvidenceRequestWork,
     EvidenceView,
     RestartPolicyUpdate,
+    ServiceMappingBatchCreate,
+    ServiceMappingBatchResult,
+    ServiceMappingBatchView,
     ServiceMappingCandidate,
     ServiceMappingCreate,
     ServiceMappingView,
 )
 
 router = APIRouter(prefix="/api/v1")
+
+
+def _safe_batch_mapping(payload: ServiceMappingCreate) -> ServiceMappingCreate:
+    return payload.model_copy(
+        update={
+            "environment": "production",
+            "description": None,
+            "deployment_directory": None,
+            "repository_full_name": None,
+            "default_branch": "main",
+            "commit_sha": None,
+            "image_digest": None,
+            "criticality": "critical",
+            "restart_enabled": False,
+        }
+    )
 
 
 def event_view(event: AlertEvent) -> AlertEventView:
@@ -111,16 +130,10 @@ async def diagnostic_view(session: AsyncSession, diagnostic: DiagnosticRun) -> D
     )
 
 
-@router.post(
-    "/service-mappings",
-    response_model=ServiceMappingView,
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin)],
-)
-async def create_service_mapping(
+async def _create_service_mapping(
     payload: ServiceMappingCreate,
-    session: AsyncSession = Depends(get_session),
-    settings: Settings = Depends(get_settings),
+    session: AsyncSession,
+    settings: Settings,
 ) -> ServiceMappingView:
     agent = await session.get(Agent, payload.agent_id)
     if agent is None:
@@ -232,7 +245,6 @@ async def create_service_mapping(
                 image_digest=payload.image_digest,
             )
         )
-    await session.commit()
     return ServiceMappingView(
         service_id=managed.id,
         instance_id=instance.id,
@@ -251,9 +263,81 @@ async def create_service_mapping(
     )
 
 
+@router.post(
+    "/service-mappings",
+    response_model=ServiceMappingView,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(authorize_operation_plan)],
+)
+async def create_service_mapping(
+    payload: ServiceMappingCreate,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> ServiceMappingView:
+    result = await _create_service_mapping(payload, session, settings)
+    await session.commit()
+    return result
+
+
+@router.post(
+    "/service-mappings/batch",
+    response_model=ServiceMappingBatchView,
+    dependencies=[Depends(authorize_operation_plan)],
+)
+async def create_service_mapping_batch(
+    payload: ServiceMappingBatchCreate,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> ServiceMappingBatchView:
+    results: list[ServiceMappingBatchResult] = []
+    for item in payload.items:
+        try:
+            async with session.begin_nested():
+                mapping = await _create_service_mapping(
+                    _safe_batch_mapping(item.mapping), session, settings
+                )
+            results.append(
+                ServiceMappingBatchResult(
+                    client_item_id=item.client_item_id,
+                    status="created",
+                    status_code=status.HTTP_201_CREATED,
+                    detail=None,
+                    mapping=mapping,
+                )
+            )
+        except HTTPException as error:
+            results.append(
+                ServiceMappingBatchResult(
+                    client_item_id=item.client_item_id,
+                    status="rejected",
+                    status_code=error.status_code,
+                    detail=str(error.detail),
+                    mapping=None,
+                )
+            )
+        except IntegrityError:
+            results.append(
+                ServiceMappingBatchResult(
+                    client_item_id=item.client_item_id,
+                    status="rejected",
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="service mapping conflicted with current state",
+                    mapping=None,
+                )
+            )
+    await session.commit()
+    created_count = sum(result.status == "created" for result in results)
+    return ServiceMappingBatchView(
+        results=results,
+        created_count=created_count,
+        rejected_count=len(results) - created_count,
+    )
+
+
 @router.get(
     "/agents/{agent_id}/service-mapping-candidates",
     response_model=list[ServiceMappingCandidate],
+    dependencies=[Depends(require_fleet_read)],
 )
 async def list_service_mapping_candidates(
     agent_id: str,
@@ -357,7 +441,7 @@ async def list_service_mapping_candidates(
 @router.post(
     "/service-instances/{instance_id}/restart-policy",
     response_model=ServiceMappingCandidate,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(authorize_operation_plan)],
 )
 async def update_restart_policy(
     instance_id: str,

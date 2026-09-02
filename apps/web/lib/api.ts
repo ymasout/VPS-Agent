@@ -103,6 +103,43 @@ export type ServiceMappingCandidate = {
   restart_enabled: boolean;
   criticality: string;
 };
+export type ServiceInventoryItem = {
+  inventory_id: string;
+  instance_id: string | null;
+  service_name: string;
+  environment: string | null;
+  agent_id: string;
+  agent_name: string;
+  agent_online: boolean;
+  agent_last_seen_at: string | null;
+  service_kind: string;
+  state: string;
+  healthy: boolean | null;
+  observed_at: string;
+  mapped: boolean;
+  evidence_capable: boolean;
+  operation_capable: boolean;
+  restart_enabled: boolean;
+  deploy_enabled: boolean;
+  criticality: string | null;
+};
+export type ServiceInventoryPage = {
+  items: ServiceInventoryItem[];
+  next_cursor: string | null;
+  total: number;
+};
+export type ServiceMappingBatchResult = {
+  client_item_id: string;
+  status: "created" | "rejected";
+  status_code: number;
+  detail: string | null;
+  mapping: { instance_id: string; service_id: string } | null;
+};
+export type ServiceMappingBatchView = {
+  results: ServiceMappingBatchResult[];
+  created_count: number;
+  rejected_count: number;
+};
 export type DeploymentCandidate = {
   agent_id: string;
   service_kind: string;
@@ -456,6 +493,10 @@ export const getPrincipal = (headers: PrincipalForwardHeaders) =>
   request<Principal>("/api/v1/principal", headers);
 export const getAgents = (headers?: PrincipalForwardHeaders) =>
   request<Agent[]>("/api/v1/agents", headers);
+export const getServiceInstances = (
+  params: URLSearchParams,
+  headers?: PrincipalForwardHeaders,
+) => request<ServiceInventoryPage>(`/api/v1/service-instances?${params.toString()}`, headers);
 export const getSystemInfo = (headers?: PrincipalForwardHeaders) =>
   adminRequest<SystemInfo>("/api/v1/system-info", headers);
 export const getConsoleOverview = (headers?: PrincipalForwardHeaders) =>
@@ -466,8 +507,8 @@ export const getNotificationTests = () =>
   adminRequest<NotificationTest[]>("/api/v1/notification-tests?limit=10");
 export const getAgent = (id: string, headers?: PrincipalForwardHeaders) =>
   request<AgentDetail>(`/api/v1/agents/${id}`, headers);
-export const getServiceMappingCandidates = (id: string) =>
-  request<ServiceMappingCandidate[]>(`/api/v1/agents/${id}/service-mapping-candidates`);
+export const getServiceMappingCandidates = (id: string, headers?: PrincipalForwardHeaders) =>
+  request<ServiceMappingCandidate[]>(`/api/v1/agents/${id}/service-mapping-candidates`, headers);
 export const getDeploymentCandidates = (id: string) =>
   request<DeploymentCandidate[]>(`/api/v1/agents/${id}/deployment-candidates`);
 export const getGitHubStatus = () => request<GitHubStatus>("/api/v1/github/status");

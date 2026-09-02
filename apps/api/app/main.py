@@ -13,6 +13,7 @@ from .conversation_completion import router as conversation_completion_router
 from .conversation_operations import router as conversation_operations_router
 from .database import engine, get_session, session_factory
 from .github import router as github_router
+from .infrastructure import router as infrastructure_router
 from .logging import configure_logging
 from .m3 import router as m3_router
 from .maintenance import control_plane_maintenance_loop
@@ -105,6 +106,7 @@ app.include_router(github_router)
 app.include_router(releases_router)
 app.include_router(notification_tests_router)
 app.include_router(overview_router)
+app.include_router(infrastructure_router)
 
 
 @app.get("/healthz", tags=["system"])

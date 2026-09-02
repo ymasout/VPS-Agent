@@ -468,6 +468,38 @@ class ServiceMappingView(BaseModel):
     restart_enabled: bool
 
 
+class ServiceMappingBatchItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    client_item_id: str = Field(min_length=1, max_length=64)
+    mapping: ServiceMappingCreate
+
+
+class ServiceMappingBatchCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[ServiceMappingBatchItem] = Field(min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def unique_client_item_ids(self) -> "ServiceMappingBatchCreate":
+        ids = [item.client_item_id for item in self.items]
+        if len(ids) != len(set(ids)):
+            raise ValueError("client item ids must be unique")
+        return self
+
+
+class ServiceMappingBatchResult(BaseModel):
+    client_item_id: str
+    status: Literal["created", "rejected"]
+    status_code: int
+    detail: str | None
+    mapping: ServiceMappingView | None
+
+
+class ServiceMappingBatchView(BaseModel):
+    results: list[ServiceMappingBatchResult]
+    created_count: int
+    rejected_count: int
+
+
 class ServiceMappingCandidate(BaseModel):
     agent_id: str
     service_kind: str
@@ -482,6 +514,33 @@ class ServiceMappingCandidate(BaseModel):
     operation_capable: bool = False
     restart_enabled: bool = False
     criticality: str = "critical"
+
+
+class ServiceInventoryItem(BaseModel):
+    inventory_id: str
+    instance_id: str | None
+    service_name: str
+    environment: str | None
+    agent_id: str
+    agent_name: str
+    agent_online: bool
+    agent_last_seen_at: datetime | None
+    service_kind: str
+    state: str
+    healthy: bool | None
+    observed_at: datetime
+    mapped: bool
+    evidence_capable: bool
+    operation_capable: bool
+    restart_enabled: bool
+    deploy_enabled: bool
+    criticality: str | None
+
+
+class ServiceInventoryPage(BaseModel):
+    items: list[ServiceInventoryItem]
+    next_cursor: str | None
+    total: int
 
 
 class RestartPolicyUpdate(BaseModel):

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ControlPlaneApiError, formatBytes, getAgent, getAgents, getNotificationConfiguration, getSystemInfo } from "./api";
+import { ControlPlaneApiError, formatBytes, getAgent, getAgents, getNotificationConfiguration, getServiceInstances, getSystemInfo } from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -33,6 +33,17 @@ describe("control plane API client", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8000/api/v1/agents",
       { cache: "no-store", headers: principalHeaders },
+    );
+  });
+
+  it("forwards bounded service inventory filters and Principal headers", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"items":[],"next_cursor":null,"total":0}', { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const headers = { "X-VPS-Agent-Principal-Id": "viewer" };
+    await getServiceInstances(new URLSearchParams({ mapping: "unmapped", limit: "50" }), headers);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/service-instances?mapping=unmapped&limit=50",
+      { cache: "no-store", headers },
     );
   });
 

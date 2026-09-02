@@ -3,8 +3,9 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { GitHubRepository, ServiceMappingCandidate } from "@/lib/api";
+import { ServiceMappingBatchPanel } from "./service-mapping-batch-panel";
 
-function MappingForm({ candidate, repositories }: { candidate: ServiceMappingCandidate; repositories: GitHubRepository[] }) {
+function MappingForm({ candidate, repositories, namedAuthorization }: { candidate: ServiceMappingCandidate; repositories: GitHubRepository[]; namedAuthorization: boolean }) {
   const [mapped, setMapped] = useState(candidate.mapped);
   const [instanceId, setInstanceId] = useState(candidate.instance_id);
   const [directory, setDirectory] = useState("");
@@ -20,7 +21,7 @@ function MappingForm({ candidate, repositories }: { candidate: ServiceMappingCan
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/console/service-mappings", {
+      const response = await fetch(namedAuthorization ? "/api/v1/service-mappings" : "/console/service-mappings", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -52,7 +53,7 @@ function MappingForm({ candidate, repositories }: { candidate: ServiceMappingCan
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`/console/service-instances/${instanceId}/restart-policy`, {
+      const response = await fetch(namedAuthorization ? `/api/v1/service-instances/${instanceId}/restart-policy` : `/console/service-instances/${instanceId}/restart-policy`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ enabled: true, criticality: "non_critical" }),
@@ -96,14 +97,15 @@ function MappingForm({ candidate, repositories }: { candidate: ServiceMappingCan
   );
 }
 
-export function ServiceMappingPanel({ candidates, repositories }: { candidates: ServiceMappingCandidate[]; repositories: GitHubRepository[] }) {
-  if (candidates.length === 0) return null;
+export function ServiceMappingPanel({ candidates, repositories, canManage = true, namedAuthorization = false }: { candidates: ServiceMappingCandidate[]; repositories: GitHubRepository[]; canManage?: boolean; namedAuthorization?: boolean }) {
+  if (candidates.length === 0 || !canManage) return null;
   return (
     <section className="section">
       <div className="section-title"><h2>诊断服务发现</h2><span>{candidates.length} candidates</span></div>
       <p className="section-copy">Agent 已在本机授权这些 Docker/systemd 日志能力。确认业务信息后即可从事件发起诊断，无需填写容器 ID、Unit 参数、source_key 或 JSON。</p>
       <datalist id="authorized-github-repositories">{repositories.map((repository) => <option value={repository.full_name} key={repository.id} />)}</datalist>
-      <div className="mapping-list">{candidates.map((candidate) => <MappingForm candidate={candidate} repositories={repositories} key={`${candidate.service_key}-${candidate.log_source_key}`} />)}</div>
+      <ServiceMappingBatchPanel candidates={candidates} namedAuthorization={namedAuthorization} />
+      <div className="mapping-list">{candidates.map((candidate) => <MappingForm candidate={candidate} repositories={repositories} namedAuthorization={namedAuthorization} key={`${candidate.service_key}-${candidate.log_source_key}`} />)}</div>
     </section>
   );
 }
