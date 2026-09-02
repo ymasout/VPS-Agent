@@ -59,6 +59,9 @@ export function ConversationTurnResult({
   }
   return (
     <div className="conversation-answer">
+      <p className="conversation-answer-mode">
+        本轮来源：{turn.provider === "deterministic" ? "规则分析" : turn.provider === "http_json" ? "模型分析" : "分析来源未知"} · 只读建议不构成执行授权
+      </p>
       <h3>{turn.answer.summary}</h3>
       <div className="diagnostic-grid">
         <article>

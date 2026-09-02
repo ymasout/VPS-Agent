@@ -10,19 +10,20 @@ import { IconButton, StateView, StatusBadge } from "./primitives";
 describe("M7 AppShell navigation", () => {
   it("only exposes routes that currently exist", () => {
     const linkedRoutes = desktopNavigation.flatMap((group) => group.items.flatMap((item) => item.href ?? []));
-    expect(linkedRoutes).toEqual(["/", "/fleet", "/services", "/agent", "/repositories", "/settings/notifications"]);
-    expect(linkedRoutes).not.toContain("/events");
+    expect(linkedRoutes).toEqual(["/", "/fleet", "/services", "/events", "/assistant", "/repositories", "/settings/notifications"]);
     expect(linkedRoutes).not.toContain("/operations");
     expect(mobilePrimaryNavigation.map((item) => item.href).filter(Boolean)).toEqual([
       "/",
       "/fleet",
-      "/mobile#events",
+      "/events",
     ]);
   });
 
-  it("keeps the legacy Agent entry and resolves detail context titles", () => {
-    expect(desktopNavigation.flatMap((group) => group.items).find((item) => item.label === "助手")?.href).toBe("/agent");
+  it("links the primary Agent workspace, keeps the legacy title, and resolves detail contexts", () => {
+    expect(desktopNavigation.flatMap((group) => group.items).find((item) => item.label === "助手")?.href).toBe("/assistant");
     expect(getPageTitle("/agent")).toBe("Agent 对话");
+    expect(getPageTitle("/assistant")).toBe("Agent 对话");
+    expect(getPageTitle("/events")).toBe("事件");
     expect(getPageTitle("/fleet")).toBe("Fleet");
     expect(getPageTitle("/services")).toBe("服务");
     expect(getPageTitle("/events/event-1")).toBe("事件详情");

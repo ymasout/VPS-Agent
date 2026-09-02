@@ -1,7 +1,7 @@
 # M7 Web UI 2.0 设计基线
 
-状态：**M7.0、M7.1a、M7.1b、M7.2a 已完成本地实现与验证；下一片为 M7.2b**
-最后同步：2026-08-29
+状态：**M7.0、M7.1a、M7.1b、M7.2a、M7.2b 已完成实现与本地验证；下一片为 M7.3**
+最后同步：2026-09-02
 
 本文冻结 M7 的产品结构、交互原则、视觉基线、数据契约缺口与实施顺序。它基于当前 Web 源码、API 类型、权限模型和 M3–M6 已验证边界，不把尚未实现的 M8/M9 能力画成可用功能，也不授权提交、发布或生产变更。
 
@@ -353,6 +353,8 @@ type OperationPresentation = {
 
 这些字段加入现有 `EventConversationView`、`RepositoryConversationView`、`ContextConversationView` 和 `FleetConversationView`，而不是改变端点路径或另建一套会话 API。字段在 Pydantic/TypeScript 契约中保持可选以兼容旧响应，但服务端新代码必须按当前配置显式填充；旧响应缺失时 UI 显示 `unknown`，不得无条件回落为 `rules`。`ConversationTurnView.provider` 继续记录每个已执行轮次的实际 Provider。
 
+会话 envelope 的 `analysis_mode` 只描述 `CONVERSATION_PROVIDER`，因为它回答的是当前对话来源；总览的 `analysis_mode` 是同时观察诊断与对话 Provider 后得到的控制台级保守摘要，两者不是同一聚合口径。`provider_available` 表示配置就绪而非实时网络探测：deterministic 无外部依赖，`http_json` 仅在通过服务端配置校验且具有 API URL 时为 true；该字段仍不得返回 URL、token 或其他秘密。
+
 `DiagnosticView` 已有每次运行的实际 `provider`。M7.2b 可为单次诊断增加同样的可选规范化 `analysis_mode/provider_label` 展示字段；空诊断列表不为了承载模式元数据而改变现有数组响应结构。若后续必须在首次诊断前展示模式，应复用固定字段的控制台能力摘要，不从空列表推断。
 
 ### 9.3 真实 Provider 后续门
@@ -458,7 +460,7 @@ Web 使用 Recharts `3.10.1` 绘制无坐标、无填充、禁用动画的紧凑
 - 请求 envelope 成功时返回 200 与 `created_count/rejected_count`；未处理异常或最终持久化失败不返回伪成功 envelope。网络结果不确定时先重新读取候选，不自动重放；唯一约束会使已创建项在重试时失败关闭为冲突。
 - 批量路径只提供无差异的基础诊断映射：API 在写入边界强制 `production + critical + restart_enabled=false`，并清除客户端提交的描述、部署目录、仓库、版本与镜像字段；UI 同样不提供这些差异项或启用重启/部署。目录、仓库、关键性或操作授权有差异的项目继续逐项复核。
 
-本地实现记录（2026-08-29，2026-09-02 审计收口）：新增真实 `/fleet` 与 `/services` 工作区。Fleet 使用既有 `fleet:read` 机器摘要并提供 URL 筛选；跨机器服务由新的只读 `GET /api/v1/service-instances` 提供最多 100 项的 cursor 分页、固定筛选、稳定排序、映射/证据/操作能力摘要，不返回 `service_key`、容器 ID、Unit 参数、路径或命令；cursor 与原筛选集绑定，不能跨筛选条件混用。机器详情保留 `/servers/{id}` 深链并重组为“概览、服务、事件、助手、部署与策略”五个同页分区，既有会话、逐项映射和部署组件继续复用。批量映射按上述冻结契约落地并在 API 写入边界强制安全默认值，未增加数据库迁移、Agent 协议、Operation 状态机、Provider/feature flag 或依赖。最终验证结果见项目状态文档；1440×900 和 390×844 本地 mock 检查覆盖 Fleet、服务和机器详情，无页面级横向溢出或控制台错误，宽表与分区导航只在自身容器内滚动，新增交互目标达到 44px。未提交、未推送、未部署或修改生产环境。
+实现记录（2026-08-29，2026-09-02 审计收口）：新增真实 `/fleet` 与 `/services` 工作区。Fleet 使用既有 `fleet:read` 机器摘要并提供 URL 筛选；跨机器服务由新的只读 `GET /api/v1/service-instances` 提供最多 100 项的 cursor 分页、固定筛选、稳定排序、映射/证据/操作能力摘要，不返回 `service_key`、容器 ID、Unit 参数、路径或命令；cursor 与原筛选集绑定，不能跨筛选条件混用。机器详情保留 `/servers/{id}` 深链并重组为“概览、服务、事件、助手、部署与策略”五个同页分区，既有会话、逐项映射和部署组件继续复用。批量映射按上述冻结契约落地并在 API 写入边界强制安全默认值，未增加数据库迁移、Agent 协议、Operation 状态机、Provider/feature flag 或依赖。1440×900 和 390×844 本地 mock 检查覆盖 Fleet、服务和机器详情，无页面级横向溢出或控制台错误，宽表与分区导航只在自身容器内滚动，新增交互目标达到 44px。最终提交 `771cafc` 已推送，未部署或修改生产环境。
 
 ### M7.2b：事件与助手
 
@@ -466,6 +468,9 @@ Web 使用 Recharts `3.10.1` 绘制无坐标、无填充、禁用动画的紧凑
 - 加入规则分析/模型分析透明标签，不在本片启用真实 Provider。
 - 在进入本片前冻结现有 conversation envelope 的可选模式字段及空会话兼容测试；诊断列表保持数组响应。
 - 保留现有 scope 外键、问题大小门、单活动轮次、轮询与零 Operation 副作用；右侧上下文/证据区只读取服务端返回的有界引用。
+- 本片只为 GET 会话读取补齐 scope 对应的 capability；POST turn 继续沿用更严格的既有 `require_admin`，具名模式下 operator 当前可以读取但不能发问。后续若调整写入授权，必须作为独立权限契约处理，不能在 UI 中隐式放宽。
+
+实现记录（2026-09-02）：新增真实 `/events` 工作区和有界 `EventPage`，支持状态、严重级别、机器、服务、时间与关键词筛选，活动事件优先且 cursor 与筛选集绑定；事件详情重组为概览、诊断、对话、相关 Operation 与历史复核。新增一级 `/assistant`，只允许在服务端已有 Fleet、机器、服务、事件和仓库路由之间选择可信 scope；`/agent` 保持兼容并重定向到该入口。五类 conversation envelope 增加可选模式、Provider 配置状态、上下文 scope 与捕获时间，旧响应缺字段时明确显示“分析模式未知”，不伪装成规则分析；引用区只展示服务端验证的有界引用，离线上下文明确标为最后快照。事件、Fleet 会话读取分别补齐 `event:read`、`fleet:read` capability 依赖，未启用真实 Provider，未改变提问大小门、单活动轮次、Operation 创建/确认/审批、数据库、Agent 协议或 feature flag。API 377 项（18 skipped）、Web 122 项、Ruff、ESLint、production build、1440×900 与 390×844 本地检查通过；没有新增依赖。M7.2b 已纳入 `main` 并推送，尚未部署或修改生产环境。
 
 ### M7.3：Operation 工作区
 
@@ -517,4 +522,4 @@ Web 使用 Recharts `3.10.1` 绘制无坐标、无填充、禁用动画的紧凑
 
 ## 17. 评审后第一项实现
 
-M7.1a、M7.1b 与 M7.2a 已按分片完成；下一项是 **M7.2b 事件与 Agent 对话**。进入该片前冻结 conversation envelope 的可选模式字段及空会话兼容测试，继续保留 `/agent` 和所有上下文深链，不提前进入 M7.3 Operation 工作区。
+M7.1a、M7.1b、M7.2a 与 M7.2b 已按分片完成；下一项是 **M7.3 Operation 工作区**。进入该片前冻结候选层与持久化层的动作归一化，并继续保留既有审批、部署、回滚深链和服务端安全契约。

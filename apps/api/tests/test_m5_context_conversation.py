@@ -62,6 +62,41 @@ def test_agent_without_conversation_returns_200_empty_turns(
     assert view.session_id is None
     assert view.available is True
     assert view.turns == []
+    assert view.analysis_mode == "rules"
+    assert view.provider_available is True
+    assert view.provider_label == "规则分析"
+    assert view.context_scope == "agent"
+
+
+def test_empty_context_conversation_reports_safe_model_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = Agent(id="agent-1", organization_id="local", name="edge")
+    session = AsyncMock()
+    session.scalar.return_value = None
+    monkeypatch.setattr(
+        conversation_module,
+        "scoped_agent",
+        AsyncMock(return_value=agent),
+    )
+
+    view = asyncio.run(
+        get_agent_conversation(
+            "agent-1",
+            session,
+            context_settings(
+                conversation_provider="http_json",
+                conversation_api_url="https://provider.invalid/v1/analyze",
+                conversation_api_key="must-not-appear",
+            ),
+        )
+    )
+
+    assert view.analysis_mode == "model"
+    assert view.provider_available is True
+    assert view.provider_label == "模型分析"
+    assert "provider.invalid" not in view.model_dump_json()
+    assert "must-not-appear" not in view.model_dump_json()
 
 
 def test_service_route_derives_service_scope_from_instance(

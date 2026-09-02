@@ -314,11 +314,17 @@ def test_existing_event_without_conversation_returns_200_shape() -> None:
     session = AsyncMock()
     session.scalar.side_effect = [event(), None]
 
-    view = asyncio.run(get_event_conversation("event-1", session))
+    view = asyncio.run(get_event_conversation("event-1", session, Settings()))
 
     assert view.event_id == "event-1"
     assert view.session_id is None
     assert view.turns == []
+    assert view.analysis_mode == "rules"
+    assert view.provider_available is True
+    assert view.provider_label == "规则分析"
+    assert view.context_scope == "event"
+    assert view.context_captured_at is None
+    assert "conversation_api" not in view.model_dump_json()
 
 
 def test_create_turn_only_persists_conversation_records(

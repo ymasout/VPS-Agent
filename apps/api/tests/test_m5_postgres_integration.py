@@ -148,7 +148,7 @@ def test_event_conversation_is_scoped_and_never_creates_operation(
                 )
                 await session.commit()
 
-                empty = await get_event_conversation(current_event_id, session)
+                empty = await get_event_conversation(current_event_id, session, Settings())
                 assert empty.session_id is None
                 assert empty.turns == []
 

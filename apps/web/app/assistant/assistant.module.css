@@ -1,0 +1,16 @@
+.workspace { display: grid; gap: var(--space-6); padding-bottom: var(--space-10); }
+.selector { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: end; padding: var(--space-4); }
+.selector label { display: grid; gap: var(--space-2); color: var(--color-text-secondary); font: 600 11px var(--font-mono); }
+.selector select { min-height: var(--control-height); min-width: 0; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-text); padding: 0 var(--space-3); font: inherit; }
+.selector button { min-height: var(--control-height); border: 1px solid var(--color-success-border); border-radius: var(--radius-sm); background: var(--color-accent); color: var(--color-bg); padding: 0 var(--space-5); font-weight: 750; cursor: pointer; }
+.scopeSummary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-4); }
+.scopeSummary div { display: grid; gap: 5px; }
+.scopeSummary strong { color: var(--color-text); }
+.scopeSummary span { color: var(--color-text-muted); font-size: 12px; }
+.safety { margin: 0; color: var(--color-text-secondary); font-size: 12px; line-height: 1.65; }
+
+@media (max-width: 620px) {
+  .selector { grid-template-columns: 1fr; }
+  .selector button { width: 100%; }
+  .scopeSummary { align-items: flex-start; flex-direction: column; }
+}

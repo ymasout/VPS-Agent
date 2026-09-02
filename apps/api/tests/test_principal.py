@@ -6,6 +6,8 @@ from fastapi import HTTPException, Request
 
 from app.api import router as api_router
 from app.config import Settings
+from app.conversation import router as conversation_router
+from app.conversation_completion import router as conversation_completion_router
 from app.conversation_operations import router as conversation_operations_router
 from app.infrastructure import router as infrastructure_router
 from app.m3 import router as m3_router
@@ -663,6 +665,8 @@ def test_capability_dependencies_are_attached_to_frozen_and_overview_get_routes(
         *m3_router.routes,
         *overview_router.routes,
         *infrastructure_router.routes,
+        *conversation_router.routes,
+        *conversation_completion_router.routes,
     ]:
         dependencies = {
             item.call
@@ -683,6 +687,12 @@ def test_capability_dependencies_are_attached_to_frozen_and_overview_get_routes(
         ("/api/v1/service-instances", "GET"): {require_fleet_read},
         ("/api/v1/events", "GET"): {require_event_read},
         ("/api/v1/events/{event_id}", "GET"): {require_event_read},
+        ("/api/v1/events/{event_id}/conversation", "GET"): {require_event_read},
+        ("/api/v1/agents/{agent_id}/conversation", "GET"): {require_fleet_read},
+        ("/api/v1/service-instances/{instance_id}/conversation", "GET"): {
+            require_fleet_read
+        },
+        ("/api/v1/fleet/conversation", "GET"): {require_fleet_read},
         ("/api/v1/console-overview", "GET"): {
             require_system_read,
             require_fleet_read,

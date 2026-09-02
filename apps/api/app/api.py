@@ -1,8 +1,12 @@
+import base64
+import hashlib
+import json
+from binascii import Error as BinasciiError
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, status
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .alerts import evaluate_agent_availability, evaluate_service_alerts
@@ -45,6 +49,8 @@ from .schemas import (
     AlertEventAction,
     AlertEventView,
     DeploymentCandidateView,
+    EventListItem,
+    EventPage,
     MetricView,
     NotificationChannelInfo,
     NotificationConfiguration,
@@ -634,7 +640,7 @@ async def list_deployment_candidates(
 
 @router.get(
     "/events",
-    response_model=list[AlertEventView],
+    response_model=EventPage,
     dependencies=[Depends(require_event_read)],
 )
 async def list_events(
@@ -643,14 +649,106 @@ async def list_events(
         alias="status",
         pattern="^(pending|firing|acknowledged|silenced|resolved)$",
     ),
+    severity: str | None = Query(default=None, pattern="^(critical|warning|info)$"),
+    agent_id: str | None = Query(default=None, max_length=36),
+    service_id: str | None = Query(default=None, max_length=36),
+    since: datetime | None = None,
+    until: datetime | None = None,
+    q: str | None = Query(default=None, min_length=1, max_length=100),
+    cursor: str | None = Query(default=None, max_length=1024),
+    limit: int = Query(default=50, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
-) -> list[AlertEventView]:
-    query = select(AlertEvent).order_by(AlertEvent.last_observed_at.desc()).limit(200)
+) -> EventPage:
+    if since and since.tzinfo is None:
+        since = since.replace(tzinfo=timezone.utc)
+    if until and until.tzinfo is None:
+        until = until.replace(tzinfo=timezone.utc)
+    if since and until and since > until:
+        raise HTTPException(status_code=422, detail="event time range is invalid")
+    query = (
+        select(AlertEvent, Agent, ServiceInstance, ManagedService)
+        .join(Agent, Agent.id == AlertEvent.agent_id)
+        .outerjoin(
+            ServiceInstance,
+            and_(
+                ServiceInstance.agent_id == AlertEvent.agent_id,
+                ServiceInstance.service_kind == AlertEvent.service_kind,
+                ServiceInstance.service_key == AlertEvent.service_key,
+            ),
+        )
+        .outerjoin(ManagedService, ManagedService.id == ServiceInstance.service_id)
+    )
     if event_status:
         query = query.where(AlertEvent.status == event_status)
-    events = (await session.scalars(query)).all()
-    return [
-        AlertEventView(
+    if severity:
+        query = query.where(AlertEvent.severity == severity)
+    if agent_id:
+        query = query.where(AlertEvent.agent_id == agent_id)
+    if service_id:
+        query = query.where(ServiceInstance.service_id == service_id)
+    if since:
+        query = query.where(AlertEvent.last_observed_at >= since)
+    if until:
+        query = query.where(AlertEvent.last_observed_at <= until)
+    if q:
+        pattern = f"%{q}%"
+        query = query.where(
+            or_(
+                AlertEvent.title.ilike(pattern),
+                Agent.name.ilike(pattern),
+                ManagedService.name.ilike(pattern),
+            )
+        )
+    filter_payload = json.dumps(
+        [event_status, severity, agent_id, service_id, since, until, q],
+        default=str,
+        separators=(",", ":"),
+    ).encode()
+    fingerprint = hashlib.sha256(filter_payload).hexdigest()
+    total = int(
+        await session.scalar(select(func.count()).select_from(query.subquery())) or 0
+    )
+    active_rank = case((AlertEvent.status == "resolved", 1), else_=0)
+    if cursor:
+        try:
+            padding = "=" * (-len(cursor) % 4)
+            decoded = json.loads(base64.urlsafe_b64decode(cursor + padding))
+            if (
+                not isinstance(decoded, list)
+                or len(decoded) != 5
+                or decoded[0] != 1
+                or decoded[1] != fingerprint
+                or decoded[2] not in {0, 1}
+                or not isinstance(decoded[3], str)
+                or not isinstance(decoded[4], str)
+            ):
+                raise ValueError
+            cursor_rank = decoded[2]
+            cursor_time = datetime.fromisoformat(decoded[3])
+            cursor_id = decoded[4]
+        except (BinasciiError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
+            raise HTTPException(status_code=422, detail="invalid event cursor") from error
+        query = query.where(
+            or_(
+                active_rank > cursor_rank,
+                and_(active_rank == cursor_rank, AlertEvent.last_observed_at < cursor_time),
+                and_(
+                    active_rank == cursor_rank,
+                    AlertEvent.last_observed_at == cursor_time,
+                    AlertEvent.id < cursor_id,
+                ),
+            )
+        )
+    rows = (
+        await session.execute(
+            query.order_by(active_rank, AlertEvent.last_observed_at.desc(), AlertEvent.id.desc())
+            .limit(limit + 1)
+        )
+    ).all()
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    items = [
+        EventListItem(
             id=event.id,
             agent_id=event.agent_id,
             source=event.source,
@@ -667,9 +765,27 @@ async def list_events(
             acknowledged_at=event.acknowledged_at,
             silenced_until=event.silenced_until,
             resolved_at=event.resolved_at,
+            agent_name=agent.name,
+            service_id=instance.service_id if instance else None,
+            service_name=managed.name if managed else None,
         )
-        for event in events
+        for event, agent, instance, managed in rows
     ]
+    next_cursor = None
+    if has_more and rows:
+        event = rows[-1][0]
+        payload = json.dumps(
+            [
+                1,
+                fingerprint,
+                1 if event.status == "resolved" else 0,
+                event.last_observed_at.isoformat(),
+                event.id,
+            ],
+            separators=(",", ":"),
+        ).encode()
+        next_cursor = base64.urlsafe_b64encode(payload).decode().rstrip("=")
+    return EventPage(items=items, next_cursor=next_cursor, total=total)
 
 
 @router.post(

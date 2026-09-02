@@ -32,6 +32,7 @@ from .models import (
     ServiceInstance,
     ServiceStatus,
 )
+from .principal import require_event_read, require_fleet_read
 from .redaction import redact_text, truncate_utf8
 from .repository_knowledge import (
     RepositoryKnowledgeItem,
@@ -68,6 +69,49 @@ MAX_OPERATIONS = 20
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def conversation_mode_summary(
+    settings: Settings,
+    scope: str,
+    turns: Sequence[ConversationTurn] = (),
+) -> dict[str, object]:
+    mode = "rules" if settings.conversation_provider == "deterministic" else "model"
+    provider_available = (
+        settings.conversation_provider == "deterministic"
+        or bool(settings.conversation_api_url)
+    )
+    captured_at: datetime | None = None
+    if turns:
+        manifest = turns[-1].context_manifest or {}
+        candidates = [manifest.get("captured_at")]
+        candidates.extend(
+            item.get("source_collected_at")
+            for item in manifest.get("items", [])
+            if isinstance(item, dict)
+        )
+        parsed: list[datetime] = []
+        for value in candidates:
+            if not isinstance(value, str):
+                continue
+            try:
+                timestamp = datetime.fromisoformat(value)
+                parsed.append(
+                    timestamp.replace(tzinfo=timezone.utc)
+                    if timestamp.tzinfo is None
+                    else timestamp.astimezone(timezone.utc)
+                )
+            except ValueError:
+                continue
+        if parsed:
+            captured_at = max(parsed)
+    return {
+        "analysis_mode": mode,
+        "provider_available": provider_available,
+        "provider_label": "规则分析" if mode == "rules" else "模型分析",
+        "context_scope": scope,
+        "context_captured_at": captured_at,
+    }
 
 
 @dataclass(frozen=True)
@@ -2203,10 +2247,12 @@ async def recover_stale_conversation_turns(
 @router.get(
     "/events/{event_id}/conversation",
     response_model=EventConversationView,
+    dependencies=[Depends(require_event_read)],
 )
 async def get_event_conversation(
     event_id: str,
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> EventConversationView:
     event = await scoped_event(session, event_id)
     conversation = await session.scalar(
@@ -2217,7 +2263,12 @@ async def get_event_conversation(
         )
     )
     if conversation is None:
-        return EventConversationView(event_id=event.id, session_id=None, turns=[])
+        return EventConversationView(
+            event_id=event.id,
+            session_id=None,
+            **conversation_mode_summary(settings, "event"),
+            turns=[],
+        )
     turns = list(
         (
             await session.scalars(
@@ -2235,6 +2286,7 @@ async def get_event_conversation(
     return EventConversationView(
         event_id=event.id,
         session_id=conversation.id,
+        **conversation_mode_summary(settings, "event", turns),
         turns=[await turn_view(session, turn, event.id) for turn in turns],
     )
 
@@ -2419,6 +2471,7 @@ async def get_repository_conversation(
             session_id=None,
             available=detail.conversation_available,
             unavailable_reason=detail.unavailable_reason,
+            **conversation_mode_summary(settings, "repository"),
             turns=[],
         )
     turns = list(
@@ -2440,6 +2493,7 @@ async def get_repository_conversation(
         session_id=conversation.id,
         available=detail.conversation_available,
         unavailable_reason=detail.unavailable_reason,
+        **conversation_mode_summary(settings, "repository", turns),
         turns=[await turn_view(session, turn, None) for turn in turns],
     )
 
@@ -2585,6 +2639,7 @@ async def scoped_conversation_view(
             session_id=None,
             available=available,
             unavailable_reason=None if available else "feature_disabled",
+            **conversation_mode_summary(settings, scope_type),
             turns=[],
         )
     turns = list(
@@ -2609,6 +2664,7 @@ async def scoped_conversation_view(
         session_id=conversation.id,
         available=available,
         unavailable_reason=None if available else "feature_disabled",
+        **conversation_mode_summary(settings, scope_type, turns),
         turns=[await turn_view(session, turn, None) for turn in turns],
     )
 
@@ -2723,6 +2779,7 @@ async def create_scoped_conversation_turn(
 @router.get(
     "/agents/{agent_id}/conversation",
     response_model=ContextConversationView,
+    dependencies=[Depends(require_fleet_read)],
 )
 async def get_agent_conversation(
     agent_id: str,
@@ -2767,6 +2824,7 @@ async def create_agent_conversation_turn(
 @router.get(
     "/service-instances/{instance_id}/conversation",
     response_model=ContextConversationView,
+    dependencies=[Depends(require_fleet_read)],
 )
 async def get_service_conversation(
     instance_id: str,

@@ -18,6 +18,7 @@ from .conversation import (
     ConversationContext,
     ConversationFailure,
     citation_href,
+    conversation_mode_summary,
     fit_context_items,
     json_text,
     make_context_item,
@@ -42,6 +43,7 @@ from .models import (
     ServiceInstance,
     ServiceStatus,
 )
+from .principal import require_fleet_read
 from .redaction import redact_text, truncate_utf8
 from .schemas import (
     ConversationAnswer,
@@ -907,7 +909,11 @@ async def validate_fleet_context(
                 )
 
 
-@router.get("/fleet/conversation", response_model=FleetConversationView)
+@router.get(
+    "/fleet/conversation",
+    response_model=FleetConversationView,
+    dependencies=[Depends(require_fleet_read)],
+)
 async def get_fleet_conversation(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
@@ -924,6 +930,7 @@ async def get_fleet_conversation(
             session_id=None,
             available=available,
             unavailable_reason=None if available else "feature_disabled",
+            **conversation_mode_summary(settings, "fleet"),
             turns=[],
         )
     turns = list(
@@ -944,6 +951,7 @@ async def get_fleet_conversation(
         session_id=conversation.id,
         available=available,
         unavailable_reason=None if available else "feature_disabled",
+        **conversation_mode_summary(settings, "fleet", turns),
         turns=[await turn_view(session, item, None) for item in turns],
     )
 

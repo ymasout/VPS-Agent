@@ -106,6 +106,7 @@ export type ServiceMappingCandidate = {
 export type ServiceInventoryItem = {
   inventory_id: string;
   instance_id: string | null;
+  service_id: string | null;
   service_name: string;
   environment: string | null;
   agent_id: string;
@@ -192,6 +193,16 @@ export type AlertEvent = {
   acknowledged_at: string | null;
   silenced_until: string | null;
   resolved_at: string | null;
+};
+export type EventListItem = AlertEvent & {
+  agent_name: string;
+  service_id: string | null;
+  service_name: string | null;
+};
+export type EventPage = {
+  items: EventListItem[];
+  next_cursor: string | null;
+  total: number;
 };
 export type DiagnosticFact = { statement: string; evidence_ids: string[] };
 export type DiagnosticInference = DiagnosticFact & { confidence: "low" | "medium" | "high" };
@@ -294,6 +305,11 @@ export type ConversationTurn = {
 export type EventConversation = {
   event_id: string;
   session_id: string | null;
+  analysis_mode?: "rules" | "model" | null;
+  provider_available?: boolean | null;
+  provider_label?: string | null;
+  context_scope?: string | null;
+  context_captured_at?: string | null;
   turns: ConversationTurn[];
 };
 export type RepositoryFileMetadata = {
@@ -323,6 +339,11 @@ export type RepositoryConversation = {
   session_id: string | null;
   available: boolean;
   unavailable_reason: string | null;
+  analysis_mode?: "rules" | "model" | null;
+  provider_available?: boolean | null;
+  provider_label?: string | null;
+  context_scope?: string | null;
+  context_captured_at?: string | null;
   turns: ConversationTurn[];
 };
 export type ContextConversation = {
@@ -333,12 +354,22 @@ export type ContextConversation = {
   session_id: string | null;
   available: boolean;
   unavailable_reason: string | null;
+  analysis_mode?: "rules" | "model" | null;
+  provider_available?: boolean | null;
+  provider_label?: string | null;
+  context_scope?: string | null;
+  context_captured_at?: string | null;
   turns: ConversationTurn[];
 };
 export type FleetConversation = {
   session_id: string | null;
   available: boolean;
   unavailable_reason: string | null;
+  analysis_mode?: "rules" | "model" | null;
+  provider_available?: boolean | null;
+  provider_label?: string | null;
+  context_scope?: string | null;
+  context_captured_at?: string | null;
   turns: ConversationTurn[];
 };
 export type EventHistoryItem = {
@@ -512,25 +543,25 @@ export const getServiceMappingCandidates = (id: string, headers?: PrincipalForwa
 export const getDeploymentCandidates = (id: string) =>
   request<DeploymentCandidate[]>(`/api/v1/agents/${id}/deployment-candidates`);
 export const getGitHubStatus = () => request<GitHubStatus>("/api/v1/github/status");
-export const getGitHubRepositories = () => request<GitHubRepository[]>("/api/v1/github/repositories");
-export const getEvents = (headers?: PrincipalForwardHeaders) =>
-  request<AlertEvent[]>("/api/v1/events", headers);
+export const getGitHubRepositories = (headers?: PrincipalForwardHeaders) => request<GitHubRepository[]>("/api/v1/github/repositories", headers);
+export const getEvents = (params: URLSearchParams, headers?: PrincipalForwardHeaders) =>
+  request<EventPage>(`/api/v1/events?${params.toString()}`, headers);
 export const getEvent = (id: string, headers?: PrincipalForwardHeaders) =>
   request<AlertEvent>(`/api/v1/events/${id}`, headers);
 export const getEventDiagnostics = (id: string) =>
   request<Diagnostic[]>(`/api/v1/events/${id}/diagnostics`);
-export const getEventConversation = (id: string) =>
-  request<EventConversation>(`/api/v1/events/${id}/conversation`);
+export const getEventConversation = (id: string, headers?: PrincipalForwardHeaders) =>
+  request<EventConversation>(`/api/v1/events/${id}/conversation`, headers);
 export const getRepositoryDetail = (id: string) =>
   request<RepositoryDetail>(`/api/v1/repositories/${id}`);
-export const getRepositoryConversation = (id: string) =>
-  request<RepositoryConversation>(`/api/v1/repositories/${id}/conversation`);
-export const getAgentConversation = (id: string) =>
-  request<ContextConversation>(`/api/v1/agents/${id}/conversation`);
-export const getServiceConversation = (id: string) =>
-  request<ContextConversation>(`/api/v1/service-instances/${id}/conversation`);
-export const getFleetConversation = () =>
-  request<FleetConversation>("/api/v1/fleet/conversation");
+export const getRepositoryConversation = (id: string, headers?: PrincipalForwardHeaders) =>
+  request<RepositoryConversation>(`/api/v1/repositories/${id}/conversation`, headers);
+export const getAgentConversation = (id: string, headers?: PrincipalForwardHeaders) =>
+  request<ContextConversation>(`/api/v1/agents/${id}/conversation`, headers);
+export const getServiceConversation = (id: string, headers?: PrincipalForwardHeaders) =>
+  request<ContextConversation>(`/api/v1/service-instances/${id}/conversation`, headers);
+export const getFleetConversation = (headers?: PrincipalForwardHeaders) =>
+  request<FleetConversation>("/api/v1/fleet/conversation", headers);
 export const getEventHistory = (id: string) =>
   request<EventHistory>(`/api/v1/events/${id}/history`);
 export const getSimilarEvents = (id: string) =>

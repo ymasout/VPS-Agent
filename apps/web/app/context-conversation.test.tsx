@@ -54,6 +54,27 @@ describe("context conversation", () => {
     expect(service).toContain("不会创建或确认 Operation");
     expect(agent).not.toContain("Fleet");
     expect(service).not.toContain("执行操作");
+    expect(agent).toContain("分析模式未知");
+  });
+
+  it("shows explicit provider mode and offline last-snapshot state", () => {
+    const markup = renderToStaticMarkup(
+      <ContextConversationPanel
+        endpoint="/console/agents/agent-1/conversation/turns"
+        initial={{
+          ...conversation("agent"),
+          analysis_mode: "rules",
+          provider_available: true,
+          provider_label: "规则分析",
+          context_scope: "agent",
+        }}
+        lastSnapshot
+      />,
+    );
+
+    expect(markup).toContain("规则分析");
+    expect(markup).toContain("Agent 离线");
+    expect(markup).toContain("自然语言建议不会直接执行");
   });
 
   it("disables new questions when the independent flag is off", () => {

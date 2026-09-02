@@ -151,6 +151,7 @@ def test_service_inventory_returns_bounded_safe_display_fields() -> None:
     assert result.items[0].model_dump() == {
         "inventory_id": "status-1",
         "instance_id": "instance-1",
+        "service_id": "managed-1",
         "service_name": "payments-api",
         "environment": "production",
         "agent_id": "agent-1",

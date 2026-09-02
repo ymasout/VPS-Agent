@@ -10,7 +10,12 @@ export default async function MobileStatusPage() {
   let error = "";
   try {
     const principalHeaders = await getPrincipalForwardHeaders();
-    [agents, events] = await Promise.all([getAgents(principalHeaders ?? undefined), getEvents(principalHeaders ?? undefined)]);
+    const [agentRows, eventPage] = await Promise.all([
+      getAgents(principalHeaders ?? undefined),
+      getEvents(new URLSearchParams({ limit: "50" }), principalHeaders ?? undefined),
+    ]);
+    agents = agentRows;
+    events = eventPage.items;
   } catch {
     error = "控制平面暂时不可用，请联网后重新加载。";
   }

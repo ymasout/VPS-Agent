@@ -45,6 +45,9 @@ def test_fleet_without_session_returns_200_empty_turns() -> None:
     assert view.session_id is None
     assert view.available is True
     assert view.turns == []
+    assert view.analysis_mode == "rules"
+    assert view.provider_label == "规则分析"
+    assert view.context_scope == "fleet"
 
 
 def test_fleet_turn_is_blocked_without_feature_flag() -> None:

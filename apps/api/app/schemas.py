@@ -417,6 +417,18 @@ class AlertEventView(BaseModel):
     resolved_at: datetime | None
 
 
+class EventListItem(AlertEventView):
+    agent_name: str
+    service_id: str | None
+    service_name: str | None
+
+
+class EventPage(BaseModel):
+    items: list[EventListItem]
+    next_cursor: str | None
+    total: int
+
+
 class AlertEventAction(BaseModel):
     action: Literal["acknowledge", "silence"]
     silence_minutes: int = Field(default=60, ge=1, le=10080)
@@ -519,6 +531,7 @@ class ServiceMappingCandidate(BaseModel):
 class ServiceInventoryItem(BaseModel):
     inventory_id: str
     instance_id: str | None
+    service_id: str | None
     service_name: str
     environment: str | None
     agent_id: str
@@ -1014,6 +1027,11 @@ class ConversationTurnView(BaseModel):
 class EventConversationView(BaseModel):
     event_id: str
     session_id: str | None
+    analysis_mode: Literal["rules", "model"] | None = None
+    provider_available: bool | None = None
+    provider_label: str | None = None
+    context_scope: str | None = None
+    context_captured_at: datetime | None = None
     turns: list[ConversationTurnView] = Field(default_factory=list)
 
 
@@ -1046,6 +1064,11 @@ class RepositoryConversationView(BaseModel):
     session_id: str | None
     available: bool
     unavailable_reason: str | None
+    analysis_mode: Literal["rules", "model"] | None = None
+    provider_available: bool | None = None
+    provider_label: str | None = None
+    context_scope: str | None = None
+    context_captured_at: datetime | None = None
     turns: list[ConversationTurnView] = Field(default_factory=list)
 
 
@@ -1057,6 +1080,11 @@ class ContextConversationView(BaseModel):
     session_id: str | None
     available: bool
     unavailable_reason: str | None
+    analysis_mode: Literal["rules", "model"] | None = None
+    provider_available: bool | None = None
+    provider_label: str | None = None
+    context_scope: str | None = None
+    context_captured_at: datetime | None = None
     turns: list[ConversationTurnView] = Field(default_factory=list)
 
 
@@ -1064,6 +1092,11 @@ class FleetConversationView(BaseModel):
     session_id: str | None
     available: bool
     unavailable_reason: str | None
+    analysis_mode: Literal["rules", "model"] | None = None
+    provider_available: bool | None = None
+    provider_label: str | None = None
+    context_scope: str | None = None
+    context_captured_at: datetime | None = None
     turns: list[ConversationTurnView] = Field(default_factory=list)
 
 

@@ -20,7 +20,7 @@ button, input, select, textarea { font: inherit; }
 .app-sidebar__nav { flex: 1; overflow-y: auto; padding: var(--space-4) var(--space-3); }
 .app-nav-group { margin-bottom: var(--space-4); }
 .app-nav-group > p { margin: 0 var(--space-3) var(--space-1); color: var(--color-text-muted); font: 600 10px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
-.app-nav-group > a, .app-nav-item--disabled { display: flex; min-height: 40px; align-items: center; gap: var(--space-3); padding: 0 var(--space-3); border-radius: var(--radius-sm); color: var(--color-text-secondary); font-size: 13px; transition: color var(--duration-fast), background var(--duration-fast); }
+.app-nav-group > a, .app-nav-item--disabled { display: flex; min-height: var(--control-height); align-items: center; gap: var(--space-3); padding: 0 var(--space-3); border-radius: var(--radius-sm); color: var(--color-text-secondary); font-size: 13px; transition: color var(--duration-fast), background var(--duration-fast); }
 .app-nav-group > a > span, .app-nav-item--disabled > span { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--color-text-muted); }
 .app-nav-group > a:hover { background: var(--color-surface-2); color: var(--color-text); }
 .app-nav-group > a[aria-current="page"] { background: var(--color-accent-surface); color: var(--color-accent-strong); }

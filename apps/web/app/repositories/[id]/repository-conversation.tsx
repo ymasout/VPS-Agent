@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ConversationTurnResult } from "@/app/conversation-turn-result";
+import { ConversationContextRail } from "../../conversation-context";
 import type {
   ConversationTurn,
   RepositoryConversation,
@@ -112,7 +113,8 @@ export function RepositoryConversationPanel({
   }
 
   return (
-    <section className="conversation-panel repository-conversation">
+    <section className="conversation-panel repository-conversation conversation-workspace">
+      <div className="conversation-main-column">
       <header>
         <div>
           <span className="eyebrow">M5.2.2 · READ ONLY</span>
@@ -173,6 +175,8 @@ export function RepositoryConversationPanel({
         </div>
         {error && <p className="error-text">{error}</p>}
       </div>
+      </div>
+      <ConversationContextRail envelope={initial} turns={turns} />
     </section>
   );
 }

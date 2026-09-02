@@ -10,6 +10,7 @@ import type {
   EventConversation,
 } from "@/lib/api";
 import { ConversationTurnResult } from "@/app/conversation-turn-result";
+import { ConversationContextRail } from "../../conversation-context";
 
 const terminalStatuses = new Set(["completed", "failed"]);
 const actionLabels: Record<string, string> = {
@@ -32,6 +33,8 @@ export function EventConversationPanel({
   operationTimeline,
   deploymentHref = null,
   namedAuthorization = false,
+  showOperations = true,
+  lastSnapshot = false,
 }: {
   initial: EventConversation;
   unavailable?: boolean;
@@ -39,6 +42,8 @@ export function EventConversationPanel({
   operationTimeline?: ConversationOperationTimeline;
   deploymentHref?: string | null;
   namedAuthorization?: boolean;
+  showOperations?: boolean;
+  lastSnapshot?: boolean;
 }) {
   const router = useRouter();
   const [turns, setTurns] = useState(initial.turns);
@@ -190,6 +195,8 @@ export function EventConversationPanel({
         </p>
       </header>
 
+      <ConversationContextRail envelope={initial} turns={turns} lastSnapshot={lastSnapshot} />
+
       {turns.length === 0 && !unavailable && (
         <div className="empty">
           <strong>尚无会话历史</strong>
@@ -248,7 +255,7 @@ export function EventConversationPanel({
         ))}
       </div>
 
-      <section className="conversation-operation-history">
+      {showOperations && <section className="conversation-operation-history" id="related-operations">
         <header>
           <div>
             <span className="eyebrow">M5.3.3 · READ ONLY</span>
@@ -317,7 +324,7 @@ export function EventConversationPanel({
             </Link>
           </article>
         ))}
-      </section>
+      </section>}
 
       <div className="conversation-composer">
         <textarea

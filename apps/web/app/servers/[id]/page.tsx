@@ -64,7 +64,7 @@ export default async function ServerPage({ params, searchParams }: {
   try { agent = await getAgent(id, principalHeaders ?? undefined); } catch { notFound(); }
   const [candidatesResult, repositoriesResult, deploymentsResult, conversationResult, eventsResult] = await Promise.allSettled([
     getServiceMappingCandidates(id, principalHeaders ?? undefined), getGitHubRepositories(), getDeploymentCandidates(id),
-    getAgentConversation(id), getEvents(principalHeaders ?? undefined),
+    getAgentConversation(id, principalHeaders ?? undefined), getEvents(new URLSearchParams({ agent_id: id, limit: "50" }), principalHeaders ?? undefined),
   ]);
   const candidates = candidatesResult.status === "fulfilled" ? candidatesResult.value : [];
   const repositories = repositoriesResult.status === "fulfilled" ? repositoriesResult.value : [];
@@ -73,7 +73,7 @@ export default async function ServerPage({ params, searchParams }: {
     scope_type: "agent", target_id: id, parent_agent_id: id, title: agent.name,
     session_id: null, available: false, unavailable_reason: "control_plane_unavailable", turns: [],
   };
-  const machineEvents = eventsResult.status === "fulfilled" ? eventsResult.value.filter((event) => event.agent_id === id) : null;
+  const machineEvents = eventsResult.status === "fulfilled" ? eventsResult.value.items : null;
   const metric = agent.latest_metrics;
   const problems = agent.services.filter(isServiceProblem);
   const normal = agent.services.filter((service) => !isServiceProblem(service));
@@ -118,7 +118,7 @@ export default async function ServerPage({ params, searchParams }: {
 
       <section className={styles.detailSection} id="assistant" aria-labelledby="assistant-title">
         <div className="section-title"><h2 id="assistant-title">助手</h2><span>现有机器上下文会话</span></div>
-        <ContextConversationPanel endpoint={`/console/agents/${id}/conversation/turns`} initial={conversation} unavailable={conversationResult.status === "rejected"} />
+        <ContextConversationPanel endpoint={`/console/agents/${id}/conversation/turns`} initial={conversation} unavailable={conversationResult.status === "rejected"} lastSnapshot={!agent.online} />
       </section>
       <section className={styles.detailSection} id="deployment-policy" aria-labelledby="deployment-title">
         <div className="section-title"><h2 id="deployment-title">部署与策略</h2><span>沿用既有安全边界</span></div>

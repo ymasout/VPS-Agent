@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { ConversationTurnResult } from "@/app/conversation-turn-result";
+import { ConversationContextRail } from "./conversation-context";
 import type { ContextConversation, ConversationTurn } from "@/lib/api";
 
 const terminalStatuses = new Set(["completed", "failed"]);
@@ -16,10 +17,12 @@ export function ContextConversationPanel({
   initial,
   endpoint,
   unavailable = false,
+  lastSnapshot = false,
 }: {
   initial: ContextConversation;
   endpoint: string;
   unavailable?: boolean;
+  lastSnapshot?: boolean;
 }) {
   const [turns, setTurns] = useState(initial.turns);
   const [question, setQuestion] = useState("");
@@ -113,7 +116,8 @@ export function ContextConversationPanel({
   }
 
   return (
-    <section className="conversation-panel context-conversation">
+    <section className="conversation-panel context-conversation conversation-workspace">
+      <div className="conversation-main-column">
       <header>
         <div>
           <span className="eyebrow">M5 · {scopeLabel.toUpperCase()} · READ ONLY</span>
@@ -180,6 +184,8 @@ export function ContextConversationPanel({
         </div>
         {error && <p className="error-text">{error}</p>}
       </div>
+      </div>
+      <ConversationContextRail envelope={initial} turns={turns} lastSnapshot={lastSnapshot} />
     </section>
   );
 }

@@ -6,6 +6,7 @@ import {
   ControlPlaneApiError,
   getServiceConversation,
 } from "@/lib/api";
+import { getPrincipalForwardHeaders } from "@/lib/principal";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,8 @@ export default async function ServiceConversationPage({
   let conversation: ContextConversation | null = null;
   let unavailable = false;
   try {
-    conversation = await getServiceConversation(instanceId);
+    const principalHeaders = await getPrincipalForwardHeaders();
+    conversation = await getServiceConversation(instanceId, principalHeaders ?? undefined);
   } catch (error) {
     if (error instanceof ControlPlaneApiError && error.status === 404) notFound();
     unavailable = true;

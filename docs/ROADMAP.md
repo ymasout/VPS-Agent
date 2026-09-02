@@ -289,13 +289,13 @@ Web UI 的早期信息架构见 [WEB_UI_PLAN.md](./WEB_UI_PLAN.md)。M6 关闭�
 
 ## 10. M7–M9：M6 后续大章节
 
-状态：**M7.0、M7.1a、M7.1b、M7.2a 已完成本地实现与验证；M7.2b 及后续、M8、M9 待开始**
+状态：**M7.0、M7.1a、M7.1b、M7.2a、M7.2b 已完成实现与本地验证；M7.3 及后续、M8、M9 待开始**
 
 1. **M7 Web UI 2.0**：先完成现状审计、真实用户路径、Provider 运行模式决定和设计冻结，再重构应用外壳、核心工作区与 Operation 工作区。批量服务映射确认纳入本章；Operation UI 必须支持服务端能力驱动和未知动作类型安全降级，避免 M8 新动作导致整页重写。
 2. **M8 结构化运维能力**：按安全 systemd restart、自动诊断调度、Fleet 分批升级、受限清理、GitHub PR 写入、源码拉取/构建逐片推进。写操作全部复用 M4 的计划、预检、独立确认、签名/过期/幂等任务、验证和审计闭环。
 3. **M9 Web SSH 与限时终端**：作为最后手段，先做身份/会话授权、主动出站通道、PTY、撤销/过期、maker-checker、审计和敏感输出威胁模型，再决定产品实现；模型不得默认获得终端控制权。
 
-M7.0 已完成代码级现状审计和设计冻结；M7.1a AppShell + token + 基础状态组件已于 2026-08-24 提交 `d4f2b1e`。M7.1b 于 2026-08-29 完成实现、六组 CI 与生产收口：冻结总览、Recharts CPU/内存/磁盘 24 小时 sparkline、服务端固定上限/降采样、明确趋势状态和按 Principal capability 关闭的 Operation 摘要已落地；最终生产提交 `daa9700` 的 API/Web 健康运行，schema 保持 `0020`。M7.2a 同日完成本地实现与验证并于 2026-09-02 完成审计收口：真实 Fleet/跨机器服务清单、机器详情五分区、有界服务 inventory API 和最多 20 项逐项失败关闭的基础诊断映射批量复核已落地；批量 API 强制基础诊断映射安全默认值，分页 cursor 与筛选集绑定，具名模式继续由服务端可信 Principal 的 `operation:plan` 保护映射及 restart policy，legacy admin 代理不能在具名模式绕过。未增加迁移、依赖、Agent 协议、Operation 状态机、Provider 或 feature flag 变化，尚未提交、推送或部署。下一片为 M7.2b 事件与 Agent 对话；整体顺序与边界见 [POST_M6_NEXT_CHAPTERS.md](./POST_M6_NEXT_CHAPTERS.md)。
+M7.0 已完成代码级现状审计和设计冻结；M7.1a AppShell + token + 基础状态组件已于 2026-08-24 提交 `d4f2b1e`。M7.1b 于 2026-08-29 完成实现、六组 CI 与生产收口：冻结总览、Recharts CPU/内存/磁盘 24 小时 sparkline、服务端固定上限/降采样、明确趋势状态和按 Principal capability 关闭的 Operation 摘要已落地；最终生产提交 `daa9700` 的 API/Web 健康运行，schema 保持 `0020`。M7.2a 于 2026-09-02 完成审计收口并以 `771cafc` 推送：真实 Fleet/跨机器服务清单、机器详情五分区、有界服务 inventory API 和最多 20 项逐项失败关闭的基础诊断映射批量复核已落地；批量 API 强制基础诊断映射安全默认值，分页 cursor 与筛选集绑定，具名模式继续由服务端可信 Principal 的 `operation:plan` 保护映射及 restart policy，legacy admin 代理不能在具名模式绕过，尚未部署。M7.2b 已完成实现、验证并推送：真实事件列表/详情、一级 `/assistant` 和统一 Fleet/机器/服务/事件/仓库只读上下文已落地，分析模式、Provider 配置、最后快照及引用均如实表达；未增加迁移、依赖、Agent 协议、Operation 状态机、Provider 激活或 feature flag 变化，尚未部署。下一片为 M7.3 Operation 工作区；整体顺序与边界见 [POST_M6_NEXT_CHAPTERS.md](./POST_M6_NEXT_CHAPTERS.md)。
 
 ## 11. 路线变更规则
 

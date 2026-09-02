@@ -23,14 +23,21 @@ import { DiagnosticTrigger } from "./diagnostic-trigger";
 import { OperationCreate } from "./operation-create";
 import { EventConversationPanel } from "./event-conversation";
 import { EventInsights } from "./event-insights";
+import infrastructureStyles from "../../infrastructure.module.css";
 
 export const dynamic = "force-dynamic";
+
+function diagnosticProviderLabel(provider: string) {
+  if (provider === "deterministic") return "规则分析";
+  if (provider === "http_json") return "模型分析";
+  return "分析来源未知";
+}
 
 export default async function EventPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   let event: AlertEvent | null = null;
+  const principalHeaders = await getPrincipalForwardHeaders();
   try {
-    const principalHeaders = await getPrincipalForwardHeaders();
     event = await getEvent(id, principalHeaders ?? undefined);
   } catch (reason) {
     if (reason instanceof ControlPlaneApiError && reason.status === 404) notFound();
@@ -57,7 +64,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
   ] =
     await Promise.allSettled([
       getEventDiagnostics(id),
-      getEventConversation(id),
+      getEventConversation(id, principalHeaders ?? undefined),
       getConversationOperationCandidates(id),
       getConversationOperationTimeline(id),
       getEventHistory(id),
@@ -98,18 +105,22 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
   const namedAuthorization = process.env.PRINCIPAL_WRITE_AUTHORIZATION_ENABLED === "true";
 
   return <main>
-    <Link className="back" href="/">← 总览</Link>
-    <section className="hero compact detail-head event-head">
+    <Link className="back" href="/events">← 返回事件</Link>
+    <section className="hero compact detail-head event-head" id="overview">
       <div className={`status ${event.status === "resolved" ? "" : "offline"}`}><span /> {event.status}</div>
       <h1>{event.title}</h1>
       <p>{event.service_kind ?? event.source} · {event.service_key ?? event.agent_id} · 观测 {event.observation_count} 次</p>
       <DiagnosticTrigger eventId={event.id} disabled={active} />
       {!machineEvent && event.service_kind === "docker" && <OperationCreate eventId={event.id} diagnosticId={diagnostics[0]?.id} namedAuthorization={namedAuthorization} />}
     </section>
+    <nav className={infrastructureStyles.sectionNav} aria-label="事件详情分区">
+      <a href="#overview">概览</a><a href="#diagnostics">证据与诊断</a><a href="#conversation">会话</a><a href="#related-operations">相关操作</a><a href="#history-review">历史复盘</a>
+    </nav>
 
+    <section id="diagnostics" className={infrastructureStyles.detailSection} aria-label="证据与诊断">
     {diagnostics.length === 0 && <div className="empty"><strong>尚无诊断</strong><span>{machineEvent ? "发起后只分析控制平面保存的最后心跳、资源与服务快照，不会等待离线 Agent。" : "发起后，Agent 只会读取本地白名单中的有限日志窗口。"}</span></div>}
     {diagnostics.map((diagnostic) => <section className="diagnostic" key={diagnostic.id}>
-      <div className="diagnostic-meta"><span>{diagnostic.status}</span><span>{diagnostic.provider}</span><time>{new Date(diagnostic.created_at).toLocaleString("zh-CN")}</time></div>
+      <div className="diagnostic-meta"><span>{diagnostic.status}</span><span>{diagnosticProviderLabel(diagnostic.provider)}</span><time>{new Date(diagnostic.created_at).toLocaleString("zh-CN")}</time></div>
       {diagnostic.error_detail && <div className="empty error">{diagnostic.error_code} · {diagnostic.error_detail}</div>}
       {!diagnostic.result && <div className="empty"><strong>证据采集中</strong><span>{machineEvent ? "正在整理控制平面已有的机器级证据。" : "等待 Agent 领取只读请求并回传有界结果。"}</span></div>}
       {diagnostic.result && <>
@@ -123,6 +134,8 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
       </>}
       <details className="evidence-panel"><summary>证据（{diagnostic.evidence.length}）</summary>{diagnostic.evidence.map((item) => <article id={item.id} key={item.id}><header><strong>{item.source_label}</strong><span>{item.redacted ? "已脱敏" : "未脱敏"}{item.truncated ? " · 已截断" : ""}</span></header><pre>{item.content}</pre></article>)}</details>
     </section>)}
+    </section>
+    <div id="conversation" className={infrastructureStyles.detailSection}>
     <EventConversationPanel
       initial={conversation}
       unavailable={conversationUnavailable}
@@ -131,6 +144,8 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
       deploymentHref={deploymentHref}
       namedAuthorization={namedAuthorization}
     />
+    </div>
+    <div id="history-review" className={infrastructureStyles.detailSection}>
     <EventInsights
       history={history}
       latestTurn={
@@ -141,5 +156,6 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
       review={review}
       similar={similar}
     />
+    </div>
   </main>;
 }

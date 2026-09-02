@@ -206,6 +206,7 @@ async def list_service_instances(
         ServiceInventoryItem(
             inventory_id=observed.id,
             instance_id=instance.id if instance else None,
+            service_id=instance.service_id if instance else None,
             service_name=managed.name if managed else observed.name,
             environment=managed.environment if managed else None,
             agent_id=agent.id,
