@@ -1,7 +1,7 @@
 # M7 Web UI 2.0 设计基线
 
-状态：**M7.0、M7.1a、M7.1b、M7.2a、M7.2b 已完成实现与本地验证；下一片为 M7.3**
-最后同步：2026-09-02
+状态：**M7.0、M7.1a、M7.1b、M7.2a、M7.2b 已完成实现、验证与生产部署；下一片为 M7.3**
+最后同步：2026-09-08
 
 本文冻结 M7 的产品结构、交互原则、视觉基线、数据契约缺口与实施顺序。它基于当前 Web 源码、API 类型、权限模型和 M3–M6 已验证边界，不把尚未实现的 M8/M9 能力画成可用功能，也不授权提交、发布或生产变更。
 
@@ -460,7 +460,7 @@ Web 使用 Recharts `3.10.1` 绘制无坐标、无填充、禁用动画的紧凑
 - 请求 envelope 成功时返回 200 与 `created_count/rejected_count`；未处理异常或最终持久化失败不返回伪成功 envelope。网络结果不确定时先重新读取候选，不自动重放；唯一约束会使已创建项在重试时失败关闭为冲突。
 - 批量路径只提供无差异的基础诊断映射：API 在写入边界强制 `production + critical + restart_enabled=false`，并清除客户端提交的描述、部署目录、仓库、版本与镜像字段；UI 同样不提供这些差异项或启用重启/部署。目录、仓库、关键性或操作授权有差异的项目继续逐项复核。
 
-实现记录（2026-08-29，2026-09-02 审计收口）：新增真实 `/fleet` 与 `/services` 工作区。Fleet 使用既有 `fleet:read` 机器摘要并提供 URL 筛选；跨机器服务由新的只读 `GET /api/v1/service-instances` 提供最多 100 项的 cursor 分页、固定筛选、稳定排序、映射/证据/操作能力摘要，不返回 `service_key`、容器 ID、Unit 参数、路径或命令；cursor 与原筛选集绑定，不能跨筛选条件混用。机器详情保留 `/servers/{id}` 深链并重组为“概览、服务、事件、助手、部署与策略”五个同页分区，既有会话、逐项映射和部署组件继续复用。批量映射按上述冻结契约落地并在 API 写入边界强制安全默认值，未增加数据库迁移、Agent 协议、Operation 状态机、Provider/feature flag 或依赖。1440×900 和 390×844 本地 mock 检查覆盖 Fleet、服务和机器详情，无页面级横向溢出或控制台错误，宽表与分区导航只在自身容器内滚动，新增交互目标达到 44px。最终提交 `771cafc` 已推送，未部署或修改生产环境。
+实现记录（2026-08-29，2026-09-02 审计收口）：新增真实 `/fleet` 与 `/services` 工作区。Fleet 使用既有 `fleet:read` 机器摘要并提供 URL 筛选；跨机器服务由新的只读 `GET /api/v1/service-instances` 提供最多 100 项的 cursor 分页、固定筛选、稳定排序、映射/证据/操作能力摘要，不返回 `service_key`、容器 ID、Unit 参数、路径或命令；cursor 与原筛选集绑定，不能跨筛选条件混用。机器详情保留 `/servers/{id}` 深链并重组为“概览、服务、事件、助手、部署与策略”五个同页分区，既有会话、逐项映射和部署组件继续复用。批量映射按上述冻结契约落地并在 API 写入边界强制安全默认值，未增加数据库迁移、Agent 协议、Operation 状态机、Provider/feature flag 或依赖。1440×900 和 390×844 本地 mock 检查覆盖 Fleet、服务和机器详情，无页面级横向溢出或控制台错误，宽表与分区导航只在自身容器内滚动，新增交互目标达到 44px。最终提交 `771cafc` 已推送，并随 M7.2b 一同由 `30c3249` 生产部署收口。
 
 ### M7.2b：事件与助手
 
@@ -470,7 +470,9 @@ Web 使用 Recharts `3.10.1` 绘制无坐标、无填充、禁用动画的紧凑
 - 保留现有 scope 外键、问题大小门、单活动轮次、轮询与零 Operation 副作用；右侧上下文/证据区只读取服务端返回的有界引用。
 - 本片只为 GET 会话读取补齐 scope 对应的 capability；POST turn 继续沿用更严格的既有 `require_admin`，具名模式下 operator 当前可以读取但不能发问。后续若调整写入授权，必须作为独立权限契约处理，不能在 UI 中隐式放宽。
 
-实现记录（2026-09-02）：新增真实 `/events` 工作区和有界 `EventPage`，支持状态、严重级别、机器、服务、时间与关键词筛选，活动事件优先且 cursor 与筛选集绑定；事件详情重组为概览、诊断、对话、相关 Operation 与历史复核。新增一级 `/assistant`，只允许在服务端已有 Fleet、机器、服务、事件和仓库路由之间选择可信 scope；`/agent` 保持兼容并重定向到该入口。五类 conversation envelope 增加可选模式、Provider 配置状态、上下文 scope 与捕获时间，旧响应缺字段时明确显示“分析模式未知”，不伪装成规则分析；引用区只展示服务端验证的有界引用，离线上下文明确标为最后快照。事件、Fleet 会话读取分别补齐 `event:read`、`fleet:read` capability 依赖，未启用真实 Provider，未改变提问大小门、单活动轮次、Operation 创建/确认/审批、数据库、Agent 协议或 feature flag。API 377 项（18 skipped）、Web 122 项、Ruff、ESLint、production build、1440×900 与 390×844 本地检查通过；没有新增依赖。M7.2b 已纳入 `main` 并推送，尚未部署或修改生产环境。
+实现记录（2026-09-02）：新增真实 `/events` 工作区和有界 `EventPage`，支持状态、严重级别、机器、服务、时间与关键词筛选，活动事件优先且 cursor 与筛选集绑定；事件详情重组为概览、诊断、对话、相关 Operation 与历史复核。新增一级 `/assistant`，只允许在服务端已有 Fleet、机器、服务、事件和仓库路由之间选择可信 scope；`/agent` 保持兼容并重定向到该入口。五类 conversation envelope 增加可选模式、Provider 配置状态、上下文 scope 与捕获时间，旧响应缺字段时明确显示“分析模式未知”，不伪装成规则分析；引用区只展示服务端验证的有界引用，离线上下文明确标为最后快照。事件、Fleet 会话读取分别补齐 `event:read`、`fleet:read` capability 依赖，未启用真实 Provider，未改变提问大小门、单活动轮次、Operation 创建/确认/审批、数据库、Agent 协议或 feature flag。API 377 项（18 skipped）、Web 122 项、Ruff、ESLint、production build、1440×900 与 390×844 本地检查通过；没有新增依赖。M7.2b 已由提交 `30c3249` 纳入 `main`。
+
+生产记录（2026-09-08）：在六条 GitHub Actions workflow 全绿后，将 `30c32491350b099463bd376b7aa8d772c07f306f` 从 `daa9700` 基线部署到生产。preflight 生成原子备份 `control-plane-pre-migration-20260908T103138Z` 和离线 SQL 预览；schema 保持 `0020_m6_named_approval`，迁移为 no-op。API/Web 镜像内置 revision 与目标 commit 一致并保持 healthy；源码 Compose 切换过程中 PostgreSQL/Redis 被重建但未删除数据卷，随后立即恢复到 v0.6.5 已验证的固定 digest，部署前后 11 张关键表计数完全一致，活动 Operation 为 0。`/fleet`、`/services`、`/events`、`/assistant` 返回 200，`/agent` 返回 307，公开 health 与 Agent operation health 返回 200，未认证首页保持 401；服务映射候选和 Fleet conversation envelope 检查通过，Principal 读写开关保持关闭，Provider 保持 deterministic，近 10 分钟 API/Web 日志无 error/exception/traceback。原始 Basic Auth 未进入自动化，因此标准 postflight 被分解执行：schema、公共健康、Agent 路由均经公网验证，mapping candidates 经容器内 admin 路径验证；未单独复现经 Caddy Basic Auth 的 mapping-candidate 请求，Caddy 配置和容器未变。
 
 ### M7.3：Operation 工作区
 

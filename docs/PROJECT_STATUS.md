@@ -1,7 +1,7 @@
 # 项目状态
 
-最后同步：2026-09-02
-当前阶段：**M0–M6、批次 A 与批次 B 均已完成；备份 VPS SSH 加固延后；M7.1a、M7.1b、M7.2a、M7.2b 已完成实现与本地验证；下一片为 M7.3**
+最后同步：2026-09-08
+当前阶段：**M0–M6、批次 A 与批次 B 均已完成；备份 VPS SSH 加固延后；M7.1a、M7.1b、M7.2a、M7.2b 已完成实现、验证与生产部署；下一片为 M7.3**
 
 ## 1. 当前结论
 
@@ -15,9 +15,11 @@ M6 后续路线已冻结为 M7 Web UI 2.0、M8 结构化运维能力、M9 Web SS
 
 2026-08-29 完成 M7.1b 实现、CI 与生产收口：新增只读、有界的控制台总览 API，复用现有指标快照表提供服务端 24 小时采样/压缩和明确的缺口、覆盖不足、过期、不可用状态；Operation 摘要继续按 Principal capability 分区，不向 viewer 返回记录。首页按冻结资产实现完整信息密度和 Recharts sparkline，注册/GitHub/通知配置移出首页。新增唯一运行依赖 Recharts `3.10.1`，未新增数据库迁移、Agent 协议或写接口。最终提交 `daa9700fa33abebdd3fe0067941299d389a58274` 的六组 CI 全绿，API/Web 已从同一源码构建并健康运行，schema 保持 `0020_m6_named_approval`；发布前原子备份 `control-plane-pre-migration-20260828T161925Z` 完成，迁移 no-op。system-info、总览、Agent 和服务映射候选检查通过，公开健康入口 200、未认证首页 401、活跃 Operation 0；生产桌面总览与移动 `/agent` 无横向溢出或控制台错误。总览最新指标查询已绑定 24 小时窗口，Web healthcheck 与 `/agent` hydration mismatch 已修复。未改变 Principal、Provider、Operation 或其他 feature flag。
 
-同日完成 M7.2a 本地实现与验证，并于 2026-09-02 完成审计收口：新增 `/fleet` 和 `/services` 真实工作区，机器详情保留旧深链并分为概览、服务、事件、助手、部署与策略；新的服务清单 API 以 `fleet:read` 保护并提供 cursor/limit、机器、类型、环境、健康、映射与搜索筛选，返回固定显示字段和能力摘要，不返回稳定服务键或执行目标，且 cursor 与筛选集绑定。服务批量映射限定 20 项、按输入顺序返回逐项成功/拒绝，业务失败使用独立 savepoint 且不回退成功兄弟项；API 写入边界强制 production、critical、禁止重启并清除批量路径不允许的目录、仓库与版本字段，不能通过绕过 UI 改变该不变式。具名模式下单项/批量映射及 restart policy 复用服务端 `operation:plan`，旧 admin proxy 明确拒绝绕过；legacy 行为继续要求 admin token。API 374 项（18 skipped）、Web 118 项、Ruff、ESLint、production build 与本地桌面/移动检查通过。未新增迁移、依赖、Agent/Operation/Provider/feature flag 变化；最终提交 `771cafc` 已推送，未部署。
+同日完成 M7.2a 本地实现与验证，并于 2026-09-02 完成审计收口：新增 `/fleet` 和 `/services` 真实工作区，机器详情保留旧深链并分为概览、服务、事件、助手、部署与策略；新的服务清单 API 以 `fleet:read` 保护并提供 cursor/limit、机器、类型、环境、健康、映射与搜索筛选，返回固定显示字段和能力摘要，不返回稳定服务键或执行目标，且 cursor 与筛选集绑定。服务批量映射限定 20 项、按输入顺序返回逐项成功/拒绝，业务失败使用独立 savepoint 且不回退成功兄弟项；API 写入边界强制 production、critical、禁止重启并清除批量路径不允许的目录、仓库与版本字段，不能通过绕过 UI 改变该不变式。具名模式下单项/批量映射及 restart policy 复用服务端 `operation:plan`，旧 admin proxy 明确拒绝绕过；legacy 行为继续要求 admin token。API 374 项（18 skipped）、Web 118 项、Ruff、ESLint、production build 与本地桌面/移动检查通过。未新增迁移、依赖、Agent/Operation/Provider/feature flag 变化；最终提交 `771cafc` 已推送，并随 M7.2b 一同生产部署。
 
-2026-09-02 完成 M7.2b 实现与验证：新增真实 `/events` 列表，服务端 `EventPage` 提供有界分页、稳定活动优先排序以及状态、严重级别、机器、服务、时间和关键词筛选，cursor 与筛选集绑定；事件详情按概览、诊断、对话、相关 Operation 和历史复核重组。新增一级 `/assistant`，统一 Fleet、机器、服务、事件和仓库只读会话入口，`/agent` 继续兼容并重定向；统一上下文栏如实展示规则/模型/未知分析模式、Provider 是否配置、scope、快照时间和服务端验证引用，离线对象标为最后快照。事件与 Fleet 会话读取补齐相应 capability 依赖，旧 conversation 响应缺少新可选字段时不会被误标成规则分析。API 377 项（18 skipped）、Web 122 项、Ruff、ESLint、production build 与 1440×900/390×844 本地检查通过。未新增依赖、迁移、Agent 协议、Operation 状态机、Provider 激活或 feature flag 变化；已纳入 `main` 并推送，尚未部署。下一片为 M7.3。
+2026-09-02 完成 M7.2b 实现与验证：新增真实 `/events` 列表，服务端 `EventPage` 提供有界分页、稳定活动优先排序以及状态、严重级别、机器、服务、时间和关键词筛选，cursor 与筛选集绑定；事件详情按概览、诊断、对话、相关 Operation 和历史复核重组。新增一级 `/assistant`，统一 Fleet、机器、服务、事件和仓库只读会话入口，`/agent` 继续兼容并重定向；统一上下文栏如实展示规则/模型/未知分析模式、Provider 是否配置、scope、快照时间和服务端验证引用，离线对象标为最后快照。事件与 Fleet 会话读取补齐相应 capability 依赖，旧 conversation 响应缺少新可选字段时不会被误标成规则分析。API 377 项（18 skipped）、Web 122 项、Ruff、ESLint、production build 与 1440×900/390×844 本地检查通过。未新增依赖、迁移、Agent 协议、Operation 状态机、Provider 激活或 feature flag 变化；已由提交 `30c3249` 纳入 `main`。下一片为 M7.3。
+
+2026-09-08 完成 M7.2a + M7.2b 生产部署：生产从 `daa9700` 切换到 `30c32491350b099463bd376b7aa8d772c07f306f`，preflight 原子备份为 `control-plane-pre-migration-20260908T103138Z`，schema `0020_m6_named_approval` no-op。API/Web、PostgreSQL、Redis 全部 healthy，API/Web OCI revision 与目标 commit 一致；PostgreSQL/Redis 在源码 Compose 切换时被重建但数据卷未删除，随后恢复为 v0.6.5 固定 digest，11 张关键表计数与备份一致（Agents 6、Events 114、Operations 17、Transitions 103），活动 Operation 0。M7.2a/M7.2b 四个一级页面 200，`/agent` 307，公开 health 和 Agent operation health 200，未认证首页 401；映射候选、事件/服务分页契约、Fleet 规则模式 envelope 均通过，Principal flags 保持关闭、Provider 保持 deterministic，日志无应用错误。因自动化环境不持有原始 Basic Auth，标准 postflight 按相同子门拆分；mapping candidate 使用容器内 admin 路径验证，未额外执行经 Caddy Basic Auth 的同一路径，Caddy 配置和运行容器未变化。
 
 M1 的“至少 3 台真实或测试 VPS 稳定接入”验收线已经满足。本文早期 Fleet 数量、版本和 capability 仅为对应日期的历史快照：旧 aliyun-VPS 已被释放，2026-07-31 M6.4c 金丝雀改用新 aliyun-零时 Agent `v0.4.2`，具名 M4 全链完成后已还原服务 restart 授权。当前机器、Agent 版本和 capability 必须在每次生产操作前从实时 API/Agent 上报核对，不能从本文推断。
 
