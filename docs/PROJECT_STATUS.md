@@ -5,6 +5,8 @@
 
 ## 1. 当前结论
 
+2026-09-30 提交 `48c1249` 已推送，Migrations/Web/Recovery/CodeQL 成功；两个安全门失败已定位为文档测试镜像标签误报及依赖漏洞。后续修复固定安全版本并只加入三个精确 Gitleaks 误报指纹，本地 API/Web/lint/build、OSV、Gitleaks 与依赖许可证检查通过；新提交 CI 待核实，未部署，M7.4 未开始。详见 [CI 安全门收尾](./CI_SECURITY_FOLLOWUP_2026-09-30.md)。
+
 2026-09-30 收尾完成：日期边界 P3 已修复；PostgreSQL 相关 53 项通过（新增 10 项并发/新进程测试另复跑两次全部通过），API 最终镜像健康、HTTP、schema 与两套隔离 Compose 解析通过。测试资源已清理，五个生产容器前后完全一致。本地 API 416 passed / 28 skipped / 3 warnings，Web 142 项与 lint/build 通过；环境跳过不记作数据库通过。未提交、推送、部署，CI 尚未执行当前快照，未开始 M7.4。详见 [本轮收尾证据与限制](./M7_3_API_CLOSEOUT_2026-09-30.md)；下文旧状态保留为历史。
 
 2026-09-30 根据用户明确授权，在 VPS 独立限额构建/测试环境补齐 Web Linux standalone 最终镜像、healthcheck、PWA 资产、`/agent` 旧入口与真实 Caddy Principal 门，全部通过。测试未使用生产凭据/数据库，临时资源已清理，生产 API/Web 镜像 ID、启动时间、RestartCount 0 和 healthy 状态保持不变。没有提交、推送或部署，通知防抖尚未上线；日期输入 P3 和 PostgreSQL 环境门仍未完成。此条更新下文“Web 最终镜像门待执行”的历史状态；见 [最终镜像证据](./M7_3_IMAGE_GATE_2026-09-30.md)。
