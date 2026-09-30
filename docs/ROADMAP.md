@@ -289,13 +289,19 @@ Web UI 的早期信息架构见 [WEB_UI_PLAN.md](./WEB_UI_PLAN.md)。M6 关闭�
 
 ## 10. M7–M9：M6 后续大章节
 
-状态：**M7.0、M7.1a、M7.1b、M7.2a、M7.2b 已完成实现、验证与生产部署；M7.3 及后续、M8、M9 待开始**
+2026-09-30 收尾完成：日期边界 P3 已修复；PostgreSQL 相关 53 项通过（新增 10 项并发/新进程测试另复跑两次全部通过），API 最终镜像健康、HTTP、schema 与两套隔离 Compose 解析通过。测试资源已清理，五个生产容器前后完全一致。本地 API 416 passed / 28 skipped / 3 warnings，Web 142 项与 lint/build 通过；环境跳过不记作数据库通过。未提交、推送、部署，CI 尚未执行当前快照，未开始 M7.4。详见 [本轮收尾证据与限制](./M7_3_API_CLOSEOUT_2026-09-30.md)；下文旧状态保留为历史。
+
+2026-09-30 更新：Web 最终镜像、healthcheck、PWA/旧入口及真实 Caddy 门已在经授权的 VPS 隔离限额环境通过；生产 API/Web 未替换。此条更新下面镜像阻塞的历史描述；日期输入 P3 与 PostgreSQL 门仍待处理，未提交或部署，见 [镜像门证据](./M7_3_IMAGE_GATE_2026-09-30.md)。
+
+2026-09-29 补记：M7.3 已完成独立复核和应用层复跑，极端日期输入 P3 待修；最终镜像门仍被本机 Docker 启动故障阻塞，尚未提交或部署。下文独立审计待执行的历史描述由 [本轮复核记录](./M7_3_AUDIT.md) 更新。
+
+状态：**M7.0–M7.2b 已完成实现、验证与生产部署；M7.3 已完成本地实现、独立复核、Web/API 最终镜像与本次 PostgreSQL 门，尚未部署；M7.4、M8、M9 待开始**
 
 1. **M7 Web UI 2.0**：先完成现状审计、真实用户路径、Provider 运行模式决定和设计冻结，再重构应用外壳、核心工作区与 Operation 工作区。批量服务映射确认纳入本章；Operation UI 必须支持服务端能力驱动和未知动作类型安全降级，避免 M8 新动作导致整页重写。
 2. **M8 结构化运维能力**：按安全 systemd restart、自动诊断调度、Fleet 分批升级、受限清理、GitHub PR 写入、源码拉取/构建逐片推进。写操作全部复用 M4 的计划、预检、独立确认、签名/过期/幂等任务、验证和审计闭环。
 3. **M9 Web SSH 与限时终端**：作为最后手段，先做身份/会话授权、主动出站通道、PTY、撤销/过期、maker-checker、审计和敏感输出威胁模型，再决定产品实现；模型不得默认获得终端控制权。
 
-M7.0 已完成代码级现状审计和设计冻结；M7.1a AppShell + token + 基础状态组件已于 2026-08-24 提交 `d4f2b1e`。M7.1b 于 2026-08-29 完成实现、六组 CI 与生产收口：冻结总览、Recharts CPU/内存/磁盘 24 小时 sparkline、服务端固定上限/降采样、明确趋势状态和按 Principal capability 关闭的 Operation 摘要已落地；最终生产提交 `daa9700` 的 API/Web 健康运行，schema 保持 `0020`。M7.2a 于 2026-09-02 完成审计收口并以 `771cafc` 推送：真实 Fleet/跨机器服务清单、机器详情五分区、有界服务 inventory API 和最多 20 项逐项失败关闭的基础诊断映射批量复核已落地；批量 API 强制基础诊断映射安全默认值，分页 cursor 与筛选集绑定，具名模式继续由服务端可信 Principal 的 `operation:plan` 保护映射及 restart policy，legacy admin 代理不能在具名模式绕过。M7.2b 以 `30c3249` 完成真实事件列表/详情、一级 `/assistant` 和统一 Fleet/机器/服务/事件/仓库只读上下文，分析模式、Provider 配置、最后快照及引用均如实表达。两片于 2026-09-08 一同完成生产部署：目标 commit、schema `0020`、原子备份、关键表计数、固定基础镜像、公共健康、新增页面与安全开关均验证通过；未增加迁移、依赖、Agent 协议、Operation 状态机、Provider 激活或 feature flag 变化。下一片为 M7.3 Operation 工作区；整体顺序与边界见 [POST_M6_NEXT_CHAPTERS.md](./POST_M6_NEXT_CHAPTERS.md)。
+M7.0 已完成代码级现状审计和设计冻结；M7.1a AppShell + token + 基础状态组件已于 2026-08-24 提交 `d4f2b1e`。M7.1b 于 2026-08-29 完成实现、六组 CI 与生产收口：冻结总览、Recharts CPU/内存/磁盘 24 小时 sparkline、服务端固定上限/降采样、明确趋势状态和按 Principal capability 关闭的 Operation 摘要已落地；最终生产提交 `daa9700` 的 API/Web 健康运行，schema 保持 `0020`。M7.2a 于 2026-09-02 完成审计收口并以 `771cafc` 推送：真实 Fleet/跨机器服务清单、机器详情五分区、有界服务 inventory API 和最多 20 项逐项失败关闭的基础诊断映射批量复核已落地；批量 API 强制基础诊断映射安全默认值，分页 cursor 与筛选集绑定，具名模式继续由服务端可信 Principal 的 `operation:plan` 保护映射及 restart policy，legacy admin 代理不能在具名模式绕过。M7.2b 以 `30c3249` 完成真实事件列表/详情、一级 `/assistant` 和统一 Fleet/机器/服务/事件/仓库只读上下文，分析模式、Provider 配置、最后快照及引用均如实表达。两片于 2026-09-08 一同完成生产部署：目标 commit、schema `0020`、原子备份、关键表计数、固定基础镜像、公共健康、新增页面与安全开关均验证通过；未增加迁移、依赖、Agent 协议、Operation 状态机、Provider 激活或 feature flag 变化。M7.3 同日完成本地实现与应用层验证：新增受现有 Operation 读取授权保护的有界列表、通用展示模型、结构化审批/验证/审计与未知类型只读降级，保持 M4 写契约不变；API 390 项、Web 142 项、lint/build 与本地浏览器夹具通过，Docker 最终镜像门和独立审计待执行，尚未提交或部署。下一开发片为 M7.4；整体顺序与边界见 [POST_M6_NEXT_CHAPTERS.md](./POST_M6_NEXT_CHAPTERS.md)。
 
 ## 11. 路线变更规则
 

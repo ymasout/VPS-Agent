@@ -1,5 +1,5 @@
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -185,6 +185,17 @@ async def evaluate_service_alerts(
     return deliveries
 
 
+def agent_offline_notification_due(
+    last_seen_at: datetime | None, observed_at: datetime, after_seconds: int
+) -> bool:
+    """Measure from the last server receipt, not event creation or client time."""
+    if last_seen_at is None:
+        return False
+    last_seen_at = last_seen_at.replace(tzinfo=last_seen_at.tzinfo or timezone.utc)
+    observed_at = observed_at.replace(tzinfo=observed_at.tzinfo or timezone.utc)
+    return (observed_at - last_seen_at).total_seconds() >= after_seconds
+
+
 async def evaluate_agent_availability(
     session: AsyncSession,
     agent: Agent,
@@ -193,9 +204,11 @@ async def evaluate_agent_availability(
     online: bool,
     offline_after_seconds: int,
     notification_channels: tuple[str, ...] = ("dingtalk",),
+    notification_after_seconds: int = 180,
 ) -> list[NotificationDelivery]:
     """复用 M2 事件状态机记录 Agent 失联与恢复，不引入第二套通知语义。"""
 
+    observed_at = observed_at.replace(tzinfo=observed_at.tzinfo or timezone.utc)
     fingerprint = agent_availability_fingerprint(agent.id)
     event = await session.scalar(
         select(AlertEvent)
@@ -214,7 +227,10 @@ async def evaluate_agent_availability(
         event.silenced_until = None
         event.resolved_at = observed_at
         event.detail = f"Agent 已恢复上报；恢复时间：{observed_at.isoformat()}"
-        if previous_status in {"firing", "acknowledged", "silenced"}:
+        if (
+            previous_status in {"firing", "acknowledged", "silenced"}
+            and (event.notification_sequence or 0) > 0
+        ):
             deliveries.extend(
                 notification_deliveries(event, "resolved", notification_channels)
             )
@@ -226,6 +242,7 @@ async def evaluate_agent_availability(
         f"控制平面超过 {offline_after_seconds} 秒未收到 Agent 上报；"
         f"最后心跳：{last_seen}"
     )
+    silence_expired = False
     if event is None:
         event = AlertEvent(
             organization_id=agent.organization_id,
@@ -245,24 +262,31 @@ async def evaluate_agent_availability(
         )
         session.add(event)
         await session.flush()
-        deliveries.extend(
-            notification_deliveries(event, "firing", notification_channels)
-        )
     else:
         event.observation_count += 1
         event.last_observed_at = observed_at
         event.detail = detail
+        silence_until = event.silenced_until
         silence_expired = (
             event.status == "silenced"
-            and event.silenced_until is not None
-            and event.silenced_until <= observed_at
+            and silence_until is not None
+            and silence_until.replace(tzinfo=silence_until.tzinfo or timezone.utc) <= observed_at
         )
         if silence_expired:
             event.status = "firing"
             event.silenced_until = None
-            deliveries.extend(
-                notification_deliveries(event, "firing", notification_channels)
-            )
+
+    # The event and offline state remain immediate at the existing offline threshold.
+    # The sequence is durable across process restarts; no in-memory timer or migration.
+    first_notification = (event.notification_sequence or 0) == 0
+    if (
+        event.status == "firing"
+        and (first_notification or silence_expired)
+        and agent_offline_notification_due(
+            agent.last_seen_at, observed_at, max(offline_after_seconds, notification_after_seconds)
+        )
+    ):
+        deliveries.extend(notification_deliveries(event, "firing", notification_channels))
 
     session.add_all(deliveries)
     return deliveries

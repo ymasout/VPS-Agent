@@ -26,8 +26,10 @@ class SessionContext:
         return None
 
 
+@pytest.mark.parametrize("notification_after", [180, 240])
 def test_offline_reconciler_evaluates_locked_candidates(
     monkeypatch: pytest.MonkeyPatch,
+    notification_after: int,
 ) -> None:
     now = datetime.now(timezone.utc)
     agent = Agent(
@@ -49,7 +51,10 @@ def test_offline_reconciler_evaluates_locked_candidates(
     evaluate = AsyncMock(return_value=[])
     monkeypatch.setattr(maintenance, "session_factory", lambda: SessionContext(session))
     monkeypatch.setattr(maintenance, "evaluate_agent_availability", evaluate)
-    settings = Settings(agent_offline_after_seconds=90)
+    settings = Settings(
+        agent_offline_after_seconds=90,
+        agent_offline_notification_after_seconds=notification_after,
+    )
 
     count = asyncio.run(reconcile_offline_agents(settings, current_time=now))
 
@@ -57,6 +62,7 @@ def test_offline_reconciler_evaluates_locked_candidates(
     query = session.scalars.call_args.args[0]
     sql = str(query.compile(dialect=postgresql.dialect()))
     assert "FOR UPDATE SKIP LOCKED" in sql
+    assert query.compile().params["last_seen_at_1"] == now - timedelta(seconds=90)
     evaluate.assert_awaited_once_with(
         session,
         agent,
@@ -64,6 +70,7 @@ def test_offline_reconciler_evaluates_locked_candidates(
         online=False,
         offline_after_seconds=90,
         notification_channels=("dingtalk",),
+        notification_after_seconds=notification_after,
     )
     session.commit.assert_awaited_once()
 

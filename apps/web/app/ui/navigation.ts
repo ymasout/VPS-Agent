@@ -25,7 +25,7 @@ export const desktopNavigation: NavigationGroup[] = [
     label: "事件与处置",
     items: [
       { label: "事件", href: "/events", description: "事件、证据与诊断" },
-      { label: "操作", description: "列表工作区将在 M7.3 开放" },
+      { label: "操作", href: "/operations", description: "计划、独立审批与健康验证" },
     ],
   },
   {
@@ -48,10 +48,11 @@ export const mobilePrimaryNavigation: NavigationItem[] = [
   { label: "总览", href: "/", description: "运维总览" },
   { label: "Fleet", href: "/fleet", description: "机器状态与资源" },
   { label: "事件", href: "/events", description: "事件工作区" },
-  { label: "操作", description: "操作列表将在 M7.3 开放" },
+  { label: "操作", href: "/operations", description: "操作工作区" },
 ];
 
 const pageTitles: Array<{ matches: (pathname: string) => boolean; title: string }> = [
+  { matches: (pathname) => pathname === "/operations", title: "操作" },
   { matches: (pathname) => pathname === "/", title: "运维总览" },
   { matches: (pathname) => pathname === "/mobile", title: "移动状态" },
   { matches: (pathname) => pathname === "/fleet", title: "Fleet" },

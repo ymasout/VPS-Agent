@@ -81,7 +81,7 @@ def test_service_problem_classification_matches_m1_status_semantics() -> None:
 def test_offline_agent_fires_once_and_uses_machine_scope() -> None:
     observed_at = datetime.now(timezone.utc)
     current_agent = agent()
-    current_agent.last_seen_at = observed_at - timedelta(minutes=2)
+    current_agent.last_seen_at = observed_at - timedelta(minutes=3)
     session = AsyncMock()
     session.scalar.return_value = None
     session.add = MagicMock()

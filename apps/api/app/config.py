@@ -87,6 +87,8 @@ class Settings(BaseSettings):
     dev_agent_registration_token: str | None = None
     agent_offline_after_seconds: int = Field(default=90, ge=30, le=3600)
     agent_availability_scan_interval_seconds: int = Field(default=30, ge=5, le=300)
+    # Notification-only grace; never use it for Agent/Operation online checks.
+    agent_offline_notification_after_seconds: int = Field(default=180, ge=30, le=86400)
     agent_release_repository: str = "ymasout/VPS-Agent"
     alert_pending_observations: int = 2
     dingtalk_webhook_url: str | None = None

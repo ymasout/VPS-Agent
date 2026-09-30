@@ -701,14 +701,20 @@ def test_capability_dependencies_are_attached_to_frozen_and_overview_get_routes(
     }
 
 
-def test_operation_dependencies_are_attached_only_to_frozen_routes() -> None:
+def test_operation_dependencies_are_attached_to_frozen_routes_and_readonly_list() -> None:
+    from app.operation_inventory import router as operation_inventory_router
+
     operation_dependencies = {
         authorize_operation_plan,
         authorize_operation_confirmation,
         authorize_operation_read,
     }
     actual: dict[tuple[str, str], set] = {}
-    for route in [*operations_router.routes, *conversation_operations_router.routes]:
+    for route in [
+        *operations_router.routes,
+        *conversation_operations_router.routes,
+        *operation_inventory_router.routes,
+    ]:
         dependencies = {
             item.call
             for item in route.dependant.dependencies
@@ -720,6 +726,7 @@ def test_operation_dependencies_are_attached_only_to_frozen_routes() -> None:
 
     assert actual == {
         ("/api/v1/operations", "POST"): {authorize_operation_plan},
+        ("/api/v1/operations", "GET"): {authorize_operation_read},
         ("/api/v1/deployment-plans", "POST"): {authorize_operation_plan},
         ("/api/v1/deployment-operations", "POST"): {authorize_operation_plan},
         ("/api/v1/deployment-operations/{operation_id}/rollback", "POST"): {

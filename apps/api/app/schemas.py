@@ -782,6 +782,30 @@ class OperationView(BaseModel):
     transitions: list[OperationTransitionView]
 
 
+class OperationListItem(BaseModel):
+    id: str
+    agent_id: str
+    action_type: str
+    rollback_of: str | None
+    status: str
+    risk_level: str
+    machine: str
+    service: str
+    environment: str
+    requested_by: str
+    confirmed_by: str | None
+    requested_at: datetime
+    expires_at: datetime
+    completed_at: datetime | None
+    impact_summary: str
+
+
+class OperationPage(BaseModel):
+    items: list[OperationListItem]
+    next_cursor: str | None
+    total: int
+
+
 class OperationReceipt(BaseModel):
     operation_id: str
     status: str

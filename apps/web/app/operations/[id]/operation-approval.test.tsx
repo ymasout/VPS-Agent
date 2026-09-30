@@ -15,10 +15,13 @@ function operation(overrides: Partial<Operation> = {}): Operation {
     source_event_id: null,
     source_diagnostic_id: null,
     source_conversation_turn_id: null,
-    action_type: "docker_compose_restart",
+    action_type: "docker_restart",
     status: "awaiting_confirmation",
     requested_by: "local-admin",
     confirmed_by: null,
+    requested_principal_snapshot: null,
+    confirmed_principal_snapshot: null,
+    authorization_mode: "legacy",
     risk_level: "medium",
     impact_summary: "restart the selected service",
     plan_snapshot: {
@@ -49,6 +52,23 @@ function operation(overrides: Partial<Operation> = {}): Operation {
 }
 
 describe("mobile operation approval", () => {
+  it("renders unknown actions and states without write affordances", () => {
+    for (const overrides of [{ action_type: "future_action" }, { status: "future_state" }]) {
+      const html = renderToStaticMarkup(<OperationPanel operation={operation(overrides)} />);
+      expect(html).toContain("未知");
+      expect(html).not.toContain('type="checkbox"');
+      expect(html).not.toContain("确认并签发");
+      expect(html).not.toContain("创建显式回滚计划</button>");
+    }
+  });
+  it("shows technical data collapsed, distinguishes verification, and closes expired plans", () => {
+    const html = renderToStaticMarkup(<OperationPanel operation={operation({ exit_code: 0 })} observedAt="2026-09-08T12:00:00Z" />);
+    expect(html).toContain("尚无健康验证结果");
+    expect(html).toContain("有效期已结束");
+    expect(html).toContain("<details><summary>冻结计划</summary>");
+    expect(html).not.toContain('type="checkbox"');
+    expect(html).toContain("审批不会排队");
+  });
   it("derives display-only targets from the frozen operation", () => {
     expect(operationApprovalSummary(operation())).toEqual(expect.objectContaining({
       action: "安全重启",
@@ -76,6 +96,7 @@ describe("mobile operation approval", () => {
     const named = operation({
       requested_by: "local:operator",
       authorization_mode: "named",
+      requested_principal_snapshot: { principal_id: "local:operator" },
     });
     const approverMarkup = renderToStaticMarkup(
       <OperationPanel

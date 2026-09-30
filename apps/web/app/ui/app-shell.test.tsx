@@ -10,12 +10,12 @@ import { IconButton, StateView, StatusBadge } from "./primitives";
 describe("M7 AppShell navigation", () => {
   it("only exposes routes that currently exist", () => {
     const linkedRoutes = desktopNavigation.flatMap((group) => group.items.flatMap((item) => item.href ?? []));
-    expect(linkedRoutes).toEqual(["/", "/fleet", "/services", "/events", "/assistant", "/repositories", "/settings/notifications"]);
-    expect(linkedRoutes).not.toContain("/operations");
+    expect(linkedRoutes).toEqual(["/", "/fleet", "/services", "/events", "/operations", "/assistant", "/repositories", "/settings/notifications"]);
     expect(mobilePrimaryNavigation.map((item) => item.href).filter(Boolean)).toEqual([
       "/",
       "/fleet",
       "/events",
+      "/operations",
     ]);
   });
 

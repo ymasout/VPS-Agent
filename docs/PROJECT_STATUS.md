@@ -1,9 +1,19 @@
 # 项目状态
 
-最后同步：2026-09-08
-当前阶段：**M0–M6、批次 A 与批次 B 均已完成；备份 VPS SSH 加固延后；M7.1a、M7.1b、M7.2a、M7.2b 已完成实现、验证与生产部署；下一片为 M7.3**
+最后同步：2026-09-30
+当前阶段：**M0–M6、批次 A 与批次 B 均已完成；备份 VPS SSH 加固延后；M7.1a–M7.2b 已生产部署；M7.3 已完成本地实现、独立复核、Web/API 最终镜像与本次 PostgreSQL 门；通知防抖已本地实现，均未部署；下一开发片为 M7.4**
 
 ## 1. 当前结论
+
+2026-09-30 收尾完成：日期边界 P3 已修复；PostgreSQL 相关 53 项通过（新增 10 项并发/新进程测试另复跑两次全部通过），API 最终镜像健康、HTTP、schema 与两套隔离 Compose 解析通过。测试资源已清理，五个生产容器前后完全一致。本地 API 416 passed / 28 skipped / 3 warnings，Web 142 项与 lint/build 通过；环境跳过不记作数据库通过。未提交、推送、部署，CI 尚未执行当前快照，未开始 M7.4。详见 [本轮收尾证据与限制](./M7_3_API_CLOSEOUT_2026-09-30.md)；下文旧状态保留为历史。
+
+2026-09-30 根据用户明确授权，在 VPS 独立限额构建/测试环境补齐 Web Linux standalone 最终镜像、healthcheck、PWA 资产、`/agent` 旧入口与真实 Caddy Principal 门，全部通过。测试未使用生产凭据/数据库，临时资源已清理，生产 API/Web 镜像 ID、启动时间、RestartCount 0 和 healthy 状态保持不变。没有提交、推送或部署，通知防抖尚未上线；日期输入 P3 和 PostgreSQL 环境门仍未完成。此条更新下文“Web 最终镜像门待执行”的历史状态；见 [最终镜像证据](./M7_3_IMAGE_GATE_2026-09-30.md)。
+
+2026-09-29 通知降噪补片已完成本地实现：Agent 仍按原 90 秒规则判离线/记录事件，独立通知门限默认 180 秒；短暂恢复不外发，排队后恢复抑制未发送消息，恢复按渠道与已尝试失联通知配对，保留超时不确定性。无新迁移、依赖或 Operation 安全门变化。API 408 项（18 skipped）、Web 142 项、Ruff/ESLint/build 通过；真实 PostgreSQL/最终镜像门仍待独立环境验证。本片及 M7.3 均未提交、推送或部署，生产未更改。见 [通知防抖实现](./AGENT_NOTIFICATION_DEBOUNCE.md)、[生产只读排查](./AGENT_AVAILABILITY_READONLY_AUDIT_2026-09-29.md)及 [Docker 启动故障](./DOCKER_DESKTOP_STARTUP_2026-09-29.md)。
+
+2026-09-29 独立复核补记：API 390 项、Web 142 项、Ruff、ESLint 与 production build 独立复跑通过；发现一项极端时间筛选溢出 P3，尚未修复。Docker Desktop 在初始化 `dockerInference` 运行时端点时失败，本地 WSL 无独立构建引擎，最终镜像门仍阻塞。未提交、推送或部署，生产状态未实时复查。此条更新下文历史记录中的“独立审计待执行”，但不解除镜像/生产验收门；详见 [M7.3 独立复核](./M7_3_AUDIT.md)。
+
+2026-09-08 完成 M7.3 本地实现与应用层验证：新增 `/operations` 及复用 `authorize_operation_read` 的只读列表 API，默认 50/最大 100 项，按创建时间与 ID 稳定分页，筛选集绑定 cursor，列表不返回完整快照、执行输出或任务秘密。统一展示模型按顶层 `rollback_of` 区分部署与回滚，未知动作/状态仅提供只读展示；详情结构化展示目标、风险、预检、健康验证和审计，技术数据折叠。具名审批继续检查 approve、maker-checker 与请求者快照，回滚入口使用 plan capability；离线、过期、刷新中断和权限变化时关闭控件并清除核对勾选，不自动重放。API `390 passed, 18 skipped, 3 warnings`，Web `41 files / 142 passed`、Ruff、ESLint、production build、`pnpm check` 与本地桌面/手机浏览器夹具验证通过。无新增依赖、迁移、Agent 协议、M4 写 API/状态机、Provider 或 feature flag 变化。当前仅本地未提交修改；生产仍为 `30c3249`，未再次部署。Docker 引擎不可用，最终 Linux standalone 镜像门及环境相关 PostgreSQL 集成未复跑；独立审计与经授权生产验证待执行。下一开发片为 M7.4，本次未开始；详细契约与验证边界见 [M7.3 记录](./M7_WEB_UI_2_DESIGN.md#m73operation-工作区)。
 
 项目已完成工程骨架、“机器可见”和“异常可通知”里程碑。生产控制平面通过 Caddy/HTTPS 运行，Agent 使用一次性令牌注册、独立凭证认证和主动出站 HTTPS 上报；服务异常、去重、钉钉通知和恢复通知已经过生产杀手路径验证。
 

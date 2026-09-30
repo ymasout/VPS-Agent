@@ -9,9 +9,10 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import httpx
 from sqlalchemy import and_, or_, select
 
+from .alerts import agent_offline_notification_due
 from .config import Settings
 from .database import session_factory
-from .models import AlertEvent, NotificationDelivery
+from .models import Agent, AlertEvent, NotificationDelivery
 from .notification_catalog import (
     CURRENT_NOTIFICATION_TEMPLATE_VERSION,
     NOTIFICATION_TEMPLATES,
@@ -361,10 +362,43 @@ async def deliver_notification(delivery_id: str, settings: Settings) -> None:
         )
         if delivery is None or not delivery_is_claimable(delivery, stale_before):
             return
+        # Serialize claiming with recovery (which locks this same event). A queued
+        # notification is not proof of an external send; pair recovery per channel.
+        event = await session.get(AlertEvent, delivery.event_id, with_for_update=True)
+        if event is not None and event.source == "agent":
+            suppress = delivery.notification_type == "firing" and event.status == "resolved"
+            if delivery.notification_type == "resolved":
+                attempted_firing = await session.scalar(
+                    select(NotificationDelivery.id).where(
+                        NotificationDelivery.event_id == event.id,
+                        NotificationDelivery.channel == delivery.channel,
+                        NotificationDelivery.notification_type == "firing",
+                        NotificationDelivery.attempt_count > 0,
+                    ).limit(1)
+                )
+                suppress = attempted_firing is None
+            if suppress:
+                delivery.status = "suppressed"
+                # Preserve a previous timeout/error and the attempt count for audit.
+                if delivery.last_error is None:
+                    delivery.last_error = "agent_recovered_before_notification"
+                await session.commit()
+                return
+            if delivery.notification_type == "firing":
+                # Also protect old queued rows and startup retries, not only new events.
+                agent = await session.get(Agent, event.agent_id)
+                if agent is None or not agent_offline_notification_due(
+                    agent.last_seen_at,
+                    datetime.now(timezone.utc),
+                    max(
+                        settings.agent_offline_after_seconds,
+                        settings.agent_offline_notification_after_seconds,
+                    ),
+                ):
+                    return
         delivery.status = "sending"
         delivery.attempt_count += 1
         delivery.last_error = None
-        event = await session.get(AlertEvent, delivery.event_id)
         await session.commit()
 
         if event is None:

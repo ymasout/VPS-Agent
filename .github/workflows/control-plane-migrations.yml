@@ -68,5 +68,7 @@ jobs:
         run: pytest -q tests/test_m6_notification_tests_postgres.py
       - name: Verify M6.3c/d multi-channel delivery semantics
         run: pytest -q tests/test_m6_multichannel_postgres.py
+      - name: Verify Agent notification debounce PostgreSQL races
+        run: pytest -q tests/test_agent_notification_debounce_postgres.py
       - name: Verify M6.4c1 named audit downgrade guard
         run: pytest -q tests/test_m6_named_approval_postgres.py

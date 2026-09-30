@@ -19,6 +19,7 @@ from .m3 import router as m3_router
 from .maintenance import control_plane_maintenance_loop
 from .models import ManagedService, Operation, RegistrationToken, ServiceInstance
 from .notification_tests import router as notification_tests_router
+from .operation_inventory import router as operation_inventory_router
 from .operations import router as operations_router
 from .overview import router as overview_router
 from .releases import router as releases_router
@@ -99,6 +100,7 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(m3_router)
 app.include_router(operations_router)
+app.include_router(operation_inventory_router)
 app.include_router(conversation_router)
 app.include_router(conversation_operations_router)
 app.include_router(conversation_completion_router)

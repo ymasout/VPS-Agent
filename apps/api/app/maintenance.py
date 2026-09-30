@@ -45,6 +45,7 @@ async def reconcile_offline_agents(
                 online=False,
                 offline_after_seconds=settings.agent_offline_after_seconds,
                 notification_channels=settings.enabled_notification_channels,
+                notification_after_seconds=settings.agent_offline_notification_after_seconds,
             )
         await session.commit()
     return len(agents)

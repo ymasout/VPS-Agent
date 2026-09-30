@@ -578,6 +578,12 @@ export const getConversationOperationTimeline = (id: string) =>
   request<ConversationOperationTimeline>(
     `/api/v1/events/${id}/conversation/operations`,
   );
+export type OperationListItem = Pick<Operation, "id" | "agent_id" | "action_type" | "rollback_of" | "status" | "risk_level" | "requested_by" | "confirmed_by" | "requested_at" | "expires_at" | "completed_at" | "impact_summary"> & {
+  machine: string; service: string; environment: string;
+};
+export type OperationPage = { items: OperationListItem[]; next_cursor: string | null; total: number };
+export const getOperations = (params: URLSearchParams, headers?: PrincipalForwardHeaders) =>
+  request<OperationPage>(`/api/v1/operations?${params.toString()}`, headers);
 export const getOperation = (id: string, headers?: PrincipalForwardHeaders) =>
   request<Operation>(`/api/v1/operations/${id}`, headers);
 export function formatBytes(value: number) {

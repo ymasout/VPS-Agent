@@ -1,4 +1,5 @@
 import type { Operation } from "@/lib/api";
+import { persistedAction, displayValue } from "../../../lib/operation-presentation";
 
 export type OperationApprovalSummary = {
   action: string;
@@ -16,16 +17,14 @@ export function operationApprovalSummary(operation: Operation): OperationApprova
   const machine = typeof plan.machine === "object" && plan.machine ? plan.machine as Record<string, unknown> : {};
   const service = typeof plan.service === "object" && plan.service ? plan.service as Record<string, unknown> : {};
   const checks = Object.entries(operation.precheck_result).filter(([key]) => key !== "passed");
-  const isDeploy = operation.action_type === "docker_compose_deploy";
-  const isRollback = isDeploy && Boolean(operation.rollback_of);
   return {
-    action: isRollback ? "显式回滚" : isDeploy ? "受控部署" : "安全重启",
-    machine: String(machine.name ?? machine.hostname ?? operation.agent_id),
-    service: String(service.name ?? operation.instance_id),
-    environment: String(service.environment ?? "环境未知"),
+    action: persistedAction(operation.action_type, operation.rollback_of).label,
+    machine: displayValue(machine.name ?? machine.hostname, operation.agent_id),
+    service: displayValue(service.name, operation.instance_id),
+    environment: displayValue(service.environment, "环境未知"),
     risk: operation.risk_level,
     expiresAt: operation.expires_at,
-    passedPrechecks: checks.filter(([, passed]) => passed).length,
-    failedPrechecks: checks.filter(([, passed]) => !passed).length,
+    passedPrechecks: checks.filter(([, passed]) => passed === true).length,
+    failedPrechecks: checks.filter(([, passed]) => passed === false).length,
   };
 }

@@ -18,8 +18,9 @@ describe("M6.4c3 named plan and confirmation browser paths", () => {
     expect(sources).toContain('"/api/v1/deployment-plans"');
     expect(sources).toContain("/api/v1/deployment-operations/${operation.id}/rollback");
     expect(sources).toContain('${namedAuthorization ? "/api/v1" : "/console"}/events/');
-    expect(sources).toContain("当前身份没有 operation:approve");
-    expect(sources).toContain("计划创建人与审批人必须不同");
+    const presentation = readFileSync(join(appRoot, "lib/operation-presentation.ts"), "utf8");
+    expect(presentation).toContain("当前身份没有 operation:approve");
+    expect(presentation).toContain("计划创建人与审批人必须不同");
   });
 
   it("keeps all legacy write proxies disabled during named enforcement", () => {
