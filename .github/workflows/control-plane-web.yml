@@ -21,6 +21,13 @@ jobs:
           --build-arg CONTROL_PLANE_BUILD_TIME=ci
           --tag vps-agent-web:pwa-ci
           .
+      - name: Verify development dependency chain is absent from runtime
+        run: |
+          docker image inspect vps-agent-web:pwa-ci --format '{{.Id}}'
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --mount type=bind,src="$PWD/scripts/check_web_runtime_dependencies.mjs",dst=/audit/check.mjs,readonly \
+            --entrypoint node vps-agent-web:pwa-ci /audit/check.mjs /app
       - name: Start standalone Web image
         run: docker run --detach --name vps-agent-web-pwa-ci --publish 127.0.0.1:3107:3000 vps-agent-web:pwa-ci
       - name: Verify packaged PWA assets
