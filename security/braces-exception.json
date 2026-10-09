@@ -1,0 +1,19 @@
+{
+  "id": "GHSA-vfj7-8cjw-p6xm",
+  "package": {
+    "name": "braces",
+    "version": "3.0.3",
+    "ecosystem": "npm"
+  },
+  "source": "pnpm-lock.yaml",
+  "starts_at": "2026-10-09T00:00:00+08:00",
+  "expires_at": "2026-11-08T00:00:00+08:00",
+  "reason": "User-approved temporary acceptance for controlled ESLint configuration input; absent from evaluated standalone runtime. See docs/BRACES_RISK_ASSESSMENT_2026-10-09.md. Never auto-renew.",
+  "sha256_lf": {
+    "pnpm-lock.yaml": "ae82fad2340d89361133b11b7efa198608fe1ff1fe7ec716c314f2cc1d85ad12",
+    "package.json": "319eee2fca195b05aeccce0a39021402269158d22830f16ece6eecede2cb69c5",
+    "apps/web/package.json": "54a865ca53fff8e28ad99af1f8e5a1851d72c559d49f33c23551f625f461c346",
+    "apps/web/eslint.config.mjs": "f9f5c6b1389030a807ffe4c55903485b550702e222f90008b082d1d2b7a4e90e",
+    "apps/web/Dockerfile": "19a75565c8e87fa64fae9aea2fc1c0e887b3f9ba26e68daeaf92183fdd72544c"
+  }
+}
