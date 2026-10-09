@@ -2,6 +2,8 @@
 
 对象：M7.3 提交 `48c1249cfc0020e14b36d072b5e16cdddac40d41` 的失败检查。没有部署、生产配置变化、数据库迁移或 M7.4 实现。
 
+2026-10-09 复核补记：修复提交 `7960f4f97f607ac5b3dcb67c1404a213c38362f9` 的六组推送工作流均已成功，包括 [Vulnerability Scan](https://github.com/ymasout/VPS-Agent/actions/runs/36676604275) 和 [Source Distribution](https://github.com/ymasout/VPS-Agent/actions/runs/36676603927)。下文“CI 需要重新检查”为当时状态；10 月新增告警与后续补丁另见 [本次记录](./CI_SECURITY_FOLLOWUP_2026-10-09.md)，不能将历史通过当作当前无漏洞证明。
+
 ## 原因与修复
 
 - Source Distribution 在 Gitleaks 步骤失败：收尾报告第 18、63、77 行的临时 Docker 镜像标签被 generic-api-key 规则误判。核对它们仅为已删除测试镜像的名称，不是凭据；沿用仓库 `.gitleaksignore` 约定，仅增加对应 commit/file/rule/line 三个精确指纹，不禁用规则或忽略整个文档。

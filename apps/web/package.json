@@ -10,19 +10,19 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "next": "15.5.24",
+    "next": "15.5.27",
     "react": "19.1.2",
     "react-dom": "19.1.2",
     "recharts": "3.10.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "3.3.6",
-    "@next/eslint-plugin-next": "15.5.24",
+    "@next/eslint-plugin-next": "15.5.27",
     "@types/node": "24.0.14",
     "@types/react": "19.1.8",
     "@types/react-dom": "19.1.6",
     "eslint": "9.39.3",
-    "eslint-config-next": "15.5.24",
+    "eslint-config-next": "15.5.27",
     "eslint-plugin-import": "2.32.0",
     "eslint-plugin-jsx-a11y": "6.10.2",
     "eslint-plugin-react": "7.37.5",
