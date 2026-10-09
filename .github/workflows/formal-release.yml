@@ -162,7 +162,7 @@ jobs:
             --build-arg CONTROL_PLANE_BUILD_TIME="${BUILD_TIME}" \
             --output type=oci,dest=dist/vps-agent-web.oci.tar .
           # OCI image SBOMs are generated during push-candidates via docker/build-push-action sbom:true
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: formal-release-unsigned-${{ inputs.version }}-${{ inputs.commit_sha }}
           if-no-files-found: error
@@ -192,7 +192,7 @@ jobs:
           while IFS= read -r file; do
             cosign sign-blob --yes --bundle "${file}.sigstore.json" "$file"
           done < "$RUNNER_TEMP/release-files"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: formal-release-signed-${{ inputs.version }}-${{ inputs.commit_sha }}
           if-no-files-found: error
@@ -401,7 +401,7 @@ jobs:
           fi
       - name: Upload Trivy reports
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: trivy-reports-${{ inputs.version }}-${{ inputs.commit_sha }}
           if-no-files-found: warn
@@ -438,7 +438,7 @@ jobs:
           for file in dist/vps-agent-release-*.tar.gz dist/vps-agent-release-*.tar.gz.sha256 dist/image-digests.json; do
             cosign sign-blob --yes --bundle "${file}.sigstore.json" "$file"
           done
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: candidate-bundle-${{ inputs.version }}-${{ inputs.commit_sha }}
           if-no-files-found: error
